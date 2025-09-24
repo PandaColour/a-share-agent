@@ -1,0 +1,118 @@
+# Python缓存文件
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C扩展
+*.so
+
+# 分发/打包
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# 单元测试/覆盖率报告
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+
+# 虚拟环境
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE文件
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# 项目特定文件
+# 输出结果文件（保留最新几个作为示例）
+outputs/*.csv
+outputs/*.json
+outputs/2025091[0-7]*
+outputs/2025090[0-9]*
+
+# 回测结果文件（可选择性忽略）
+backtest_results/*.csv
+backtest_results/*.json
+
+# AI策略文件（如果存在）
+ai_strategies/*.json
+
+# 日志文件
+logs/*.log
+*.log
+
+# 临时文件
+*.tmp
+*.bak
+*.old
+temp/
+tmp/
+
+# 测试文件（保留重要测试）
+test_*.py
+!test_backtest_multisource.py
+
+# 配置文件中的敏感信息
+config/*token*
+config/*key*
+config/*secret*
+
+# Jupyter Notebook检查点
+.ipynb_checkpoints
+
+# pyenv
+.python-version
+
+# pipenv
+Pipfile.lock
+
+# 本地数据文件
+data/
+*.db
+*.sqlite
+*.sqlite3
+/logs/
+/outputs/
+/backtest_results/
