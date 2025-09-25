@@ -76,7 +76,10 @@ class BaseAnalyst(ABC):
         type_mapping = {
             'fundamental': '基本面分析师',
             'technical': '技术面分析师',
-            'sentiment': '情感面分析师'
+            'sentiment': '情感面分析师',
+            'debate': '多轮辩论分析师',
+            'bull_researcher': '看涨研究员',
+            'bear_researcher': '看跌研究员'
         }
         return type_mapping.get(self.agent_type, f'{self.agent_type}分析师')
 

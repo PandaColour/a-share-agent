@@ -77,11 +77,16 @@ class CustomHTTPClient(AIModelInterface):
             logger.error(f"自定义API调用失败: {e}")
             return f"AI分析失败: {str(e)}"
 
+    def generate_response(self, prompt: str, context: Dict = None) -> str:
+        """生成回应 - 用于辩论和对话场景"""
+        # 复用现有的generate_analysis方法
+        return self.generate_analysis(prompt, context)
+
     def is_available(self) -> bool:
         try:
             # 简单的健康检查
             response = requests.get(self.endpoint.replace("/chat/completions", "/health"),
-                                  timeout=5)
+                                  timeout=10)
             return response.status_code < 500
         except:
             # 如果没有健康检查端点，假设可用

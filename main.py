@@ -67,6 +67,7 @@ class AShareTradingAgentsSystem:
         self.technical_analyst = TechnicalAnalyst()
         self.sentiment_analyst = SentimentAnalyst()
         self.risk_manager = RiskManager()
+        # 初始化投资组合管理器
         self.portfolio_manager = PortfolioManager()
         
         # 禁用多线程分析器和记忆学习系统（已删除相关模块）
@@ -104,7 +105,8 @@ class AShareTradingAgentsSystem:
         self._thread_local = threading.local()
         
         self.logger.info(f"A股TradingAgents系统初始化完成，支持 {self.max_workers} 个并行线程")
-    
+
+
     def _get_thread_components(self):
         """获取线程本地组件实例（确保线程安全）"""
         if not hasattr(self._thread_local, 'components'):
@@ -151,9 +153,22 @@ class AShareTradingAgentsSystem:
             risk_manager = self.risk_manager
             portfolio_manager = self.portfolio_manager
 
+        # 0. 初始化TradingDecision记录分析状态
+        from datetime import datetime
+        initial_decision = TradingDecision(
+            action="分析中",
+            confidence=0.0,
+            reason="正在分析...",
+            risk_level="未知",
+            timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            analysis_status="initialized"
+        )
+        self.logger.info(f"🔍 已初始化TradingDecision，开始分析: {symbol}")
+
         # 1. 数据获取
+        initial_decision.analysis_status = "in_progress"
         data, info, indicators, price_info = data_provider.get_stock_data(symbol)
-        
+
         if data is None or data.empty:
             self.logger.error(f"无法获取股票数据: {symbol}")
             return TradingDecision(
@@ -276,7 +291,10 @@ class AShareTradingAgentsSystem:
         risk_assessment = risk_manager.assess_risk(symbol, data, indicators, analyses)
         
         # 4. 最终决策
+        self.logger.info(f"🔍 开始最终决策，分析师数量: {len(analyses)}")
         decision = portfolio_manager.make_decision(symbol, analyses, risk_assessment, price_info)
+        self.logger.info(f"🔍 最终决策完成: {symbol}, action={decision.action}")
+        self.logger.info(f"🔍 决策对象中是否包含多轮辩论结果: {hasattr(decision, 'multi_round_debate_result') and decision.multi_round_debate_result is not None}")
         
         # 检查决策是否失败
         if decision.action in ["无法决策", "分析失败"]:
@@ -382,9 +400,22 @@ class AShareTradingAgentsSystem:
         progress_percent = (completed / total) * 100
         print(f"  分析进度: [{completed}/{total}] {current_stock_name} ({progress_percent:.1f}%)")
     
-    def _analyze_stock_with_cache(self, symbol: str, name: str, price_limit_min: Optional[float], 
+    def _analyze_stock_with_cache(self, symbol: str, name: str, price_limit_min: Optional[float],
                                  price_limit_max: Optional[float], data_cache: Dict[str, Dict]) -> Dict:
         """使用缓存数据进行线程安全的股票分析（分离版本）"""
+        import time
+        start_time = time.time()
+
+        # 初始化TradingDecision跟踪分析状态
+        from datetime import datetime
+        analysis_status = {
+            "symbol": symbol,
+            "start_time": start_time,
+            "status": "initialized",
+            "multi_round_debate_checked": False
+        }
+        self.logger.info(f"🔍 [缓存分析] 开始分析股票: {symbol}, 初始化状态跟踪")
+
         try:
             # 从缓存中获取数据
             cached_data = data_cache.get(symbol)
@@ -513,7 +544,13 @@ class AShareTradingAgentsSystem:
             risk_assessment = risk_manager.assess_risk(symbol, data, indicators, analyses)
             
             # 最终决策
+            analysis_status["status"] = "making_decision"
+            self.logger.info(f"🔍 [缓存分析] 开始最终决策: {symbol}, 分析师数量: {len(analyses)}")
             decision = portfolio_manager.make_decision(symbol, analyses, risk_assessment, price_info)
+            analysis_status["multi_round_debate_checked"] = True
+            execution_time = time.time() - start_time
+            self.logger.info(f"🔍 [缓存分析] 最终决策完成: {symbol}, 用时: {execution_time:.2f}秒")
+            self.logger.info(f"🔍 [缓存分析] 决策对象中是否包含多轮辩论结果: {hasattr(decision, 'multi_round_debate_result') and decision.multi_round_debate_result is not None}")
             
             # 记录决策到记忆系统
             if self.enable_learning and self.memory_system:
@@ -583,6 +620,64 @@ class AShareTradingAgentsSystem:
                     } if any(analysis.get("analyst_type") == "AI因子分析" for analysis in analyses) else None
                 }
             }
+
+            # 添加多轮辩论分析师详情（如果启用了辩论模式）
+            self.logger.info(f"🔍 [保存结果] 检查多轮辩论结果: {symbol}")
+            self.logger.info(f"🔍 [保存结果] hasattr(decision, 'multi_round_debate_result'): {hasattr(decision, 'multi_round_debate_result')}")
+            if hasattr(decision, 'multi_round_debate_result'):
+                self.logger.info(f"🔍 [保存结果] decision.multi_round_debate_result is not None: {decision.multi_round_debate_result is not None}")
+                if decision.multi_round_debate_result:
+                    self.logger.info(f"🔍 [保存结果] 多轮辩论结果类型: {type(decision.multi_round_debate_result)}")
+                    self.logger.info(f"🔍 [保存结果] 多轮辩论结果键: {list(decision.multi_round_debate_result.keys()) if isinstance(decision.multi_round_debate_result, dict) else 'Not a dict'}")
+
+            if hasattr(decision, 'multi_round_debate_result') and decision.multi_round_debate_result:
+                debate_result = decision.multi_round_debate_result
+                debate_summary = debate_result.get("debate_summary", {})
+                final_decision = debate_result.get("final_decision", {})
+                debate_rounds = debate_result.get("debate_rounds", [])
+
+                # 提取看涨和看跌的主要观点
+                bull_arguments = []
+                bear_arguments = []
+                for round_data in debate_rounds:
+                    speaker = round_data.get("speaker", "")
+                    response = round_data.get("response", "")
+                    if speaker == "Bull":
+                        bull_arguments.append(f"第{round_data.get('round', 0)}轮: {response[:200]}...")
+                    elif speaker == "Bear":
+                        bear_arguments.append(f"第{round_data.get('round', 0)}轮: {response[:200]}...")
+
+                self.logger.info(f"✅ [保存结果] 开始保存多轮辩论分析师详情: {symbol}")
+                result["分析师详情"]["多轮辩论分析师"] = {
+                    "输入信息": {
+                        "辩论轮次": len(debate_rounds),
+                        "辩论模式": "多轮AI辩论",
+                        "参与分析师": ["看涨研究员", "看跌研究员"],
+                        "使用AI模型": debate_result.get("ai_model", "未知")
+                    },
+                    "输出结果": {
+                        "推荐操作": final_decision.get("action", "持有"),
+                        "信心度": f"{final_decision.get('confidence', 0.5):.2%}",
+                        "推理过程": [final_decision.get("reason", "")],
+                        "辩论摘要": {
+                            "总交流次数": debate_summary.get("total_exchanges", 0),
+                            "看涨发言次数": debate_summary.get("bull_exchanges", 0),
+                            "看跌发言次数": debate_summary.get("bear_exchanges", 0),
+                            "辩论质量": debate_summary.get("debate_quality", "未知"),
+                            "最终发言者": debate_summary.get("final_speaker", ""),
+                            "辩论强度对比": {
+                                "看涨强度": final_decision.get("bull_strength", 0),
+                                "看跌强度": final_decision.get("bear_strength", 0)
+                            }
+                        },
+                        "关键因素": debate_result.get("key_factors", []),
+                        "看涨主要观点": bull_arguments,
+                        "看跌主要观点": bear_arguments
+                    }
+                }
+                self.logger.info(f"✅ [保存结果] 多轮辩论分析师详情保存完成: {symbol}")
+            else:
+                self.logger.warning(f"⚠️ [保存结果] 未找到多轮辩论结果，跳过保存多轮辩论分析师详情: {symbol}")
 
             # 清理AI因子分析师为None的情况
             if result["分析师详情"]["AI因子分析师"] is None:
@@ -1223,7 +1318,7 @@ class AShareTradingAgentsSystem:
             }
 
             # 统计各分析师的推荐情况
-            analyst_types = ["基本面分析师", "技术面分析师", "情感面分析师", "AI因子分析师"]
+            analyst_types = ["基本面分析师", "技术面分析师", "情感面分析师", "AI因子分析师", "多轮辩论分析师"]
 
             for analyst_type in analyst_types:
                 recommendations = {}

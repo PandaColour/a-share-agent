@@ -21,3 +21,15 @@ class TradingDecision:
     price_range_low: float = 0.0        # 价格区间下限
     price_range_high: float = 0.0       # 价格区间上限
     upside_potential: float = 0.0       # 上涨空间百分比
+
+    # 多轮辩论结果字段
+    multi_round_debate_result: Optional[Dict[str, Any]] = None  # 多轮辩论完整结果
+    debate_rounds: Optional[list] = None                        # 辩论轮次数据
+    key_factors: Optional[list] = None                          # 关键决策因素
+    debate_quality: Optional[str] = None                        # 辩论质量评估
+
+    # 执行状态和错误跟踪字段
+    analysis_status: str = "initialized"                        # 分析状态: initialized, in_progress, completed, timeout, error
+    timeout_info: Optional[Dict[str, Any]] = None               # 超时信息记录
+    error_info: Optional[Dict[str, Any]] = None                 # 错误信息记录
+    execution_time: float = 0.0                                 # 执行耗时(秒)
