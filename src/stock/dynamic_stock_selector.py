@@ -56,12 +56,12 @@ class DynamicStockSelector:
         self.cache = {}
         self.cache_timeout = 300  # 5分钟缓存
         
-    def select_stocks(self) -> List[Tuple[str, str]]:
+    def select_stocks(self) -> Tuple[List[Tuple[str, str]], Dict]:
         """
         根据配置动态选择股票
-        
+
         Returns:
-            List[Tuple[str, str]]: 股票代码和名称的列表
+            Tuple[List[Tuple[str, str]], Dict]: (股票代码和名称的列表, 详细统计数据)
         """
         logger.info("开始动态股票选择...")
         
@@ -113,11 +113,16 @@ class DynamicStockSelector:
         max_stocks = selection_config.get('max_total_stocks', 20)
         final_stocks = self._select_final_stocks(filtered_candidates, max_stocks)
         
+        # 生成详细统计数据
+        source_stats = self._generate_source_statistics(final_stocks)
+
         logger.info(f"动态选择完成: 共选择 {len(final_stocks)} 只股票")
         self._log_selection_summary(final_stocks)
-        
+
         # 转换为 (symbol, name) 格式
-        return [(stock.symbol, stock.name) for stock in final_stocks]
+        stock_tuples = [(stock.symbol, stock.name) for stock in final_stocks]
+
+        return stock_tuples, source_stats
     
     def _get_selection_config(self) -> Dict:
         """获取股票选择配置"""
@@ -620,36 +625,71 @@ class DynamicStockSelector:
         return sorted(unique_stocks.values(), key=sort_key, reverse=True)
     
     def _apply_filters(self, candidates: List[StockCandidate]) -> List[StockCandidate]:
-        """应用过滤条件（包括新的波动率限制）"""
+        """
+        应用过滤条件
+        - analysis_settings.filters: 应用到所有股票（基础市场准入门槛）
+        - stock_selection.filters: 仅应用到潜力股（技术指标筛选）
+        """
         filtered = []
         selection_config = self._get_selection_config()
-        filters = selection_config.get('filters', {})
+
+        # 获取两套过滤器配置
+        potential_filters = selection_config.get('filters', {})  # stock_selection.filters - 仅潜力股
+        global_filters = {}
+        if self.config_manager:
+            global_filters = self.config_manager.get('analysis_settings.filters', {})  # 全局基础过滤器
 
         for candidate in candidates:
             # 基本检查
             if not candidate.symbol or not candidate.name:
                 continue
 
-            # ST股票过滤
-            if 'ST' in candidate.name or '*ST' in candidate.name:
+            # === 全局基础过滤器（应用到所有股票） ===
+
+            # ST股票过滤（全局）
+            exclude_st = global_filters.get('exclude_st', True)
+            if exclude_st and ('ST' in candidate.name or '*ST' in candidate.name):
                 logger.debug(f"过滤ST股票: {candidate.name}")
                 continue
 
-            # 涨跌幅过滤（避免已大涨或暴跌的股票）
-            max_change = filters.get('max_daily_change', 8)
-            min_change = filters.get('min_daily_change', -8)
-            if candidate.change_pct > max_change or candidate.change_pct < min_change:
-                logger.debug(f"过滤极端波动股票: {candidate.name} (涨跌幅: {candidate.change_pct}%)")
+            # 科创板和创业板过滤（全局）
+            exclude_chinext = global_filters.get('exclude_chinext', True)
+            if exclude_chinext and candidate.symbol.startswith('30'):
+                logger.debug(f"过滤创业板股票: {candidate.name}")
                 continue
 
-            # 科创板和创业板检查（根据配置决定是否排除）
-            if self.config_manager:
-                exclude_chinext = self.config_manager.get('analysis_settings.filters.exclude_chinext', True)
-                if exclude_chinext and candidate.symbol.startswith('30'):
-                    logger.debug(f"过滤创业板股票: {candidate.name}")
+            # 价格限制（全局）
+            if global_filters.get('enable_price_limits', False):
+                price_min = global_filters.get('price_limit_min', 0.0)
+                price_max = global_filters.get('price_limit_max', 100000.0)
+                if candidate.price > 0:  # 只有当有价格数据时才应用
+                    if candidate.price < price_min or candidate.price > price_max:
+                        logger.debug(f"过滤价格超限股票: {candidate.name} (价格: {candidate.price}元)")
+                        continue
+
+            # === 潜力股专用技术过滤器（仅应用到潜力股） ===
+            if candidate.source == StockSource.AUTO_DISCOVERY:
+                # 涨跌幅过滤（避免已大涨或暴跌的潜力股）
+                max_change = potential_filters.get('max_daily_change', 8)
+                min_change = potential_filters.get('min_daily_change', -8)
+                if candidate.change_pct > max_change or candidate.change_pct < min_change:
+                    logger.debug(f"过滤极端波动潜力股: {candidate.name} (涨跌幅: {candidate.change_pct}%)")
                     continue
 
-            # 评分阈值过滤
+                # RSI过滤（避免超买的潜力股）
+                max_rsi = potential_filters.get('max_rsi', 75)
+                if hasattr(candidate, 'rsi') and candidate.rsi and candidate.rsi > max_rsi:
+                    logger.debug(f"过滤超买潜力股: {candidate.name} (RSI: {candidate.rsi})")
+                    continue
+
+                # 量比过滤（潜力股需要适度的成交量）
+                min_volume_ratio = potential_filters.get('min_volume_ratio', 0.8)
+                max_volume_ratio = potential_filters.get('max_volume_ratio', 8)
+                if candidate.volume_ratio < min_volume_ratio or candidate.volume_ratio > max_volume_ratio:
+                    logger.debug(f"过滤量比异常潜力股: {candidate.name} (量比: {candidate.volume_ratio})")
+                    continue
+
+            # 评分阈值过滤（应用到所有股票）
             score_threshold = selection_config.get('score_threshold', 30)
             if candidate.score < score_threshold:
                 logger.debug(f"过滤低评分股票: {candidate.name} (评分: {candidate.score})")
@@ -700,7 +740,58 @@ class DynamicStockSelector:
         logger.info(f"📱 选入社交媒体股票: {social_count} 只")
         
         return final_stocks
-    
+
+    def _generate_source_statistics(self, final_stocks: List[StockCandidate]) -> Dict:
+        """
+        生成详细的来源统计数据
+
+        Args:
+            final_stocks: 最终选择的股票列表
+
+        Returns:
+            包含详细统计信息的字典
+        """
+        from datetime import datetime
+
+        # 按来源统计
+        source_counts = {}
+        source_details = {}
+
+        for stock in final_stocks:
+            source = stock.source.value
+
+            # 统计数量
+            source_counts[source] = source_counts.get(source, 0) + 1
+
+            # 收集详细信息
+            if source not in source_details:
+                source_details[source] = []
+
+            source_details[source].append({
+                'symbol': stock.symbol,
+                'name': stock.name,
+                'score': stock.score,
+                'reason': stock.reason,
+                'change_pct': stock.change_pct
+            })
+
+        # 构建统计数据
+        stats = {
+            'selection_method': 'dynamic',
+            'total_selected': len(final_stocks),
+            'selection_time': datetime.now().isoformat(),
+            'sources': source_counts,
+            'source_details': source_details,
+            'summary': {
+                'config': source_counts.get('config', 0),
+                'longhu_bang': source_counts.get('longhu_bang', 0),
+                'social_media': source_counts.get('social_media', 0),
+                'auto_discovery': source_counts.get('auto_discovery', 0)
+            }
+        }
+
+        return stats
+
     def _is_cache_valid(self, cache_key: str) -> bool:
         """检查缓存是否有效"""
         if cache_key not in self.cache:
@@ -737,6 +828,12 @@ def create_dynamic_stock_selector(config_manager=None) -> DynamicStockSelector:
     return DynamicStockSelector(config_manager)
 
 def get_dynamic_stock_list(config_manager=None) -> List[Tuple[str, str]]:
-    """获取动态股票列表"""
+    """获取动态股票列表（兼容旧接口）"""
+    selector = create_dynamic_stock_selector(config_manager)
+    stock_list, _ = selector.select_stocks()  # 只返回股票列表，丢弃统计数据
+    return stock_list
+
+def get_dynamic_stock_list_with_stats(config_manager=None) -> Tuple[List[Tuple[str, str]], Dict]:
+    """获取动态股票列表和详细统计数据"""
     selector = create_dynamic_stock_selector(config_manager)
     return selector.select_stocks()

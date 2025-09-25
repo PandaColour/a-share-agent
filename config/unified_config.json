@@ -19,7 +19,7 @@
       },
       "tushare": {
         "enabled": true,
-        "token": "943b69a3000045332fe316a5dfa73f6ae634658b5f8c98ffd2f905d2",
+        "token": "a44b1b3296e72fa73c18a1d739a6b5c7a6425351601bce03e34533b0",
         "description": "Tushare - 专业金融数据接口（需要积分）"
       },
       "yfinance": {
@@ -125,24 +125,26 @@
     "enable_potential": true,
     "score_threshold": 25,
     "filters": {
+      "description": "潜力股专用技术过滤器（仅应用于AUTO_DISCOVERY类型股票）",
       "max_daily_change": 7,
       "min_daily_change": -5,
       "max_rsi": 75,
       "min_volume_ratio": 0.8,
       "max_volume_ratio": 8
     },
-    "description": "优化选股策略 - 减少热门股，增加潜力股挖掘"
+    "description": "动态选股策略：配置股+潜力股+龙虎榜+社交媒体，潜力股使用技术过滤器"
   },
 
   "analysis_settings": {
     "filters": {
-      "enable_price_limits": false,
+      "description": "全局基础过滤器（应用于所有股票）",
+      "enable_price_limits": true,
       "price_limit_min": 0.0,
-      "price_limit_max": 1000.0,
+      "price_limit_max": 100.0,
       "min_market_cap": 1000000000,
       "exclude_st": true,
       "exclude_suspended": true,
-      "exclude_chinext": false
+      "exclude_chinext": true
     },
     
     "risk_management": {

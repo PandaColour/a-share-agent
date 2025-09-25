@@ -3,6 +3,30 @@
   "version": "1.0",
   "last_updated": "2025-09-23",
   "default_stocks": [
+    {
+      "symbol": "002156.SZ",
+      "name": "通富微电",
+      "market": "深圳",
+      "sector": "未分类",
+      "source": "config",
+      "reason": "动态选择"
+    },
+    {
+      "symbol": "002129.SZ",
+      "name": "TCL中环",
+      "market": "深圳",
+      "sector": "未分类",
+      "source": "config",
+      "reason": "动态选择"
+    },
+    {
+      "symbol": "002549.SZ",
+      "name": "凯美特气",
+      "market": "深圳",
+      "sector": "未分类",
+      "source": "config",
+      "reason": "动态选择"
+    }
   ],
   "config": {
     "max_default_stocks": 10,

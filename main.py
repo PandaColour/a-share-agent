@@ -484,17 +484,16 @@ class AShareTradingAgentsSystem:
             technical_analysis["analyst_inputs"] = analyst_inputs.copy()
             analyses.append(technical_analysis)
 
-            # 情感面分析（使用预收集的新闻数据和市场数据）
+            # 情感面分析（使用预收集的新闻数据）
             news_data = cached_data.get('news_data', [])
-            market_data = cached_data.get('market_data', {})
             if news_data:
                 # 使用带新闻数据的分析方法
-                sentiment_analysis = sentiment_analyst.analyze_with_news_data(symbol, data, {}, news_data, market_data)
-                print(f"    情感分析使用了 {len(news_data)} 条预收集新闻和市场数据")
+                sentiment_analysis = sentiment_analyst.analyze_with_news_data(symbol, data, {}, news_data)
+                print(f"    情感分析使用了 {len(news_data)} 条预收集新闻")
             else:
                 # 使用普通分析方法
-                sentiment_analysis = sentiment_analyst.analyze_with_data(symbol, data, {}, market_data)
-                print(f"    情感分析：无新闻数据，使用基础分析和市场数据")
+                sentiment_analysis = sentiment_analyst.analyze_with_data(symbol, data, {})
+                print(f"    情感分析：无新闻数据，使用基础分析")
 
             sentiment_analysis["analyst_inputs"] = analyst_inputs.copy()
             analyses.append(sentiment_analysis)
@@ -675,84 +674,12 @@ class AShareTradingAgentsSystem:
                 "决策理由": f"分析出错: {str(e)}"
             }
 
-    def _collect_market_data(self) -> Dict:
-        """收集全局市场数据（行业轮动、社交媒体数据）"""
-        market_data = {
-            'sector_rotation_data': {},
-            'social_media_data': {}
-        }
-
-        try:
-            # 直接使用网络助手获取资金流数据，避免依赖DynamicStockSelector缓存逻辑
-            from src.utils.network_helper import safe_akshare_call
-            print("    获取资金流数据...")
-
-            fund_flow_df = safe_akshare_call("stock_individual_fund_flow_rank", indicator="今日")
-
-            longhu_data = []
-            if fund_flow_df is not None and not fund_flow_df.empty:
-                # 转换为简化的数据格式
-                for _, row in fund_flow_df.head(100).iterrows():
-                    try:
-                        longhu_data.append({
-                            'symbol': row.get('代码', ''),
-                            'name': row.get('名称', ''),
-                            'change_pct': row.get('今日涨跌幅', 0),
-                            'net_inflow': row.get('今日主力净流入-净额', 0)
-                        })
-                    except Exception:
-                        continue
-
-            # 构造行业轮动数据
-            market_data['sector_rotation_data'] = {
-                'longhu_data': longhu_data,
-                'sector_flow_data': {
-                    'net_flow_status': '资金净流入' if longhu_data else 'N/A',
-                    'rotation_stage': '轮动活跃期' if longhu_data else 'N/A'
-                }
-            }
-
-            # 构造社交媒体数据
-            market_data['social_media_data'] = {
-                'longhu_data': longhu_data,
-                'social_mentions': '高' if longhu_data else 'N/A',
-                'institutional_attention': '关注' if longhu_data else 'N/A',
-                'retail_discussion': '活跃' if longhu_data else 'N/A'
-            }
-
-            print(f"    获取到 {len(longhu_data)} 条资金流数据")
-
-        except Exception as e:
-            print(f"    市场数据获取失败: {e}")
-            # 返回默认的空数据结构
-            market_data = {
-                'sector_rotation_data': {
-                    'longhu_data': [],
-                    'sector_flow_data': {
-                        'net_flow_status': 'N/A',
-                        'rotation_stage': 'N/A'
-                    }
-                },
-                'social_media_data': {
-                    'longhu_data': [],
-                    'social_mentions': 'N/A',
-                    'institutional_attention': 'N/A',
-                    'retail_discussion': 'N/A'
-                }
-            }
-
-        return market_data
 
     def _collect_data_batch(self, stock_list: List[Tuple[str, str]]) -> Dict[str, Dict]:
         """批量收集股票数据和新闻数据（单线程，避免并发问题）"""
         data_cache = {}
 
         print(f"第1阶段: 批量收集 {len(stock_list)} 只股票的数据和新闻...")
-
-        # 收集全局市场数据（行业轮动、社交媒体数据）
-        print("  🌍 收集全局市场数据...")
-        market_data = self._collect_market_data()
-        print(f"  市场数据收集完成")
 
         for i, (symbol, name) in enumerate(stock_list, 1):
             try:
@@ -787,7 +714,6 @@ class AShareTradingAgentsSystem:
                         'indicators': indicators,
                         'price_info': price_info,
                         'news_data': news_data,  # 添加新闻数据
-                        'market_data': market_data,  # 添加市场数据
                         'name': name
                     }
                     print(f"    {name} 数据收集成功（包含{len(news_data)}条新闻）")
@@ -796,7 +722,6 @@ class AShareTradingAgentsSystem:
                         'success': False,
                         'error': '数据为空或获取失败',
                         'news_data': news_data,  # 即使股价数据失败也保留新闻
-                        'market_data': market_data,  # 添加市场数据
                         'name': name
                     }
                     print(f"    {name} 数据收集失败")
