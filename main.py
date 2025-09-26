@@ -1091,20 +1091,18 @@ class AShareTradingAgentsSystem:
         
         # 详细结果表格
         print(f"\n详细分析结果:")
-        print("-" * 200)
-        print(f"{'股票名称':<8} {'代码':<12} {'建议':<6} {'信心度':<8} {'当前价格':<10} {'中期目标(15-30天)':<15} {'上涨空间':<10} {'涨跌幅':<10} {'风险':<6} {'决策理由':<30}")
-        print("-" * 200)
-        
+        print("-" * 150)
+        print(f"{'股票名称':<8} {'代码':<12} {'建议':<6} {'信心度':<8} {'当前价格':<10} {'涨跌幅':<10} {'风险':<6} {'决策理由':<30}")
+        print("-" * 150)
+
         for result in results:
             reason = result['决策理由'][:25] + "..." if len(result['决策理由']) > 25 else result['决策理由']
-            target_price = result.get('中期目标(15-30天)', 'N/A')
-            upside = result.get('上涨空间', 'N/A')
-            
+
             print(f"{result['股票名称']:<8} {result['股票代码']:<12} {result['操作建议']:<6} "
-                  f"{result['信心度']:<8} {result['当前价格']:<10} {target_price:<15} "
-                  f"{upside:<10} {result['当日涨跌']:<10} {result['风险等级']:<6} {reason:<30}")
-        
-        print("-" * 200)
+                  f"{result['信心度']:<8} {result['当前价格']:<10} "
+                  f"{result['当日涨跌']:<10} {result['风险等级']:<6} {reason:<30}")
+
+        print("-" * 150)
         print(f"共分析 {len(results)} 只股票，分析时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         
         # 保存结果
