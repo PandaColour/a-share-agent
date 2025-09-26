@@ -28,10 +28,17 @@ class PortfolioManager:
         self.bull_researcher = BullResearcher()
         self.bear_researcher = BearResearcher()
         self.debate_manager = DebateManager()
+        # 从配置读取辩论设置
+        debate_config = self.config_manager.get('system_settings.debate_settings', {})
+        self.enable_debate = debate_config.get('enable_debate', True)
+        self.use_multi_round_debate = debate_config.get('enable_multi_round_debate', True)
+        self.force_opposing_views = debate_config.get('force_opposing_views', True)
+        self.min_confidence_threshold = debate_config.get('min_confidence_threshold', 0.6)
+
         # 新的多轮辩论系统
         self.multi_round_debate_manager = MultiRoundDebateManager(self.config_manager)
-        self.enable_debate = True  # 可配置是否启用辩论模式
-        self.use_multi_round_debate = True  # 是否使用多轮辩论（默认启用）
+
+        logger.info(f"📊 辩论配置加载: enable_debate={self.enable_debate}, multi_round={self.use_multi_round_debate}, force_opposing={self.force_opposing_views}")
         
         # 初始化目标价格分析器
         # 目标价格分析器已移除，改用基础价格区间分析

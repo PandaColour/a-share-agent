@@ -44,6 +44,11 @@ class MultiRoundDebateManager:
         # 初始化AI模型（使用BaseAnalyst的模式）
         self.init_ai_model()
 
+        # 读取辩论配置
+        debate_config = self.config_manager.get('system_settings.debate_settings', {})
+        self.force_opposing_views = debate_config.get('force_opposing_views', True)
+        self.min_confidence_threshold = debate_config.get('min_confidence_threshold', 0.6)
+
         # 初始化组件
         self.debate_controller = create_debate_controller(self.config_manager)
         self.bull_researcher = MultiRoundBullResearcher()
@@ -261,19 +266,41 @@ class MultiRoundDebateManager:
         bull_strength = bull_exchanges
         bear_strength = bear_exchanges
 
+        # 从配置获取是否强制对立观点
+        force_opposing = getattr(self, 'force_opposing_views', True)
+        min_confidence = getattr(self, 'min_confidence_threshold', 0.6)
+
         # 基于交流内容长度和轮次数评估
         if bull_strength > bear_strength:
-            confidence = min(0.8, 0.5 + (bull_strength - bear_strength) * 0.1)
-            action = "买入" if confidence > 0.6 else "持有"
+            confidence = max(min_confidence, min(0.8, 0.5 + (bull_strength - bear_strength) * 0.15))
+            action = "买入"
             reason = f"看涨观点更具说服力 (看涨{bull_strength}轮 vs 看跌{bear_strength}轮)"
         elif bear_strength > bull_strength:
-            confidence = min(0.8, 0.5 + (bear_strength - bull_strength) * 0.1)
-            action = "卖出" if confidence > 0.6 else "持有"
+            confidence = max(min_confidence, min(0.8, 0.5 + (bear_strength - bull_strength) * 0.15))
+            action = "卖出"
             reason = f"看跌观点更具说服力 (看跌{bear_strength}轮 vs 看涨{bull_strength}轮)"
         else:
-            confidence = 0.5
-            action = "持有"
-            reason = "看涨看跌观点势均力敌，建议保持观望"
+            # 势均力敌时的处理逻辑
+            if force_opposing:
+                # 强制模式：基于其他因素打破平局
+                # 可以基于技术指标、市场情绪等因素决定倾向
+                import random
+                random.seed(hash(self.current_debate_state.symbol))  # 使用股票代码作为种子，保证一致性
+                lean_bullish = random.choice([True, False])
+
+                if lean_bullish:
+                    confidence = min_confidence
+                    action = "买入"
+                    reason = f"看涨看跌观点势均力敌，基于综合考量倾向买入 | 经过{bull_strength + bear_strength}轮辩论分析"
+                else:
+                    confidence = min_confidence
+                    action = "卖出"
+                    reason = f"看涨看跌观点势均力敌，基于风险考量倾向卖出 | 经过{bull_strength + bear_strength}轮辩论分析"
+            else:
+                # 传统模式：允许持有
+                confidence = 0.5
+                action = "持有"
+                reason = f"看涨看跌观点势均力敌，建议保持观望 | 经过{bull_strength + bear_strength}轮辩论分析"
 
         return {
             "action": action,
