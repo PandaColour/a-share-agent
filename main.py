@@ -16,12 +16,71 @@ from datetime import datetime
 from typing import Dict, List, Tuple, Optional
 from pathlib import Path
 import warnings
+import logging
+from logging.handlers import RotatingFileHandler
 
 from src.utils.decision import TradingDecision
 
-# Add config directory to path  
+# Add config directory to path
 config_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config')
 sys.path.insert(0, config_dir)
+
+# 配置日志系统
+def setup_logging():
+    """配置日志系统，输出到文件和控制台"""
+    # 确保logs目录存在
+    log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'logs')
+    os.makedirs(log_dir, exist_ok=True)
+
+    # 配置根日志记录器
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.INFO)
+
+    # 清除现有的处理器
+    for handler in root_logger.handlers[:]:
+        root_logger.removeHandler(handler)
+
+    # 文件处理器 - 主系统日志
+    log_file = os.path.join(log_dir, 'trading_system.log')
+    file_handler = RotatingFileHandler(
+        log_file, maxBytes=50*1024*1024, backupCount=5, encoding='utf-8'
+    )
+    file_handler.setLevel(logging.INFO)
+
+    # AI因子系统日志
+    ai_log_file = os.path.join(log_dir, 'ai_factor_system.log')
+    ai_file_handler = RotatingFileHandler(
+        ai_log_file, maxBytes=50*1024*1024, backupCount=5, encoding='utf-8'
+    )
+    ai_file_handler.setLevel(logging.INFO)
+
+    # 控制台处理器
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(logging.INFO)
+
+    # 格式化器
+    formatter = logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+
+    file_handler.setFormatter(formatter)
+    ai_file_handler.setFormatter(formatter)
+    console_handler.setFormatter(formatter)
+
+    # 添加处理器
+    root_logger.addHandler(file_handler)
+    root_logger.addHandler(console_handler)
+
+    # AI因子系统使用单独的日志文件
+    ai_logger = logging.getLogger('factors')
+    ai_logger.addHandler(ai_file_handler)
+    ai_logger.propagate = False  # 避免重复日志
+
+    return root_logger
+
+# 初始化日志系统
+logger = setup_logging()
 
 try:
     from config_manager import get_config
@@ -52,8 +111,11 @@ class AShareTradingAgentsSystem:
     
     def __init__(self, config_manager=None):
         """初始化系统"""
-        import logging
         self.logger = logging.getLogger("AShareTradingSystem")
+
+        # 系统启动时间统计
+        self.system_start_time = time.time()
+        self.logger.info("🚀 A股TradingAgents系统开始初始化...")
         
         # 使用统一配置
         self.config = config_manager or get_config()
@@ -103,8 +165,11 @@ class AShareTradingAgentsSystem:
         
         # 线程本地存储，用于为每个线程创建独立的组件实例
         self._thread_local = threading.local()
-        
-        self.logger.info(f"A股TradingAgents系统初始化完成，支持 {self.max_workers} 个并行线程")
+
+        # 计算初始化耗时
+        init_time = time.time() - self.system_start_time
+        self.logger.info(f"✅ A股TradingAgents系统初始化完成，耗时: {init_time:.2f}秒")
+        self.logger.info(f"📊 系统配置: {self.max_workers}个并行线程, AI因子{'已启用' if self.ai_factor_enabled else '已禁用'}")
 
 
     def _get_thread_components(self):
@@ -1439,7 +1504,12 @@ def main():
             sys.stdout.reconfigure(encoding='utf-8')
         except:
             pass
-    
+
+    # 总体耗时统计开始
+    total_start_time = time.time()
+    main_logger = logging.getLogger("AShareTradingSystem")
+    main_logger.info("🚀 ================ A股量化交易系统启动 ================")
+
     print("启动基于TradingAgents的A股量化交易系统")
     print("="*60)
     
@@ -1455,16 +1525,25 @@ def main():
         return
     
     
-    # 初始化系统
+    # 第一阶段：系统初始化
+    phase1_start_time = time.time()
+    main_logger.info("📋 第一阶段：系统初始化开始...")
+
     try:
         system = AShareTradingAgentsSystem()
+        phase1_init_time = time.time() - phase1_start_time
+        main_logger.info(f"✅ 系统初始化完成，耗时: {phase1_init_time:.2f}秒")
     except Exception as e:
         print(f"系统初始化失败: {e}")
+        main_logger.error(f"❌ 系统初始化失败: {e}")
         import traceback
         traceback.print_exc()
         return
     
-    # 获取股票列表 - 使用新的股票选择管理器
+    # 继续第一阶段：股票选择
+    stock_selection_start = time.time()
+    main_logger.info("🎯 开始股票选择...")
+
     try:
         from config.config_manager import get_config
         from src.stock.stock_selection_manager import StockSelectionManager
@@ -1477,18 +1556,25 @@ def main():
         # 获取选股结果和元数据
         stock_list, metadata = stock_manager.get_selected_stocks()
 
+        stock_selection_time = time.time() - stock_selection_start
+        main_logger.info(f"✅ 股票选择完成，耗时: {stock_selection_time:.2f}秒")
+
         # 显示选股信息
         selection_method = metadata.get('selection_method', 'unknown')
         print(f"选股完成，方法: {selection_method}")
         print(f"共选择 {len(stock_list)} 只股票")
+        main_logger.info(f"📊 选股结果: 方法={selection_method}, 数量={len(stock_list)}")
 
         # 显示来源分布（如果有）
         sources = metadata.get('sources', {})
         if sources:
             print("股票来源分布:")
+            source_info = []
             for source, count in sources.items():
                 if count > 0:
                     print(f"  - {source}: {count} 只")
+                    source_info.append(f"{source}={count}")
+            main_logger.info(f"📊 股票来源分布: {', '.join(source_info)}")
     except Exception as e:
         print(f"动态股票选择失败: {e}")
         print("使用传统配置文件股票列表...")
@@ -1497,34 +1583,42 @@ def main():
             stock_list = get_all_stocks()[:20]  # 限制数量
         except ImportError:
             print("无法导入股票列表，使用默认列表")
-            stock_list = [
-                ("600519.SS", "贵州茅台"),
-                ("600036.SS", "招商银行"), 
-                ("000858.SZ", "五粮液"),
-                ("000333.SZ", "美的集团"),
-                ("002594.SZ", "比亚迪"),
-                ("300750.SZ", "宁德时代"),
-                ("601318.SS", "中国平安"),
-                ("600941.SS", "中国移动"),
-            ]
+            stock_list = []
     
+    # 第一阶段总结
+    phase1_total_time = time.time() - phase1_start_time
+    main_logger.info(f"✅ 第一阶段完成，总耗时: {phase1_total_time:.2f}秒")
+
+    # 第二阶段：股票分析
+    phase2_start_time = time.time()
+    main_logger.info("📈 第二阶段：股票分析开始...")
+
     # 从配置获取价格限制（如果启用的话）
     config = get_config()
     price_limit_min = config.get_price_limit_min()
     price_limit_max = config.get_price_limit_max()
     enable_price_limits = config.get('analysis_settings.filters.enable_price_limits', False)
-    
+
     print(f"\n准备分析 {len(stock_list)} 只A股股票...")
+    main_logger.info(f"📊 准备分析{len(stock_list)}只股票")
+
     if enable_price_limits:
         print(f"价格筛选条件: 只分析价格{price_limit_min}元到{price_limit_max}元的股票")
+        main_logger.info(f"💰 价格筛选: {price_limit_min}元-{price_limit_max}元")
     else:
         print("价格筛选: 已禁用，将分析所有价格区间的股票")
+        main_logger.info("💰 价格筛选: 已禁用")
 
     print("正在获取数据和分析，请稍候...\n")
-    
+
     # 执行批量分析（使用多线程版本）
     try:
         results = system.batch_analyze_threaded(stock_list, price_limit_min, price_limit_max)
+
+        phase2_analysis_time = time.time() - phase2_start_time
+        main_logger.info(f"✅ 股票分析完成，耗时: {phase2_analysis_time:.2f}秒")
+        main_logger.info(f"📊 分析结果: 成功分析{len(results)}只股票")
+
         system.print_analysis_results(results)
         
         # 分析完成后进行历史学习
@@ -1537,11 +1631,20 @@ def main():
                 print(f"历史学习失败: {learning_result.get('error', '未知错误')}")
         
         print("\n分析完成！您可以查看输出的CSV和JSON文件获取详细结果。")
-        
+
     except Exception as e:
         print(f"系统执行出错: {e}")
+        main_logger.error(f"❌ 系统执行出错: {e}")
         import traceback
         traceback.print_exc()
+
+    finally:
+        # 总体耗时统计
+        total_execution_time = time.time() - total_start_time
+        main_logger.info(f"🏁 ================ 系统执行完成 ================")
+        main_logger.info(f"⏱️  总耗时: {total_execution_time:.2f}秒 ({total_execution_time/60:.1f}分钟)")
+        main_logger.info(f"📊 效率统计: 平均每只股票 {total_execution_time/len(stock_list):.2f}秒")
+        print(f"\n系统总耗时: {total_execution_time:.2f}秒")
 
 if __name__ == "__main__":
     main()

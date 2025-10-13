@@ -12,6 +12,7 @@ from .debate_state import DebateState
 from .debate_controller import DebateController, create_debate_controller
 from .multi_round_bull_researcher import MultiRoundBullResearcher
 from .multi_round_bear_researcher import MultiRoundBearResearcher
+from .debate_confidence_calculator import DebateConfidenceCalculator
 
 # 添加AI模型相关导入
 import sys
@@ -53,6 +54,7 @@ class MultiRoundDebateManager:
         self.debate_controller = create_debate_controller(self.config_manager)
         self.bull_researcher = MultiRoundBullResearcher()
         self.bear_researcher = MultiRoundBearResearcher()
+        self.confidence_calculator = DebateConfidenceCalculator()
 
         # 当前辩论状态
         self.current_debate_state: Optional[DebateState] = None
@@ -158,10 +160,11 @@ class MultiRoundDebateManager:
                     logger.warning(f"⚠️ 达到安全上限，强制结束辩论: {symbol}")
                     break
 
-            # 生成最终决策
-            final_decision = self._make_final_decision()
+            # 生成最终决策（使用动态置信度计算）
+            final_decision = self._make_final_decision_dynamic(debate_result["debate_rounds"])
             debate_result["final_decision"] = final_decision
             debate_result["confidence_level"] = final_decision.get("confidence", 0.5)
+            debate_result["quality_analysis"] = final_decision.get("quality_scores", {})
 
             # 生成辩论摘要
             debate_summary = self._generate_debate_summary()
@@ -248,7 +251,48 @@ class MultiRoundDebateManager:
 
         logger.debug(f"📝 辩论状态更新: {speaker}, 总轮次: {self.current_debate_state.count}")
 
-    def _make_final_decision(self) -> Dict:
+    def _make_final_decision_dynamic(self, debate_rounds: List[Dict]) -> Dict:
+        """
+        使用动态置信度计算生成最终决策（新方法）
+
+        Args:
+            debate_rounds: 辩论轮次数据
+
+        Returns:
+            Dict: 包含action, confidence, reason等的决策结果
+        """
+        try:
+            logger.info("🎯 使用动态置信度计算器生成最终决策")
+
+            # 调用动态置信度计算器
+            result = self.confidence_calculator.calculate_dynamic_confidence(
+                debate_rounds=debate_rounds,
+                min_confidence=self.min_confidence_threshold,
+                max_confidence=0.95
+            )
+
+            # 提取质量分析详情
+            quality_scores = result.get("quality_scores", {})
+
+            # 构建返回结果
+            decision = {
+                "action": result["action"],
+                "confidence": result["confidence"],
+                "reason": result["reason"],
+                "recommendation": result["action"],
+                "quality_scores": quality_scores,
+                "winning_side": result.get("winning_side", "Unknown"),
+                "calculation_method": "dynamic_quality_analysis"
+            }
+
+            logger.info(f"✅ 动态决策完成: {decision['action']} (置信度: {decision['confidence']:.2%})")
+            return decision
+
+        except Exception as e:
+            logger.error(f"❌ 动态置信度计算失败: {e}，回退到传统方法")
+            return self._make_final_decision_fallback()
+
+    def _make_final_decision_fallback(self) -> Dict:
         """生成最终投资决策"""
         if not self.current_debate_state:
             return {

@@ -1,0 +1,25 @@
+{
+  "name": "龙虎榜监控",
+  "description": "监控东方财富龙虎榜数据，用于动态选股",
+  "browser": "chrome",
+  "headless": true,
+  "viewport": {
+    "width": 1920,
+    "height": 1080
+  },
+  "timeout": {
+    "navigation": 60000,
+    "action": 15000
+  },
+  "output": {
+    "dir": "./playwright-output/longhu",
+    "save_session": true,
+    "save_trace": true
+  },
+  "allowed_hosts": [
+    "eastmoney.com",
+    "data.eastmoney.com"
+  ],
+  "ignore_https_errors": true,
+  "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+}

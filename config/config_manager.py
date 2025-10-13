@@ -100,7 +100,7 @@ class ConfigManager:
     
     def get_debate_rounds(self) -> int:
         """获取辩论轮次"""
-        return self.get('system_settings.execution.debate_rounds', 2)
+        return self.get('system_settings.debate_settings.debate_rounds', 2)
     
     def get_price_limit_min(self) -> float:
         """获取价格限制"""

@@ -36,6 +36,18 @@ except ImportError as e:
     logger.warning(f"新闻模块导入失败: {e}")
     NEWS_MODULES_AVAILABLE = False
 
+# 导入网页数据抓取模块
+try:
+    try:
+        from ..data.web_scraper import scrape_news_for_sentiment, PLAYWRIGHT_AVAILABLE
+    except (ImportError, ValueError):
+        from src.data.web_scraper import scrape_news_for_sentiment, PLAYWRIGHT_AVAILABLE
+    WEB_SCRAPER_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"网页抓取模块导入失败: {e}")
+    WEB_SCRAPER_AVAILABLE = False
+    PLAYWRIGHT_AVAILABLE = False
+
 # 如果新闻模块不可用，定义兼容性NewsItem类
 if not NEWS_MODULES_AVAILABLE:
     class NewsItem:
@@ -67,6 +79,23 @@ class SentimentAnalyst(BaseAnalyst):
             self.news_fetcher = None
             self.use_real_news = False
             logger.warning("新闻分析功能不可用")
+
+        # 初始化网页数据抓取功能
+        web_scraping_config = self.config_manager.get('analysis_settings.web_scraping', {})
+        web_scraping_enabled = web_scraping_config.get('enabled', False)
+
+        self.enable_web_scraping = (
+            WEB_SCRAPER_AVAILABLE and
+            PLAYWRIGHT_AVAILABLE and
+            web_scraping_enabled
+        )
+
+        if self.enable_web_scraping:
+            logger.info("✅ 网页数据抓取功能已启用（东方财富+雪球）")
+        elif web_scraping_enabled and not (WEB_SCRAPER_AVAILABLE and PLAYWRIGHT_AVAILABLE):
+            logger.warning("⚠️ 配置启用了网页抓取，但 Playwright 不可用")
+        else:
+            logger.info("⚠️ 网页数据抓取功能已禁用")
     
         
 
@@ -89,6 +118,33 @@ class SentimentAnalyst(BaseAnalyst):
 
         # 首先进行传统分析
         analysis = self._traditional_analysis(symbol, stock_data, info, indicators)
+
+        # 【新增】尝试抓取网页数据增强分析
+        web_data = None
+        if self.enable_web_scraping:
+            try:
+                import asyncio
+                logger.info(f"🌐 正在抓取 {symbol} 的网页数据...")
+                web_data = asyncio.run(scrape_news_for_sentiment(symbol))
+
+                if web_data and (web_data.get('news') or web_data.get('discussions')):
+                    news_count = len(web_data.get('news', []))
+                    discussion_count = len(web_data.get('discussions', []))
+                    logger.info(f"✅ 抓取成功: {news_count} 条新闻, {discussion_count} 条讨论")
+
+                    # 整合网页数据到 market_data
+                    if market_data is None:
+                        market_data = {}
+                    market_data['web_news'] = web_data.get('news', [])
+                    market_data['web_discussions'] = web_data.get('discussions', [])
+
+                    analysis["reasoning"].append(f"网页增强: 抓取{news_count}条新闻+{discussion_count}条讨论")
+                else:
+                    logger.warning(f"⚠️ 未抓取到有效网页数据: {symbol}")
+
+            except Exception as e:
+                logger.warning(f"⚠️ 网页数据抓取失败: {e}")
+                analysis["reasoning"].append("网页数据抓取失败，使用传统数据源")
 
         # 如果启用了AI分析且模型可用，进行AI增强分析
         ai_config = self.config_manager.get_ai_config()

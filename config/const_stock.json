@@ -12,16 +12,16 @@
       "reason": "动态选择"
     },
     {
-      "symbol": "002129.SZ",
-      "name": "TCL中环",
-      "market": "深圳",
+      "symbol": "600362.SH",
+      "name": "江西铜业",
+      "market": "上海",
       "sector": "未分类",
       "source": "config",
       "reason": "动态选择"
     },
     {
-      "symbol": "002549.SZ",
-      "name": "凯美特气",
+      "symbol": "000021.SZ",
+      "name": "深科技",
       "market": "深圳",
       "sector": "未分类",
       "source": "config",

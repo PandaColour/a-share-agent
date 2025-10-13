@@ -5,7 +5,6 @@
     
     "execution": {
       "max_workers": 2,
-      "debate_rounds": 2,
       "analysis_timeout": 300,
       "enable_learning": true
     },
@@ -13,6 +12,7 @@
     "debate_settings": {
       "enable_debate": true,
       "enable_multi_round_debate": true,
+      "debate_rounds": 2,
       "force_opposing_views": true,
       "min_confidence_threshold": 0.6,
       "description": "多轮辩论系统配置 - enable_debate控制是否启用辩论，false时回归传统统计决策"
@@ -27,7 +27,7 @@
       },
       "tushare": {
         "enabled": true,
-        "token": "a44b1b3296e72fa73c18a1d739a6b5c7a6425351601bce03e34533b0",
+        "token": "c1ffb5d4d01f8cf0c7ae92d235ba905e2846fe5a8eb983d0f982580c",
         "description": "Tushare - 专业金融数据接口（需要积分）"
       },
       "yfinance": {
@@ -174,11 +174,22 @@
   },
 
   "analysis_settings": {
+    "web_scraping": {
+      "enabled": true,
+      "description": "网页数据抓取配置（Playwright增强）",
+      "eastmoney_news": true,
+      "xueqiu_discussions": true,
+      "max_news_per_stock": 10,
+      "max_discussions_per_stock": 15,
+      "timeout_seconds": 30,
+      "headless": true
+    },
+
     "filters": {
       "description": "全局基础过滤器（应用于所有股票）",
       "enable_price_limits": true,
       "price_limit_min": 0.0,
-      "price_limit_max": 100.0,
+      "price_limit_max": 1000.0,
       "min_market_cap": 1000000000,
       "exclude_st": true,
       "exclude_suspended": true,
