@@ -43,8 +43,15 @@ try:
     except (ImportError, ValueError):
         from src.data.web_scraper import scrape_news_for_sentiment, PLAYWRIGHT_AVAILABLE
     WEB_SCRAPER_AVAILABLE = True
+    logger.info(f"✅ 网页抓取模块导入成功，PLAYWRIGHT_AVAILABLE={PLAYWRIGHT_AVAILABLE}")
 except ImportError as e:
-    logger.warning(f"网页抓取模块导入失败: {e}")
+    logger.warning(f"⚠️ 网页抓取模块导入失败: {e}")
+    logger.warning(f"   Python: {sys.executable}")
+    WEB_SCRAPER_AVAILABLE = False
+    PLAYWRIGHT_AVAILABLE = False
+except Exception as e:
+    logger.error(f"❌ 网页抓取模块导入时发生未知错误: {e}")
+    logger.error(f"   Python: {sys.executable}")
     WEB_SCRAPER_AVAILABLE = False
     PLAYWRIGHT_AVAILABLE = False
 
@@ -157,6 +164,16 @@ class SentimentAnalyst(BaseAnalyst):
             except Exception as e:
                 logger.error(f"AI分析失败: {e}")
                 analysis["reasoning"].append("AI分析失败，使用传统分析")
+
+        # 【新增】市场状态调整情绪分析
+        if benchmark_data:
+            try:
+                adjusted_analysis = self._apply_market_sentiment_adjustment(
+                    analysis, benchmark_data, stock_data
+                )
+                analysis = adjusted_analysis
+            except Exception as e:
+                logger.error(f"市场情绪调整失败: {e}")
 
         return analysis
 
@@ -957,3 +974,172 @@ class SentimentAnalyst(BaseAnalyst):
             'beta_sentiment_impact': 'N/A',
             'systematic_sentiment_risk': 'N/A'
         }
+
+    def _apply_market_sentiment_adjustment(self, analysis: Dict,
+                                          benchmark_data: Dict,
+                                          stock_data: pd.DataFrame) -> Dict:
+        """
+        根据市场状态调整情绪分析结果
+
+        在市场恐慌时，好消息影响减弱；在市场狂热时，坏消息影响减弱
+        """
+        try:
+            # 获取市场状态
+            market_state = benchmark_data.get('market_state')
+            stock_beta = benchmark_data.get('stock_beta', 1.0)
+
+            if not market_state:
+                logger.debug("无市场状态数据，跳过市场情绪调整")
+                return analysis
+
+            # 获取市场趋势
+            trend = market_state.get('trend')
+            if not trend:
+                return analysis
+
+            trend_str = str(trend.value) if hasattr(trend, 'value') else str(trend)
+            daily_return = market_state.get('daily_return', 0)
+            risk_level = market_state.get('risk_level', '中')
+
+            # 记录原始建议
+            original_rec = analysis['recommendation']
+            original_conf = analysis['confidence']
+
+            # 情绪调整逻辑
+            adjustment_info = self._calculate_sentiment_market_adjustment(
+                original_rec, original_conf, trend_str, daily_return,
+                risk_level, stock_beta
+            )
+
+            if adjustment_info['adjusted']:
+                # 更新分析结果
+                adjusted_analysis = analysis.copy()
+                adjusted_analysis['recommendation'] = adjustment_info['new_recommendation']
+                adjusted_analysis['confidence'] = adjustment_info['new_confidence']
+
+                # 添加市场调整信息
+                adjusted_analysis['original_sentiment_recommendation'] = original_rec
+                adjusted_analysis['original_sentiment_confidence'] = original_conf
+                adjusted_analysis['market_sentiment_adjustment'] = adjustment_info['reason']
+
+                # 添加到推理中
+                adjusted_analysis['reasoning'].append(
+                    f"市场情绪调整: {adjustment_info['reason']}"
+                )
+
+                logger.info(f"情绪分析已调整: {original_rec}({original_conf:.0%}) → "
+                          f"{adjustment_info['new_recommendation']}({adjustment_info['new_confidence']:.0%})")
+
+                return adjusted_analysis
+
+            return analysis
+
+        except Exception as e:
+            logger.error(f"市场情绪调整异常: {e}")
+            return analysis
+
+    def _calculate_sentiment_market_adjustment(self, original_rec: str,
+                                              original_conf: float,
+                                              trend: str, daily_return: float,
+                                              risk_level: str, stock_beta: float) -> Dict:
+        """
+        计算基于市场状态的情绪调整
+
+        核心理念：
+        1. 市场恐慌时，正面情绪的影响力大幅下降
+        2. 市场狂热时，负面情绪的影响力下降
+        3. 高Beta股票对市场情绪更敏感
+        """
+        adjustment = {
+            'adjusted': False,
+            'new_recommendation': original_rec,
+            'new_confidence': original_conf,
+            'reason': ''
+        }
+
+        # 市场暴跌场景（日跌幅 < -4%）
+        if '暴跌' in trend or 'CRASH' in trend or daily_return < -0.04:
+            # 市场恐慌，情绪分析可靠性下降
+            if original_rec == '买入':
+                # 买入信号在暴跌中不可信，降级为持有
+                adjustment['adjusted'] = True
+                adjustment['new_recommendation'] = '持有'
+                adjustment['new_confidence'] = min(original_conf + 0.1, 0.85)
+                adjustment['reason'] = f"市场暴跌({daily_return:.1%})，市场恐慌压倒个股情绪，买入降级为持有"
+
+            elif original_rec == '持有':
+                # 高Beta股票在暴跌中更危险
+                if stock_beta > 1.2:
+                    adjustment['adjusted'] = True
+                    adjustment['new_recommendation'] = '卖出'
+                    adjustment['new_confidence'] = min(original_conf + 0.15, 0.90)
+                    adjustment['reason'] = f"市场暴跌+高Beta({stock_beta:.2f})，恐慌情绪加剧，建议卖出"
+                else:
+                    # 低Beta股票相对防御，但降低信心
+                    adjustment['adjusted'] = True
+                    adjustment['new_confidence'] = max(original_conf - 0.05, 0.4)
+                    adjustment['reason'] = f"市场暴跌，但Beta适中({stock_beta:.2f})，维持持有但降低信心"
+
+            elif original_rec == '卖出':
+                # 卖出信号在暴跌中更可信
+                adjustment['adjusted'] = True
+                adjustment['new_confidence'] = min(original_conf + 0.15, 0.95)
+                adjustment['reason'] = f"市场暴跌({daily_return:.1%})，卖出信号得到市场确认"
+
+        # 市场急跌场景（-4% < 日跌幅 < -2%）
+        elif '急跌' in trend or 'STRONG_BEAR' in trend or (-0.04 < daily_return < -0.02):
+            if original_rec == '买入':
+                # 买入信号谨慎对待
+                if stock_beta > 1.2:
+                    adjustment['adjusted'] = True
+                    adjustment['new_recommendation'] = '持有'
+                    adjustment['new_confidence'] = original_conf
+                    adjustment['reason'] = f"市场急跌+高Beta({stock_beta:.2f})，买入信号不可靠，建议持有观望"
+                else:
+                    adjustment['adjusted'] = True
+                    adjustment['new_confidence'] = max(original_conf - 0.1, 0.4)
+                    adjustment['reason'] = f"市场急跌({daily_return:.1%})，降低买入信心"
+
+            elif original_rec == '持有' and stock_beta > 1.3:
+                # 超高Beta股票需警惕
+                adjustment['adjusted'] = True
+                adjustment['new_confidence'] = max(original_conf - 0.1, 0.4)
+                adjustment['reason'] = f"市场急跌+超高Beta({stock_beta:.2f})，持有风险增加"
+
+        # 市场温和下跌场景（-2% < 日跌幅 < -0.5%）
+        elif '下跌' in trend or 'BEAR' in trend or (-0.02 < daily_return < -0.005):
+            if original_rec == '买入' and stock_beta > 1.2:
+                # 高Beta股票在下跌市中买入需谨慎
+                adjustment['adjusted'] = True
+                adjustment['new_confidence'] = max(original_conf - 0.08, 0.45)
+                adjustment['reason'] = f"市场下跌+高Beta({stock_beta:.2f})，情绪乐观但需谨慎"
+
+        # 市场强势上涨场景（日涨幅 > 2%）
+        elif '强势' in trend or 'STRONG_BULL' in trend or daily_return > 0.02:
+            # 市场狂热，负面情绪影响减弱
+            if original_rec == '卖出':
+                # 卖出信号在强势上涨中可能过于悲观
+                if stock_beta > 1.1:
+                    adjustment['adjusted'] = True
+                    adjustment['new_recommendation'] = '持有'
+                    adjustment['new_confidence'] = max(original_conf - 0.1, 0.5)
+                    adjustment['reason'] = f"市场强势上涨({daily_return:.1%})+高Beta({stock_beta:.2f})，负面情绪被市场热情抵消"
+                else:
+                    adjustment['adjusted'] = True
+                    adjustment['new_confidence'] = max(original_conf - 0.08, 0.5)
+                    adjustment['reason'] = f"市场强势上涨({daily_return:.1%})，卖出信号可能过于悲观"
+
+            elif original_rec == '买入' and stock_beta > 1.1:
+                # 高Beta股票在上涨中更有动力
+                adjustment['adjusted'] = True
+                adjustment['new_confidence'] = min(original_conf + 0.1, 0.92)
+                adjustment['reason'] = f"市场强势+高Beta({stock_beta:.2f})，买入情绪得到市场支持"
+
+        # 市场温和上涨场景（0.5% < 日涨幅 < 2%）
+        elif '上涨' in trend or 'BULL' in trend or (0.005 < daily_return < 0.02):
+            if original_rec == '买入' and stock_beta > 1.1:
+                adjustment['adjusted'] = True
+                adjustment['new_confidence'] = min(original_conf + 0.05, 0.88)
+                adjustment['reason'] = f"市场温和上涨+高Beta({stock_beta:.2f})，情绪积极得到验证"
+
+        return adjustment

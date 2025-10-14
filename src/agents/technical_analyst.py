@@ -113,21 +113,21 @@ class TechnicalAnalyst(BaseAnalyst):
         # 首先进行传统分析
         analysis = self._traditional_analysis(symbol, data, info, indicators)
 
-        # AI因子增强分析
+        # AI因子增强分析 (传递市场数据)
         if FACTORS_AVAILABLE:
             try:
-                factor_analysis = self._ai_factor_analysis(symbol, data, indicators)
+                factor_analysis = self._ai_factor_analysis(symbol, data, indicators, benchmark_data)
                 analysis.update(factor_analysis)
-                analysis["reasoning"].append("已使用AI因子增强分析")
+                analysis["reasoning"].append("已使用AI因子增强分析（含市场数据）")
             except Exception as e:
                 logger.error(f"AI因子分析失败: {e}")
 
-        # 价格预测分析
+        # 价格预测分析 (传递市场数据)
         if FACTORS_AVAILABLE:
             try:
-                prediction_analysis = self._price_prediction_analysis(symbol, data, indicators)
+                prediction_analysis = self._price_prediction_analysis(symbol, data, indicators, benchmark_data)
                 analysis.update(prediction_analysis)
-                analysis["reasoning"].append("已集成价格预测分析")
+                analysis["reasoning"].append("已集成价格预测分析（含市场数据）")
             except Exception as e:
                 logger.error(f"价格预测分析失败: {e}")
 
@@ -467,20 +467,27 @@ class TechnicalAnalyst(BaseAnalyst):
         ai_recommendation = self._extract_ai_recommendation(ai_response)
         return self._combine_traditional_and_ai_analysis(traditional_analysis, ai_recommendation, ai_response)
     
-    def _ai_factor_analysis(self, symbol: str, data: pd.DataFrame, indicators: Dict) -> Dict:
-        """AI因子增强分析"""
+    def _ai_factor_analysis(self, symbol: str, data: pd.DataFrame, indicators: Dict,
+                           benchmark_data: Dict = None) -> Dict:
+        """AI因子增强分析（支持市场数据）"""
         if not FACTORS_AVAILABLE:
             return {}
-        
+
         try:
             factor_manager = get_factor_manager()
-            
-            # 准备因子计算所需的数据
+
+            # 准备因子计算所需的数据（包含市场数据）
             factor_data = {
                 "price": data,
                 "volume": data[['Volume']] if 'Volume' in data.columns else pd.DataFrame()
             }
-            
+
+            # 添加市场数据
+            if benchmark_data:
+                factor_data["market_data"] = benchmark_data.get('hs300_data')
+                factor_data["market_state"] = benchmark_data.get('market_state')
+                factor_data["stock_beta"] = benchmark_data.get('stock_beta')
+
             # 计算技术面AI因子
             factor_results = factor_manager.calculate_all_factors(
                 symbol, factor_data, categories=['technical']
@@ -579,20 +586,27 @@ class TechnicalAnalyst(BaseAnalyst):
             "factor_strength": abs(factor_score)
         }
     
-    def _price_prediction_analysis(self, symbol: str, data: pd.DataFrame, indicators: Dict) -> Dict:
-        """价格预测分析"""
+    def _price_prediction_analysis(self, symbol: str, data: pd.DataFrame, indicators: Dict,
+                                  benchmark_data: Dict = None) -> Dict:
+        """价格预测分析（支持市场数据）"""
         if not FACTORS_AVAILABLE:
             return {}
-        
+
         try:
             factor_manager = get_factor_manager()
-            
-            # 准备预测因子所需的数据
+
+            # 准备预测因子所需的数据（包含市场数据）
             factor_data = {
                 "price": data,
                 "volume": data[['Volume']] if 'Volume' in data.columns else pd.DataFrame()
             }
-            
+
+            # 添加市场数据
+            if benchmark_data:
+                factor_data["market_data"] = benchmark_data.get('hs300_data')
+                factor_data["market_state"] = benchmark_data.get('market_state')
+                factor_data["stock_beta"] = benchmark_data.get('stock_beta')
+
             # 计算预测因子
             prediction_results = factor_manager.calculate_all_factors(
                 symbol, factor_data, categories=['prediction']

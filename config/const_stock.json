@@ -18,14 +18,6 @@
       "sector": "未分类",
       "source": "config",
       "reason": "动态选择"
-    },
-    {
-      "symbol": "000021.SZ",
-      "name": "深科技",
-      "market": "深圳",
-      "sector": "未分类",
-      "source": "config",
-      "reason": "动态选择"
     }
   ],
   "config": {

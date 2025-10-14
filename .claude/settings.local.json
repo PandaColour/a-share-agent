@@ -43,7 +43,13 @@
       "Bash(pip install:*)",
       "Bash(tree:*)",
       "Bash(timeout:*)",
-      "Bash(rm:*)"
+      "Bash(rm:*)",
+      "Bash(cat:*)",
+      "Bash(npx:*)",
+      "Bash(npm search:*)",
+      "Bash(pip show:*)",
+      "Bash(playwright install:*)",
+      "Bash(.venv/Scripts/python.exe -m pip list:*)"
     ],
     "deny": [],
     "ask": []

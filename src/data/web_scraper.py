@@ -9,15 +9,27 @@ import asyncio
 from typing import List, Dict, Optional
 from datetime import datetime
 import re
+import sys
 
 logger = logging.getLogger(__name__)
+
+# 诊断日志：记录导入时的Python环境
+logger.info(f"🔍 web_scraper 模块加载 - Python: {sys.executable}")
+logger.info(f"🔍 sys.path[0:3]: {sys.path[:3]}")
 
 try:
     from playwright.async_api import async_playwright, Browser, Page, TimeoutError as PlaywrightTimeoutError
     PLAYWRIGHT_AVAILABLE = True
-except ImportError:
+    logger.info("✅ Playwright 导入成功")
+except ImportError as e:
     PLAYWRIGHT_AVAILABLE = False
-    logger.warning("⚠️ Playwright 未安装，网页抓取功能不可用")
+    logger.warning(f"⚠️ Playwright 未安装，网页抓取功能不可用")
+    logger.warning(f"   导入错误详情: {e}")
+    logger.warning(f"   当前Python: {sys.executable}")
+except Exception as e:
+    PLAYWRIGHT_AVAILABLE = False
+    logger.error(f"❌ Playwright 导入时发生未知错误: {e}")
+    logger.error(f"   当前Python: {sys.executable}")
 
 
 class WebScraper:

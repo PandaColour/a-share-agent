@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 高级决策引擎 - 多层次、多维度智能决策系统
+集成市场监控模块，根据市场状态和个股Beta调整决策
 """
 
 from datetime import datetime
@@ -9,6 +10,18 @@ from dataclasses import dataclass
 from enum import Enum
 import numpy as np
 import logging
+
+# 导入市场监控模块
+try:
+    from ..market import MarketMonitor, BetaCalculator, MarketAdjuster
+    MARKET_MONITOR_AVAILABLE = True
+except ImportError:
+    try:
+        from src.market import MarketMonitor, BetaCalculator, MarketAdjuster
+        MARKET_MONITOR_AVAILABLE = True
+    except ImportError:
+        MARKET_MONITOR_AVAILABLE = False
+        logging.warning("⚠️ 市场监控模块不可用")
 
 logger = logging.getLogger(__name__)
 
@@ -47,24 +60,53 @@ class DecisionCriteria:
 
 class AdvancedDecisionEngine:
     """高级决策引擎"""
-    
-    def __init__(self):
+
+    def __init__(self, config_manager=None, data_provider=None):
+        """
+        初始化决策引擎
+
+        Args:
+            config_manager: 配置管理器
+            data_provider: 数据提供者（用于市场监控）
+        """
+        self.config_manager = config_manager
+        self.data_provider = data_provider
+
         self.market_context = self._analyze_market_context()
         self.decision_criteria = DecisionCriteria()
-        
+
         # 动态权重系统
         self.base_weights = {
             "基本面分析": 0.4,
-            "技术面分析": 0.35, 
+            "技术面分析": 0.35,
             "情感面分析": 0.25
         }
-        
+
         # 情景特定的权重调整
         self.regime_adjustments = {
             MarketRegime.BULL_MARKET: {"技术面分析": 0.1, "情感面分析": 0.1},
             MarketRegime.BEAR_MARKET: {"基本面分析": 0.15, "技术面分析": -0.05},
             MarketRegime.VOLATILE: {"情感面分析": -0.1, "基本面分析": 0.05}
         }
+
+        # 初始化市场监控模块
+        self.market_monitor_enabled = MARKET_MONITOR_AVAILABLE
+        if self.market_monitor_enabled:
+            try:
+                self.market_monitor = MarketMonitor(config_manager)
+                self.beta_calculator = BetaCalculator(config_manager)
+                self.market_adjuster = MarketAdjuster(config_manager)
+                logger.info("✅ 市场监控模块已集成到决策引擎")
+            except Exception as e:
+                logger.error(f"❌ 市场监控模块初始化失败: {e}")
+                self.market_monitor_enabled = False
+        else:
+            logger.warning("⚠️ 市场监控模块不可用，决策引擎将使用传统模式")
+
+        # 缓存市场状态和基准数据（避免重复获取）
+        self._cached_market_state = None
+        self._cached_market_data = None
+        self._cache_timestamp = None
         
     def make_advanced_decision(self, symbol: str, analyses: List[Dict], 
                              risk_assessment: Dict, price_info: Dict,
@@ -104,18 +146,31 @@ class AdvancedDecisionEngine:
             risk_adjusted_decision = self._apply_advanced_risk_management(
                 scenario_decisions, risk_assessment, price_info
             )
-            
-            # 6. 决策置信度和质量评估
+
+            # 【新增】6. 市场状态调整（基于实时市场状态和个股Beta）
+            if self.market_monitor_enabled and self.data_provider:
+                try:
+                    market_adjusted_decision = self._apply_market_adjustment(
+                        symbol, risk_adjusted_decision, price_info
+                    )
+                    logger.info(f"✅ 市场调整完成: {symbol}")
+                except Exception as e:
+                    logger.error(f"⚠️ 市场调整失败: {e}，使用未调整决策")
+                    market_adjusted_decision = risk_adjusted_decision
+            else:
+                market_adjusted_decision = risk_adjusted_decision
+
+            # 7. 决策置信度和质量评估
             decision_quality = self._evaluate_decision_quality(
-                risk_adjusted_decision, analyses, consistency_check
+                market_adjusted_decision, analyses, consistency_check
             )
-            
-            # 7. 生成详细决策报告
+
+            # 8. 生成详细决策报告
             decision_report = self._generate_decision_report(
-                symbol, risk_adjusted_decision, decision_quality, 
+                symbol, market_adjusted_decision, decision_quality,
                 consistency_check, dynamic_weights
             )
-            
+
             return decision_report
             
         except Exception as e:
@@ -425,7 +480,7 @@ class AdvancedDecisionEngine:
         
         return alignments.get(regime, {}).get(recommendation, 0.5)
     
-    def _fallback_decision(self, symbol: str, analyses: List[Dict], 
+    def _fallback_decision(self, symbol: str, analyses: List[Dict],
                           risk_assessment: Dict) -> Dict:
         """备选决策"""
         return {
@@ -436,3 +491,149 @@ class AdvancedDecisionEngine:
             "risk_level": "中",
             "reasoning": {"primary_factors": ["决策引擎故障，采用保守策略"]}
         }
+
+    def _apply_market_adjustment(self, symbol: str, decision: Dict, price_info: Dict) -> Dict:
+        """
+        应用市场状态调整（核心新增方法）
+
+        根据实时市场状态和个股Beta系数调整决策建议
+
+        Args:
+            symbol: 股票代码
+            decision: 原始决策
+            price_info: 价格信息（包含股票数据）
+
+        Returns:
+            Dict: 调整后的决策
+        """
+        try:
+            # 1. 获取市场状态（使用缓存避免重复获取）
+            market_state = self._get_cached_market_state()
+
+            if not market_state or market_state['confidence'] == 0.0:
+                logger.warning(f"⚠️ 市场状态不可用，跳过市场调整: {symbol}")
+                return decision
+
+            # 2. 获取个股数据和市场数据
+            stock_data = price_info.get('stock_data')
+            if stock_data is None or len(stock_data) < 20:
+                logger.warning(f"⚠️ 个股数据不足，跳过Beta计算: {symbol}")
+                stock_beta = 1.0  # 默认Beta
+            else:
+                # 获取市场基准数据
+                market_data = self._get_cached_market_data()
+                if market_data is None:
+                    stock_beta = 1.0
+                else:
+                    # 3. 计算个股Beta
+                    stock_beta = self.beta_calculator.calculate_beta(stock_data, market_data)
+
+            # 4. 应用市场调整
+            original_rec = decision.get('recommendation', '持有')
+            original_conf = decision.get('confidence', 0.5)
+
+            adjusted_rec, adjusted_conf, adjustment_reason = self.market_adjuster.adjust_recommendation(
+                original_rec=original_rec,
+                original_confidence=original_conf,
+                market_state=market_state,
+                stock_beta=stock_beta
+            )
+
+            # 5. 构建调整后的决策
+            adjusted_decision = decision.copy()
+            adjusted_decision['recommendation'] = adjusted_rec
+            adjusted_decision['confidence'] = adjusted_conf
+            adjusted_decision['original_recommendation'] = original_rec
+            adjusted_decision['original_confidence'] = original_conf
+            adjusted_decision['stock_beta'] = stock_beta
+            adjusted_decision['market_adjustment_reason'] = adjustment_reason
+
+            # 添加市场状态信息
+            adjusted_decision['market_state'] = {
+                'trend': market_state['trend'].value,
+                'daily_return': market_state['daily_return'],
+                'risk_level': market_state['risk_level'],
+                'suggested_action': market_state['suggested_action']
+            }
+
+            # 更新reasoning
+            if 'reasoning' in adjusted_decision:
+                if isinstance(adjusted_decision['reasoning'], dict):
+                    if 'market_factors' not in adjusted_decision['reasoning']:
+                        adjusted_decision['reasoning']['market_factors'] = []
+                    adjusted_decision['reasoning']['market_factors'].append(adjustment_reason)
+                    adjusted_decision['reasoning']['market_factors'].append(
+                        f"Beta系数: {stock_beta:.2f} ({self.beta_calculator.classify_beta(stock_beta)})"
+                    )
+                elif isinstance(adjusted_decision['reasoning'], list):
+                    adjusted_decision['reasoning'].append(adjustment_reason)
+
+            logger.info(f"📊 市场调整: {symbol} | {original_rec}({original_conf:.2%}) → "
+                       f"{adjusted_rec}({adjusted_conf:.2%}) | Beta={stock_beta:.2f}")
+
+            return adjusted_decision
+
+        except Exception as e:
+            logger.error(f"❌ 市场调整失败 {symbol}: {e}")
+            import traceback
+            traceback.print_exc()
+            return decision
+
+    def _get_cached_market_state(self) -> Optional[Dict]:
+        """
+        获取缓存的市场状态（避免重复获取）
+
+        Returns:
+            Dict: 市场状态，如果缓存过期或不存在则重新获取
+        """
+        from datetime import datetime, timedelta
+
+        # 检查缓存是否有效（5分钟有效期）
+        if (self._cached_market_state is not None and
+            self._cache_timestamp is not None and
+            datetime.now() - self._cache_timestamp < timedelta(minutes=5)):
+            return self._cached_market_state
+
+        # 重新获取市场状态
+        try:
+            market_state = self.market_monitor.get_market_state(self.data_provider)
+            self._cached_market_state = market_state
+            self._cache_timestamp = datetime.now()
+            logger.info(f"📊 市场状态已更新: {market_state['trend'].value}, "
+                       f"涨跌: {market_state['daily_return']:.2%}, "
+                       f"风险: {market_state['risk_level']}")
+            return market_state
+        except Exception as e:
+            logger.error(f"❌ 获取市场状态失败: {e}")
+            return None
+
+    def _get_cached_market_data(self) -> Optional:
+        """
+        获取缓存的市场基准数据（沪深300）
+
+        Returns:
+            DataFrame: 市场数据
+        """
+        from datetime import datetime, timedelta
+
+        # 检查缓存是否有效（5分钟有效期）
+        if (self._cached_market_data is not None and
+            self._cache_timestamp is not None and
+            datetime.now() - self._cache_timestamp < timedelta(minutes=5)):
+            return self._cached_market_data
+
+        # 重新获取市场数据
+        try:
+            end_date = datetime.now()
+            start_date = end_date - timedelta(days=250)
+            market_data = self.data_provider.get_stock_data(
+                '000300',  # 沪深300
+                start_date=start_date.strftime('%Y-%m-%d'),
+                end_date=end_date.strftime('%Y-%m-%d')
+            )
+            self._cached_market_data = market_data
+            logger.debug(f"✅ 市场基准数据已缓存: {len(market_data) if market_data is not None else 0} 条")
+            return market_data
+        except Exception as e:
+            logger.error(f"❌ 获取市场基准数据失败: {e}")
+            return None
