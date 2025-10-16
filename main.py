@@ -6,6 +6,15 @@
 
 import os
 import sys
+
+# 禁用 scikit-learn/joblib 的并行功能，避免 Windows 兼容性问题
+# 我们使用自己的 ThreadPoolExecutor 来实现并行
+os.environ['LOKY_MAX_CPU_COUNT'] = '1'  # 禁用 joblib 并行
+os.environ['JOBLIB_MULTIPROCESSING'] = '0'  # 禁用 joblib 多进程
+os.environ['OMP_NUM_THREADS'] = '1'
+os.environ['MKL_NUM_THREADS'] = '1'
+os.environ['OPENBLAS_NUM_THREADS'] = '1'
+
 import json
 import pandas as pd
 import numpy as np
@@ -580,16 +589,30 @@ class AShareTradingAgentsSystem:
             technical_analysis["analyst_inputs"] = analyst_inputs.copy()
             analyses.append(technical_analysis)
 
-            # 情感面分析（使用预收集的新闻数据）
+            # 情感面分析（使用预收集的新闻和网页数据）
             news_data = cached_data.get('news_data', [])
+            web_data = cached_data.get('web_data', {'news': [], 'discussions': []})
+
+            # 合并所有新闻数据和网页数据
+            total_news_count = len(news_data) + len(web_data.get('news', []))
+            total_discussions = len(web_data.get('discussions', []))
+
+            # 构造包含网页数据的 market_data
+            market_data = {}
+            if web_data.get('news') or web_data.get('discussions'):
+                market_data['web_news'] = web_data.get('news', [])
+                market_data['web_discussions'] = web_data.get('discussions', [])
+
             if news_data:
                 # 使用带新闻数据的分析方法
-                sentiment_analysis = sentiment_analyst.analyze_with_news_data(symbol, data, {}, news_data)
-                print(f"    情感分析使用了 {len(news_data)} 条预收集新闻")
+                sentiment_analysis = sentiment_analyst.analyze_with_news_data(
+                    symbol, data, market_data, news_data
+                )
+                print(f"    情感分析: {len(news_data)}条传统新闻, {len(web_data.get('news', []))}条网页新闻, {total_discussions}条讨论")
             else:
-                # 使用普通分析方法
-                sentiment_analysis = sentiment_analyst.analyze_with_data(symbol, data, {})
-                print(f"    情感分析：无新闻数据，使用基础分析")
+                # 使用普通分析方法，但传入 market_data
+                sentiment_analysis = sentiment_analyst.analyze_with_data(symbol, data, {}, market_data)
+                print(f"    情感分析: {total_news_count}条网页新闻, {total_discussions}条讨论")
 
             sentiment_analysis["analyst_inputs"] = analyst_inputs.copy()
             analyses.append(sentiment_analysis)
@@ -866,22 +889,41 @@ class AShareTradingAgentsSystem:
                     if hasattr(self.sentiment_analyst, 'use_real_news') and self.sentiment_analyst.use_real_news:
                         print(f"    新闻获取器未配置，跳过 {name} 的新闻获取")
 
+                # 【新增】获取 Playwright 网页数据（如果启用）
+                web_data = {'news': [], 'discussions': []}
+                if self.sentiment_analyst.enable_web_scraping:
+                    try:
+                        import asyncio
+                        from src.data.web_scraper import scrape_news_for_sentiment
+                        print(f"    正在抓取网页数据: {name}")
+                        web_data = asyncio.run(scrape_news_for_sentiment(symbol))
+                        web_news_count = len(web_data.get('news', []))
+                        web_discussion_count = len(web_data.get('discussions', []))
+                        print(f"    抓取到 {web_news_count} 条网页新闻, {web_discussion_count} 条讨论")
+                    except Exception as e:
+                        print(f"    网页数据抓取失败: {e}")
+                        web_data = {'news': [], 'discussions': []}
+
                 if data is not None and not data.empty:
+                    total_news = len(news_data) + len(web_data.get('news', []))
+                    total_discussions = len(web_data.get('discussions', []))
                     data_cache[symbol] = {
                         'success': True,
                         'data': data,
                         'info': info,
                         'indicators': indicators,
                         'price_info': price_info,
-                        'news_data': news_data,  # 添加新闻数据
+                        'news_data': news_data,  # 传统新闻数据
+                        'web_data': web_data,    # 【新增】Playwright 网页数据
                         'name': name
                     }
-                    print(f"    {name} 数据收集成功（包含{len(news_data)}条新闻）")
+                    print(f"    {name} 数据收集成功（新闻:{total_news}条, 讨论:{total_discussions}条）")
                 else:
                     data_cache[symbol] = {
                         'success': False,
                         'error': '数据为空或获取失败',
                         'news_data': news_data,  # 即使股价数据失败也保留新闻
+                        'web_data': web_data,    # 【新增】即使失败也保留网页数据
                         'name': name
                     }
                     print(f"    {name} 数据收集失败")
@@ -900,8 +942,11 @@ class AShareTradingAgentsSystem:
 
         successful_count = sum(1 for v in data_cache.values() if v.get('success'))
         total_news_count = sum(len(v.get('news_data', [])) for v in data_cache.values())
+        total_web_news = sum(len(v.get('web_data', {}).get('news', [])) for v in data_cache.values())
+        total_web_discussions = sum(len(v.get('web_data', {}).get('discussions', [])) for v in data_cache.values())
         print(f"数据收集完成: {successful_count}/{len(stock_list)} 只股票成功")
-        print(f"新闻收集完成: 共获取 {total_news_count} 条新闻")
+        print(f"传统新闻: {total_news_count} 条")
+        print(f"网页新闻: {total_web_news} 条, 讨论: {total_web_discussions} 条")
 
         return data_cache
 

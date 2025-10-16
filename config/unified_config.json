@@ -157,7 +157,7 @@
     "longhu_count": 5,
     "social_count": 5,
     "potential_count": 5,
-    "max_total_stocks": 20,
+    "max_total_stocks": 10,
     "enable_longhu": true,
     "enable_social": true,
     "enable_potential": true,
@@ -175,7 +175,7 @@
 
   "analysis_settings": {
     "web_scraping": {
-      "enabled": true,
+      "enabled": false,
       "description": "网页数据抓取配置（Playwright增强）",
       "eastmoney_news": true,
       "xueqiu_discussions": true,

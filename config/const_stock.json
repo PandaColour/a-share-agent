@@ -18,6 +18,14 @@
       "sector": "未分类",
       "source": "config",
       "reason": "动态选择"
+    },
+    {
+      "symbol": "600010.SH",
+      "name": "包钢股份",
+      "market": "上海",
+      "sector": "未分类",
+      "source": "config",
+      "reason": "动态选择"
     }
   ],
   "config": {

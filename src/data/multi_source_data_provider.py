@@ -423,8 +423,8 @@ class MultiSourceDataProvider:
             # 计算双重时间框架技术指标
             indicators = self.calculate_dual_timeframe_indicators(daily_data, intraday_data, info)
 
-            # 获取价格信息
-            price_info = self.get_current_price_info(daily_data)
+            # 获取价格信息（优先使用实时数据）
+            price_info = self._get_realtime_price_info(daily_data, intraday_data)
 
             return daily_data, info, indicators, price_info
 
@@ -478,7 +478,80 @@ class MultiSourceDataProvider:
                 "daily_change": 0.0,
                 "daily_change_percent": 0.0
             }
-    
+
+    def _get_realtime_price_info(self, daily_data: pd.DataFrame, intraday_data: pd.DataFrame) -> Dict:
+        """
+        获取实时价格信息(优先使用5分钟数据补充今日价格)
+
+        Args:
+            daily_data: 日线数据
+            intraday_data: 5分钟数据
+
+        Returns:
+            Dict: 价格信息字典
+        """
+        if daily_data.empty:
+            return {
+                "current_price": 0.0,
+                "daily_high": 0.0,
+                "daily_low": 0.0,
+                "daily_change": 0.0,
+                "daily_change_percent": 0.0
+            }
+
+        try:
+            # 检查日线数据最后日期是否是今天
+            today = datetime.now().date()
+            daily_last_date = pd.to_datetime(daily_data.index[-1]).date()
+
+            # 如果日线数据已包含今天，直接使用日线数据
+            if daily_last_date == today:
+                logger.debug(f"日线数据包含今天({today})，使用日线数据")
+                return self.get_current_price_info(daily_data)
+
+            # 如果日线数据不包含今天，且有5分钟数据，使用5分钟数据补充
+            if not intraday_data.empty:
+                intraday_last_date = pd.to_datetime(intraday_data.index[-1]).date()
+
+                # 检查5分钟数据是否是今天的
+                if intraday_last_date == today:
+                    logger.info(f"⏰ 日线数据最后日期({daily_last_date})非今日，使用5分钟实时数据({intraday_last_date})")
+
+                    # 从5分钟数据获取今日实时价格
+                    current_price = float(intraday_data['Close'].iloc[-1])
+
+                    # 获取今日的5分钟数据，计算日内最高最低
+                    today_intraday = intraday_data[pd.to_datetime(intraday_data.index).date == today]
+                    daily_high = float(today_intraday['High'].max())
+                    daily_low = float(today_intraday['Low'].min())
+
+                    # 昨日收盘价从日线数据获取
+                    prev_close = float(daily_data['Close'].iloc[-1])
+                    daily_change = current_price - prev_close
+                    daily_change_percent = (daily_change / prev_close) * 100 if prev_close != 0 else 0.0
+
+                    price_info = {
+                        "current_price": round(current_price, 2),
+                        "daily_high": round(daily_high, 2),
+                        "daily_low": round(daily_low, 2),
+                        "daily_change": round(daily_change, 2),
+                        "daily_change_percent": round(daily_change_percent, 2),
+                        "data_source": "intraday"  # 标记数据来源
+                    }
+
+                    logger.debug(f"实时价格: {current_price:.2f}, 涨跌: {daily_change_percent:+.2f}%")
+                    return price_info
+                else:
+                    logger.warning(f"5分钟数据最后日期({intraday_last_date})也不是今天，使用日线数据")
+
+            # 如果没有今日实时数据，使用日线数据
+            logger.debug(f"无今日实时数据，使用日线数据(最后日期: {daily_last_date})")
+            return self.get_current_price_info(daily_data)
+
+        except Exception as e:
+            logger.error(f"获取实时价格信息失败: {e}，回退到日线数据")
+            return self.get_current_price_info(daily_data)
+
     def get_available_sources(self) -> List[str]:
         """获取可用的数据源列表"""
         return list(self.sources.keys())

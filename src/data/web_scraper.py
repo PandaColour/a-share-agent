@@ -81,7 +81,7 @@ class WebScraper:
         抓取东方财富个股新闻
 
         Args:
-            symbol: 股票代码（如 '600519'）
+            symbol: 股票代码（如 '600519' 或 '600519.SH'）
             max_news: 最大新闻数量
 
         Returns:
@@ -94,8 +94,11 @@ class WebScraper:
         news_list = []
 
         try:
+            # 移除市场后缀（.SH, .SZ）
+            clean_symbol = symbol.split('.')[0]
+
             # 东方财富个股页面
-            url = f"https://quote.eastmoney.com/{symbol}.html"
+            url = f"https://quote.eastmoney.com/{clean_symbol}.html"
             logger.info(f"📰 抓取东方财富新闻: {url}")
 
             page = await self.browser.new_page()
@@ -135,7 +138,7 @@ class WebScraper:
                         "link": link,
                         "time": time_text.strip(),
                         "source": "东方财富",
-                        "symbol": symbol,
+                        "symbol": clean_symbol,
                         "crawl_time": datetime.now().isoformat()
                     })
 
@@ -158,7 +161,7 @@ class WebScraper:
         抓取雪球讨论帖子
 
         Args:
-            symbol: 股票代码（如 '600519'）
+            symbol: 股票代码（如 '600519' 或 '600519.SH'）
             max_items: 最大帖子数量
 
         Returns:
@@ -171,13 +174,16 @@ class WebScraper:
         discussions = []
 
         try:
+            # 移除市场后缀（.SH, .SZ）
+            clean_symbol = symbol.split('.')[0]
+
             # 转换股票代码格式
-            if symbol.startswith('6'):
-                xq_symbol = f"SH{symbol}"
-            elif symbol.startswith('0') or symbol.startswith('3'):
-                xq_symbol = f"SZ{symbol}"
+            if clean_symbol.startswith('6'):
+                xq_symbol = f"SH{clean_symbol}"
+            elif clean_symbol.startswith('0') or clean_symbol.startswith('3'):
+                xq_symbol = f"SZ{clean_symbol}"
             else:
-                xq_symbol = symbol
+                xq_symbol = clean_symbol
 
             url = f"https://xueqiu.com/S/{xq_symbol}"
             logger.info(f"💬 抓取雪球讨论: {url}")
@@ -233,7 +239,7 @@ class WebScraper:
                         "time": time_text.strip(),
                         "sentiment": sentiment,
                         "source": "雪球",
-                        "symbol": symbol,
+                        "symbol": clean_symbol,
                         "crawl_time": datetime.now().isoformat()
                     })
 
