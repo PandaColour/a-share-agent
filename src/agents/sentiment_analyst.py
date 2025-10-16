@@ -276,9 +276,10 @@ class SentimentAnalyst(BaseAnalyst):
         """传统情感面分析 - 集成新闻过滤器"""
         analysis = {
             "analyst_type": "情感面分析",
-            "recommendation": "持有", 
+            "recommendation": "持有",
             "confidence": 0.5,
-            "reasoning": []
+            "reasoning": [],
+            "time_horizon": "short"  # 情感面分析关注短期(0-14天)
         }
         
         # 获取公司名称

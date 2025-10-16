@@ -165,7 +165,8 @@ class TechnicalAnalyst(BaseAnalyst):
             "analyst_type": "技术面分析",
             "recommendation": "持有",
             "confidence": 0.5,
-            "reasoning": []
+            "reasoning": [],
+            "time_horizon": "medium"  # 技术面分析关注中期(15-30天)
         }
         
         if not indicators:
@@ -501,7 +502,8 @@ class TechnicalAnalyst(BaseAnalyst):
             factor_analysis = {
                 "ai_factors": {},
                 "factor_score": 0.0,
-                "factor_confidence": 0.0
+                "factor_confidence": 0.0,
+                "time_horizon": "short"  # AI因子分析关注短期(0-14天)
             }
             
             total_score = 0.0

@@ -206,23 +206,23 @@ class AdvancedDecisionEngine:
             "dominant_view": max(set(recommendations), key=recommendations.count) if recommendations else "持有"
         }
     
-    def _calculate_dynamic_weights(self, analyses: List[Dict], risk_assessment: Dict, 
+    def _calculate_dynamic_weights(self, analyses: List[Dict], risk_assessment: Dict,
                                  consistency_check: Dict) -> Dict:
         """计算动态权重"""
         weights = self.base_weights.copy()
-        
+
         # 1. 基于市场状态调整
         regime_adj = self.regime_adjustments.get(self.market_context.regime, {})
         for analyst_type, adjustment in regime_adj.items():
             if analyst_type in weights:
                 weights[analyst_type] += adjustment
-        
+
         # 2. 基于一致性调整
         if consistency_check["has_disagreement"]:
             # 如有分歧，提高基本面分析权重
             weights["基本面分析"] += 0.1
             weights["情感面分析"] -= 0.05
-        
+
         # 3. 基于各分析师的历史准确性调整（如果有记忆系统）
         for analysis in analyses:
             analyst_type = analysis.get("analyst_type", "")
@@ -230,12 +230,27 @@ class AdvancedDecisionEngine:
                 accuracy = analysis["historical_accuracy"]
                 adjustment = (accuracy - 0.5) * 0.2  # ±10%调整
                 weights[analyst_type] += adjustment
-        
-        # 4. 归一化权重
+
+        # 4. 【新增】基于时间尺度调整权重
+        # 时间尺度权重: short(短期0-14天)=1.0, medium(中期15-30天)=0.6, long(长期90天+)=0.4
+        # 近期信号优先级更高，因为更及时反映市场变化
+        time_horizon_weights = {"short": 1.0, "medium": 0.6, "long": 0.4}
+
+        for analysis in analyses:
+            analyst_type = analysis.get("analyst_type", "")
+            time_horizon = analysis.get("time_horizon", "medium")  # 默认中期
+
+            if analyst_type in weights and time_horizon in time_horizon_weights:
+                time_weight = time_horizon_weights[time_horizon]
+                # 根据时间尺度调整权重: 短期信号权重增加, 长期信号权重降低
+                time_adjustment = (time_weight - 0.7) * 0.15  # ±4.5%调整
+                weights[analyst_type] += time_adjustment
+
+        # 5. 归一化权重
         total_weight = sum(weights.values())
         if total_weight > 0:
             weights = {k: v/total_weight for k, v in weights.items()}
-        
+
         return weights
     
     def _scenario_based_decision(self, symbol: str, analyses: List[Dict], 
@@ -279,11 +294,14 @@ class AdvancedDecisionEngine:
         else:
             position_size = 1.0
         
-        # 2. 基于市场状态调整
+        # 2. 【优化】基于市场状态调整 - 降低熊市保护的激进程度
+        # 原逻辑：熊市时直接将"买入"改为"观望"，过于保守
+        # 新逻辑：熊市时降低置信度和仓位，但不强制改变方向
         if self.market_context.regime == MarketRegime.BEAR_MARKET:
             if base_recommendation == "买入":
-                base_recommendation = "观望"  # 熊市中避免激进买入
-            position_size *= 0.7
+                # 不再强制改为"观望"，而是大幅降低置信度
+                confidence *= 0.6  # 降低40%置信度
+            position_size *= 0.7  # 仓位仍降低30%
         
         # 3. 基于技术面支撑阻力调整
         current_price = price_info.get("current_price", 0)

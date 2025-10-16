@@ -25,7 +25,8 @@ class FundamentalAnalyst(BaseAnalyst):
             "confidence": 0.5,
             "reasoning": [],
             "valuation_status": "合理",
-            "financial_health": "良好"
+            "financial_health": "良好",
+            "time_horizon": "long"  # 基本面分析关注长期(90天+)
         }
         
         if not info:

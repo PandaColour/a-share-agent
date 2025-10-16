@@ -1006,6 +1006,25 @@ class AShareTradingAgentsSystem:
                     try:
                         result = future.result()
 
+                        # 【新增】立即打印单只股票的分析结果,不用等到全部完成
+                        action = result.get("操作建议", "未知")
+                        confidence = result.get("信心度", "N/A")
+                        price = result.get("当前价格", "N/A")
+                        change = result.get("当日涨跌", "N/A")
+
+                        # 根据操作建议使用不同的emoji
+                        action_emoji = {"买入": "📈", "卖出": "📉", "持有": "➡️", "跳过": "⏭️", "错误": "❌"}
+                        emoji = action_emoji.get(action, "❓")
+
+                        print(f"\n{emoji} [{completed_count}/{len(stock_list)}] {name}({symbol}) 分析完成:")
+                        print(f"    操作: {action} | 信心度: {confidence} | 价格: {price} | 涨跌: {change}")
+
+                        # 可选:打印决策理由的前50个字符
+                        reason = result.get("决策理由", "")
+                        if reason and len(reason) > 0:
+                            reason_preview = reason[:50] + "..." if len(reason) > 50 else reason
+                            print(f"    理由: {reason_preview}")
+
                         # 模拟AnalysisResult结构
                         class MockResult:
                             def __init__(self, result, task_info):

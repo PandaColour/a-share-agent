@@ -92,25 +92,39 @@ class DebateConfidenceCalculator:
         # 辩论轮次奖励（更多轮次表示更充分讨论）
         rounds_bonus = min(0.1, len(debate_rounds) * 0.02)
 
-        # 综合计算置信度
-        confidence = base_confidence + (quality_factor * 0.3) + rounds_bonus
+        # 【优化1】扩大置信度调整幅度：从0.3提升到0.45，使强弱信号区分更明显
+        # 使用非线性映射增强极端信号的影响
+        confidence_adjustment = (abs(quality_factor) ** 1.3) * 0.45 * (1 if quality_factor > 0 else -1)
+        confidence = base_confidence + confidence_adjustment + rounds_bonus
 
         # 限制在合理区间
         confidence = max(min_confidence, min(max_confidence, confidence))
 
-        # 确定行动建议
-        if quality_factor > 0.15:
+        # 【优化2】缩小决策阈值：从±0.15降到±0.08，减少"持有"决策比例
+        if quality_factor > 0.08:
             action = "买入"
             winning_side = "Bull"
-        elif quality_factor < -0.15:
+        elif quality_factor < -0.08:
             action = "卖出"
             winning_side = "Bear"
         else:
-            # 质量差异较小时，根据细节判断
-            if bull_scores["data_richness"] > bear_scores["data_richness"]:
+            # 【优化3】质量差异较小时，使用综合优势判断，避免单一维度误判
+            bull_advantage = (
+                bull_scores["data_richness"] +
+                bull_scores["logic_strength"] +
+                bull_scores["confidence_score"]
+            ) / 3
+            bear_advantage = (
+                bear_scores["data_richness"] +
+                bear_scores["logic_strength"] +
+                bear_scores["confidence_score"]
+            ) / 3
+
+            # 只需5%的综合优势即可触发方向性决策
+            if bull_advantage > bear_advantage * 1.05:
                 action = "买入"
                 winning_side = "Bull"
-            elif bear_scores["logic_strength"] > bull_scores["logic_strength"]:
+            elif bear_advantage > bull_advantage * 1.05:
                 action = "卖出"
                 winning_side = "Bear"
             else:
