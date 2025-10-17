@@ -253,15 +253,35 @@ class PortfolioManager:
             key_factors = debate_result.get("key_factors", [])
             confidence_level = debate_result.get("confidence_level", 0.5)
 
-            # 构建决策理由
-            reason_parts = [final_decision.get("reason", "")]
+            # 【改进3】构建决策理由 - 优先显示调整原因
+            reason_parts = []
+
+            # 检查是否有异常波动调整（来自风险管理层）
+            volatility_adjustment = final_decision.get("volatility_adjustment", {})
+            if volatility_adjustment.get("applied", False):
+                # 优先显示调整原因
+                adjustment_reason = f"⚠️ {volatility_adjustment['description']}"
+                reason_parts.append(adjustment_reason)
+
+                # 【改进2】同步更新关键因素 - 在开头插入调整说明
+                if key_factors:
+                    original_rec = volatility_adjustment.get('original_recommendation', '未知')
+                    adjusted_rec = volatility_adjustment.get('adjusted_recommendation', '未知')
+                    if original_rec != adjusted_rec:
+                        adjustment_factor = f"⚠️ 因{volatility_adjustment['direction']}调整：{original_rec}→{adjusted_rec}"
+                        key_factors.insert(0, adjustment_factor)
+
+            # 添加原始决策理由
+            original_reason = final_decision.get("reason", "")
+            if original_reason:
+                reason_parts.append(original_reason)
 
             # 添加辩论轮次信息
             total_rounds = debate_summary.get("total_exchanges", 0)
             if total_rounds > 0:
                 reason_parts.append(f"经过{total_rounds}轮辩论")
 
-            # 添加关键因素
+            # 添加关键因素（已经同步更新）
             if key_factors:
                 reason_parts.append(f"关键因素: {key_factors[0]}")
 

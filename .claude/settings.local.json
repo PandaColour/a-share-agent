@@ -49,7 +49,8 @@
       "Bash(npm search:*)",
       "Bash(pip show:*)",
       "Bash(playwright install:*)",
-      "Bash(.venv/Scripts/python.exe -m pip list:*)"
+      "Bash(.venv/Scripts/python.exe -m pip list:*)",
+      "Bash(pip search:*)"
     ],
     "deny": [],
     "ask": []

@@ -134,7 +134,7 @@ class AdvancedDecisionEngine:
             
             # 3. 动态权重计算
             dynamic_weights = self._calculate_dynamic_weights(
-                analyses, risk_assessment, consistency_check
+                analyses, risk_assessment, consistency_check, price_info
             )
             
             # 4. 情景分析决策
@@ -207,7 +207,7 @@ class AdvancedDecisionEngine:
         }
     
     def _calculate_dynamic_weights(self, analyses: List[Dict], risk_assessment: Dict,
-                                 consistency_check: Dict) -> Dict:
+                                 consistency_check: Dict, price_info: Optional[Dict] = None) -> Dict:
         """计算动态权重"""
         weights = self.base_weights.copy()
 
@@ -246,7 +246,24 @@ class AdvancedDecisionEngine:
                 time_adjustment = (time_weight - 0.7) * 0.15  # ±4.5%调整
                 weights[analyst_type] += time_adjustment
 
-        # 5. 归一化权重
+        # 5. 【新增优化3】基于价格动量调整权重
+        if price_info:
+            momentum_adjustment = self._calculate_momentum_adjustment(price_info)
+            if momentum_adjustment["has_momentum"]:
+                logger.info(f"📊 价格动量调整: {momentum_adjustment['description']}")
+
+                if momentum_adjustment["direction"] == "下跌":
+                    # 连续下跌时，增加基本面和风险评估权重，降低技术面权重
+                    weights["基本面分析"] = weights.get("基本面分析", 0.4) + 0.1
+                    weights["技术面分析"] = weights.get("技术面分析", 0.35) - 0.08
+                    weights["情感面分析"] = weights.get("情感面分析", 0.25) - 0.02
+                elif momentum_adjustment["direction"] == "上涨":
+                    # 连续上涨时，增加技术面和情感面权重
+                    weights["技术面分析"] = weights.get("技术面分析", 0.35) + 0.08
+                    weights["情感面分析"] = weights.get("情感面分析", 0.25) + 0.05
+                    weights["基本面分析"] = weights.get("基本面分析", 0.4) - 0.13
+
+        # 6. 归一化权重
         total_weight = sum(weights.values())
         if total_weight > 0:
             weights = {k: v/total_weight for k, v in weights.items()}
@@ -279,12 +296,12 @@ class AdvancedDecisionEngine:
         final_decision = self._aggregate_scenario_decisions(scenario_results)
         return final_decision
     
-    def _apply_advanced_risk_management(self, decision: Dict, risk_assessment: Dict, 
+    def _apply_advanced_risk_management(self, decision: Dict, risk_assessment: Dict,
                                       price_info: Dict) -> Dict:
         """应用高级风险管理"""
         base_recommendation = decision["recommendation"]
         confidence = decision["confidence"]
-        
+
         # 1. 基于波动率调整仓位
         volatility = risk_assessment.get("volatility", 0.3)
         if volatility > 0.4:
@@ -293,8 +310,31 @@ class AdvancedDecisionEngine:
             position_size = 0.75
         else:
             position_size = 1.0
-        
-        # 2. 【优化】基于市场状态调整 - 降低熊市保护的激进程度
+
+        # 2. 【新增优化1】异常波动检测机制
+        abnormal_volatility = self._detect_abnormal_volatility(price_info)
+        volatility_adjustment_applied = False
+
+        if abnormal_volatility["is_abnormal"]:
+            logger.warning(f"⚠️ 检测到异常波动: {abnormal_volatility['description']}")
+
+            # 根据异常波动级别调整置信度和仓位
+            if abnormal_volatility["level"] == "极高":
+                confidence *= (1 - abnormal_volatility["risk_adjustment"])
+                position_size *= 0.5  # 极高波动时仓位减半
+
+                # 如果是大跌且建议买入，降级为持有
+                if abnormal_volatility["direction"] == "暴跌" and base_recommendation == "买入":
+                    base_recommendation = "持有"
+                    logger.info(f"📉 因暴跌调整: 买入 → 持有")
+
+            elif abnormal_volatility["level"] == "高":
+                confidence *= (1 - abnormal_volatility["risk_adjustment"])
+                position_size *= 0.7
+
+            volatility_adjustment_applied = True
+
+        # 3. 【优化】基于市场状态调整 - 降低熊市保护的激进程度
         # 原逻辑：熊市时直接将"买入"改为"观望"，过于保守
         # 新逻辑：熊市时降低置信度和仓位，但不强制改变方向
         if self.market_context.regime == MarketRegime.BEAR_MARKET:
@@ -302,21 +342,22 @@ class AdvancedDecisionEngine:
                 # 不再强制改为"观望"，而是大幅降低置信度
                 confidence *= 0.6  # 降低40%置信度
             position_size *= 0.7  # 仓位仍降低30%
-        
-        # 3. 基于技术面支撑阻力调整
+
+        # 4. 基于技术面支撑阻力调整
         current_price = price_info.get("current_price", 0)
         if current_price > 0:
             # 简化的支撑阻力判断
             daily_high = price_info.get("daily_high", current_price)
             daily_low = price_info.get("daily_low", current_price)
             price_position = (current_price - daily_low) / max(daily_high - daily_low, 0.01)
-            
+
             if price_position > 0.9 and base_recommendation == "买入":
                 confidence *= 0.8  # 接近阻力位时降低买入信心
             elif price_position < 0.1 and base_recommendation == "卖出":
                 confidence *= 0.8  # 接近支撑位时降低卖出信心
-        
-        return {
+
+        # 构建返回结果
+        result = {
             "recommendation": base_recommendation,
             "confidence": min(confidence, 0.95),  # 最高置信度限制
             "position_size": position_size,
@@ -325,6 +366,29 @@ class AdvancedDecisionEngine:
             "take_profit": self._calculate_take_profit(current_price, base_recommendation),
             "reasoning": decision.get("reasoning", [])
         }
+
+        # 如果应用了波动调整，添加到reasoning和调整信息
+        if volatility_adjustment_applied:
+            if isinstance(result["reasoning"], list):
+                result["reasoning"].append(abnormal_volatility["description"])
+            elif isinstance(result["reasoning"], dict):
+                if "risk_considerations" not in result["reasoning"]:
+                    result["reasoning"]["risk_considerations"] = []
+                result["reasoning"]["risk_considerations"].append(abnormal_volatility["description"])
+
+            # 【改进2】记录调整信息，供后续更新核心论点使用
+            result["volatility_adjustment"] = {
+                "applied": True,
+                "original_recommendation": decision["recommendation"],
+                "adjusted_recommendation": base_recommendation,
+                "description": abnormal_volatility["description"],
+                "level": abnormal_volatility["level"],
+                "direction": abnormal_volatility["direction"]
+            }
+        else:
+            result["volatility_adjustment"] = {"applied": False}
+
+        return result
     
     def _evaluate_decision_quality(self, decision: Dict, analyses: List[Dict], 
                                  consistency_check: Dict) -> Dict:
@@ -489,14 +553,190 @@ class AdvancedDecisionEngine:
         """检查策略与市场环境的匹配度"""
         recommendation = decision["recommendation"]
         regime = self.market_context.regime
-        
+
         alignments = {
             MarketRegime.BULL_MARKET: {"买入": 1.0, "持有": 0.7, "卖出": 0.2},
             MarketRegime.BEAR_MARKET: {"买入": 0.3, "持有": 0.8, "卖出": 1.0},
             MarketRegime.SIDEWAYS: {"买入": 0.6, "持有": 1.0, "卖出": 0.6},
         }
-        
+
         return alignments.get(regime, {}).get(recommendation, 0.5)
+
+    def _calculate_momentum_adjustment(self, price_info: Dict) -> Dict:
+        """
+        计算价格动量调整
+
+        Args:
+            price_info: 价格信息，包含stock_data
+
+        Returns:
+            Dict: 动量调整信息
+                - has_momentum: 是否有明显动量
+                - direction: 动量方向（上涨/下跌/震荡）
+                - strength: 动量强度（弱/中/强）
+                - description: 描述信息
+        """
+        stock_data = price_info.get("stock_data")
+
+        if stock_data is None or len(stock_data) < 5:
+            return {
+                "has_momentum": False,
+                "direction": "震荡",
+                "strength": "无",
+                "description": "数据不足，无法计算动量"
+            }
+
+        try:
+            # 计算近期价格趋势（最近3天、5天、10天）
+            recent_3d = stock_data['close'].iloc[-3:] if len(stock_data) >= 3 else None
+            recent_5d = stock_data['close'].iloc[-5:] if len(stock_data) >= 5 else None
+            recent_10d = stock_data['close'].iloc[-10:] if len(stock_data) >= 10 else None
+
+            # 计算趋势强度
+            trend_3d = 0
+            trend_5d = 0
+            trend_10d = 0
+
+            if recent_3d is not None and len(recent_3d) >= 2:
+                trend_3d = (recent_3d.iloc[-1] - recent_3d.iloc[0]) / recent_3d.iloc[0]
+
+            if recent_5d is not None and len(recent_5d) >= 2:
+                trend_5d = (recent_5d.iloc[-1] - recent_5d.iloc[0]) / recent_5d.iloc[0]
+
+            if recent_10d is not None and len(recent_10d) >= 2:
+                trend_10d = (recent_10d.iloc[-1] - recent_10d.iloc[0]) / recent_10d.iloc[0]
+
+            # 加权平均动量（近期权重更高）
+            momentum = trend_3d * 0.5 + trend_5d * 0.3 + trend_10d * 0.2
+
+            # 判断动量方向和强度
+            has_momentum = False
+            direction = "震荡"
+            strength = "无"
+            description = ""
+
+            # 强动量阈值：3天趋势超过3%或加权动量超过5%
+            if abs(trend_3d) > 0.03 or abs(momentum) > 0.05:
+                has_momentum = True
+                strength = "强"
+
+                if momentum < -0.03:
+                    direction = "下跌"
+                    description = f"连续下跌趋势（3日{trend_3d:.2%}，5日{trend_5d:.2%}），风险加大"
+                elif momentum > 0.03:
+                    direction = "上涨"
+                    description = f"连续上涨趋势（3日{trend_3d:.2%}，5日{trend_5d:.2%}），追高需谨慎"
+
+            # 中等动量阈值
+            elif abs(momentum) > 0.02:
+                has_momentum = True
+                strength = "中"
+
+                if momentum < 0:
+                    direction = "下跌"
+                    description = f"下跌趋势中（5日{trend_5d:.2%}）"
+                else:
+                    direction = "上涨"
+                    description = f"上涨趋势中（5日{trend_5d:.2%}）"
+
+            return {
+                "has_momentum": has_momentum,
+                "direction": direction,
+                "strength": strength,
+                "description": description,
+                "trend_3d": trend_3d,
+                "trend_5d": trend_5d,
+                "trend_10d": trend_10d,
+                "weighted_momentum": momentum
+            }
+
+        except Exception as e:
+            logger.warning(f"计算价格动量失败: {e}")
+            return {
+                "has_momentum": False,
+                "direction": "震荡",
+                "strength": "无",
+                "description": "动量计算失败"
+            }
+
+    def _detect_abnormal_volatility(self, price_info: Dict) -> Dict:
+        """
+        检测异常波动
+
+        Args:
+            price_info: 价格信息字典，包含 daily_change 等字段
+
+        Returns:
+            Dict: 异常波动信息
+                - is_abnormal: 是否异常
+                - level: 波动级别（正常/高/极高）
+                - direction: 波动方向（暴涨/暴跌/正常）
+                - risk_adjustment: 风险调整系数
+                - description: 描述信息
+        """
+        daily_change = price_info.get("daily_change", 0)
+
+        # 获取历史波动数据（如果有）
+        stock_data = price_info.get("stock_data")
+        historical_volatility = 0.02  # 默认2%的历史波动率
+
+        if stock_data is not None and len(stock_data) > 20:
+            try:
+                # 计算20日历史波动率
+                returns = stock_data['close'].pct_change().dropna()
+                if len(returns) > 0:
+                    historical_volatility = returns.std()
+            except Exception as e:
+                logger.warning(f"计算历史波动率失败: {e}")
+
+        # 判断异常波动（基于绝对阈值和相对阈值）
+        abs_threshold_extreme = 0.07  # 7%为极端波动
+        abs_threshold_high = 0.05     # 5%为高波动
+        relative_threshold = 3.0       # 超过历史波动3倍
+
+        is_abnormal = False
+        level = "正常"
+        direction = "正常"
+        risk_adjustment = 0.0
+        description = ""
+
+        abs_change = abs(daily_change)
+
+        # 极高波动检测
+        if abs_change > abs_threshold_extreme or abs_change > historical_volatility * relative_threshold:
+            is_abnormal = True
+            level = "极高"
+            risk_adjustment = 0.4  # 降低40%置信度
+
+            if daily_change < -abs_threshold_extreme:
+                direction = "暴跌"
+                description = f"单日暴跌{abs(daily_change):.2%}（历史波动率{historical_volatility:.2%}），极高风险"
+            elif daily_change > abs_threshold_extreme:
+                direction = "暴涨"
+                description = f"单日暴涨{daily_change:.2%}（历史波动率{historical_volatility:.2%}），追高风险"
+
+        # 高波动检测
+        elif abs_change > abs_threshold_high or abs_change > historical_volatility * 2:
+            is_abnormal = True
+            level = "高"
+            risk_adjustment = 0.2  # 降低20%置信度
+
+            if daily_change < -abs_threshold_high:
+                direction = "大跌"
+                description = f"单日大跌{abs(daily_change):.2%}，需谨慎"
+            elif daily_change > abs_threshold_high:
+                direction = "大涨"
+                description = f"单日大涨{daily_change:.2%}，获利回吐风险"
+
+        return {
+            "is_abnormal": is_abnormal,
+            "level": level,
+            "direction": direction,
+            "risk_adjustment": risk_adjustment,
+            "description": description,
+            "daily_change": daily_change,
+            "historical_volatility": historical_volatility
+        }
     
     def _fallback_decision(self, symbol: str, analyses: List[Dict],
                           risk_assessment: Dict) -> Dict:

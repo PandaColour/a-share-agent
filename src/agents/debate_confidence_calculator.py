@@ -100,15 +100,15 @@ class DebateConfidenceCalculator:
         # 限制在合理区间
         confidence = max(min_confidence, min(max_confidence, confidence))
 
-        # 【优化2】缩小决策阈值：从±0.15降到±0.08，减少"持有"决策比例
-        if quality_factor > 0.08:
+        # 【优化2-增强版】进一步缩小决策阈值：从±0.08降到±0.06，更积极响应市场信号
+        if quality_factor > 0.06:
             action = "买入"
             winning_side = "Bull"
-        elif quality_factor < -0.08:
+        elif quality_factor < -0.06:
             action = "卖出"
             winning_side = "Bear"
         else:
-            # 【优化3】质量差异较小时，使用综合优势判断，避免单一维度误判
+            # 【优化3-增强版】质量差异较小时，使用综合优势判断，阈值从5%降到3%
             bull_advantage = (
                 bull_scores["data_richness"] +
                 bull_scores["logic_strength"] +
@@ -120,11 +120,11 @@ class DebateConfidenceCalculator:
                 bear_scores["confidence_score"]
             ) / 3
 
-            # 只需5%的综合优势即可触发方向性决策
-            if bull_advantage > bear_advantage * 1.05:
+            # 只需3%的综合优势即可触发方向性决策（从5%降至3%）
+            if bull_advantage > bear_advantage * 1.03:
                 action = "买入"
                 winning_side = "Bull"
-            elif bear_advantage > bull_advantage * 1.05:
+            elif bear_advantage > bull_advantage * 1.03:
                 action = "卖出"
                 winning_side = "Bear"
             else:

@@ -225,7 +225,13 @@ class SentimentAnalyst(BaseAnalyst):
         return analysis
 
     def _analyze_news_sentiment(self, news_data: list) -> Dict:
-        """分析新闻数据的情感倾向"""
+        """
+        分析新闻数据的情感倾向（增强版：考虑新闻时效性）
+
+        新增优化：
+        - 增加对异常波动相关新闻的权重
+        - 提高近期新闻的影响力
+        """
         if not news_data:
             return {
                 'news_sentiment_score': 0,
@@ -238,18 +244,72 @@ class SentimentAnalyst(BaseAnalyst):
         negative_count = 0
         neutral_count = 0
 
-        # 简化的情感分析：基于关键词
-        positive_keywords = ['上涨', '增长', '利好', '盈利', '突破', '创新', '获得', '合作', '签约', '中标']
-        negative_keywords = ['下跌', '亏损', '利空', '风险', '下滑', '减少', '取消', '延期', '调查', '处罚']
+        # 增强的情感分析关键词（增加对波动的敏感度）
+        positive_keywords = [
+            '上涨', '增长', '利好', '盈利', '突破', '创新', '获得', '合作', '签约', '中标',
+            '复苏', '回升', '反弹', '强势', '超预期'  # 新增动量关键词
+        ]
+        negative_keywords = [
+            '下跌', '亏损', '利空', '风险', '下滑', '减少', '取消', '延期', '调查', '处罚',
+            '暴跌', '大跌', '跳水', '恐慌', '震荡', '承压'  # 新增波动关键词
+        ]
+
+        # 高权重关键词（强烈信号）
+        strong_negative_keywords = ['暴跌', '大跌', '跳水', '崩盘', '恐慌']
+        strong_positive_keywords = ['暴涨', '大涨', '突破', '创新高']
+
+        weighted_positive_score = 0
+        weighted_negative_score = 0
 
         for news_item in news_data:
             title = news_item.get('title', '')
             content = news_item.get('content', '')
             text = title + ' ' + content
 
+            # 时效性权重（假设news_data已按时间排序，越靠前越新）
+            time_weight = 1.0  # 默认权重
+            publish_time = news_item.get('publish_time')
+            if publish_time:
+                try:
+                    from datetime import datetime
+                    if isinstance(publish_time, str):
+                        pub_time = datetime.fromisoformat(publish_time.replace('Z', '+00:00'))
+                    else:
+                        pub_time = publish_time
+
+                    hours_ago = (datetime.now() - pub_time).total_seconds() / 3600
+
+                    # 时效性衰减：24小时内权重1.0，之后逐渐衰减
+                    if hours_ago <= 24:
+                        time_weight = 1.5  # 近期新闻权重更高
+                    elif hours_ago <= 72:
+                        time_weight = 1.2
+                    elif hours_ago <= 168:
+                        time_weight = 1.0
+                    else:
+                        time_weight = 0.8
+                except Exception as e:
+                    logger.debug(f"时间权重计算失败: {e}")
+
+            # 计算情感分数（增加强关键词权重）
             positive_score = sum(1 for keyword in positive_keywords if keyword in text)
             negative_score = sum(1 for keyword in negative_keywords if keyword in text)
 
+            # 强关键词额外加权
+            strong_positive_score = sum(2 for keyword in strong_positive_keywords if keyword in text)
+            strong_negative_score = sum(2 for keyword in strong_negative_keywords if keyword in text)
+
+            positive_score += strong_positive_score
+            negative_score += strong_negative_score
+
+            # 应用时效性权重
+            weighted_positive = positive_score * time_weight
+            weighted_negative = negative_score * time_weight
+
+            weighted_positive_score += weighted_positive
+            weighted_negative_score += weighted_negative
+
+            # 统计分类
             if positive_score > negative_score:
                 positive_count += 1
             elif negative_score > positive_score:
@@ -261,7 +321,8 @@ class SentimentAnalyst(BaseAnalyst):
         if total_news == 0:
             sentiment_score = 0
         else:
-            sentiment_score = (positive_count - negative_count) / total_news
+            # 使用加权得分计算最终情感
+            sentiment_score = (weighted_positive_score - weighted_negative_score) / (total_news * 2)  # 归一化
 
         return {
             'news_sentiment_score': round(sentiment_score, 3),

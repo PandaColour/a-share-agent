@@ -42,7 +42,7 @@
       "default_model": "deepseek_v3",
       "analyst_assignments": {
         "fundamental": "deepseek_v3",
-        "technical": "kimi_k2",
+        "technical": "gemini_2.5_pro",
         "sentiment": "deepseek_r1",
         "debate": "deepseek-r1-0528",
         "bull_researcher": "deepseek-r1-0528",
@@ -61,8 +61,8 @@
             },
             "request_format": "openai",
             "model": "360/deepseek-r1-0528",
-            "max_tokens": 1200,
-            "temperature": 0.5
+            "max_tokens": 2048,
+            "temperature": 0.3
           }
         },
         "deepseek_v3": {
@@ -73,28 +73,28 @@
             "endpoint": "https://deepbank-llm.daikuan.qihoo.net/v1/chat/completions",
             "headers": {
               "Content-Type": "application/json",
-              "Authorization": "Bearer sk-7276baa7-671a-4863-9ee2-3d6742b8e18a"
+              "Authorization": "Bearer sk-9b16d968-b7b4-4978-9116-47784504f4e8"
             },
             "request_format": "openai",
             "model": "360/deepseek-v3-250324",
-            "max_tokens": 1200,
-            "temperature": 0.5
+            "max_tokens": 2048,
+            "temperature": 0.3
           }
         },
-        "kimi_k2": {
-          "name": "Kimi K2 Instruct",
-          "description": "月之暗面Kimi模型，擅长技术分析",
+        "gemini_2.5_pro": {
+          "name": "gemini-2.5-pro",
+          "description": "google/gemini-2.5-pro",
           "type": "custom_http",
           "config": {
             "endpoint": "https://deepbank-llm.daikuan.qihoo.net/v1/chat/completions",
             "headers": {
               "Content-Type": "application/json",
-              "Authorization": "Bearer sk-7276baa7-671a-4863-9ee2-3d6742b8e18a"
+              "Authorization": "Bearer sk-9b16d968-b7b4-4978-9116-47784504f4e8"
             },
             "request_format": "openai",
-            "model": "360/360-kimi-k2-instruct",
-            "max_tokens": 1000,
-            "temperature": 0.6
+            "model": "google/gemini-2.5-pro",
+            "max_tokens": 2048,
+            "temperature": 0.3
           }
         },
         "deepseek_r1": {
@@ -105,14 +105,31 @@
             "endpoint": "https://deepbank-llm.daikuan.qihoo.net/v1/chat/completions",
             "headers": {
               "Content-Type": "application/json",
-              "Authorization": "Bearer sk-7276baa7-671a-4863-9ee2-3d6742b8e18a"
+              "Authorization": "Bearer sk-9b16d968-b7b4-4978-9116-47784504f4e8"
             },
             "request_format": "openai",
             "model": "360/deepseek-r1",
-            "max_tokens": 800,
-            "temperature": 0.8
+            "max_tokens": 2048,
+            "temperature": 0.3
           }
         },
+        "glm-4.51": {
+          "name": "360/360-glm-4.5",
+          "description": "360/360-glm-4.5",
+          "type": "custom_http",
+          "config": {
+            "endpoint": "https://deepbank-llm.daikuan.qihoo.net/v1/chat/completions",
+            "headers": {
+              "Content-Type": "application/json",
+              "Authorization": "Bearer sk-9b16d968-b7b4-4978-9116-47784504f4e8"
+            },
+            "request_format": "openai",
+            "model": "360/360-glm-4.5",
+            "max_tokens": 2048,
+            "temperature": 0.3
+          }
+        },
+
         "mock_model": {
           "name": "Mock Model",
           "description": "模拟模型，用于测试",
