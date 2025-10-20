@@ -205,8 +205,8 @@
     "filters": {
       "description": "全局基础过滤器（应用于所有股票）",
       "enable_price_limits": true,
-      "price_limit_min": 0.0,
-      "price_limit_max": 1000.0,
+      "price_limit_min": 15.0,
+      "price_limit_max": 10000.0,
       "min_market_cap": 1000000000,
       "exclude_st": true,
       "exclude_suspended": true,

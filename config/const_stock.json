@@ -7,43 +7,7 @@
       "symbol": "002156.SZ",
       "name": "通富微电",
       "score": 70.0,
-      "reason": "核心股票池配置",
-      "change_pct": 0.0
-    },
-    {
-      "symbol": "600010.SH",
-      "name": "包钢股份",
-      "score": 70.0,
-      "reason": "核心股票池配置",
-      "change_pct": 0.0
-    },
-    {
-      "symbol": "603993.SH",
-      "name": "洛阳钼业",
-      "score": 70.0,
-      "reason": "核心股票池配置",
-      "change_pct": 0.0
-    },
-    {
-      "symbol": "600362.SH",
-      "name": "江西铜业",
-      "score": 70.0,
-      "reason": "核心股票池配置",
-      "change_pct": 0.0
-    },
-    {
-      "symbol": "600183.SH",
-      "name": "生益科技",
-      "score": 70.0,
-      "reason": "核心股票池配置",
-      "change_pct": 0.0
-    },
-    {
-      "symbol": "002594.SZ",
-      "name": "比亚迪",
-      "score": 70.0,
-      "reason": "核心股票池配置",
-      "change_pct": 0.0
+      "reason": "核心股票池配置"
     }
   ],
   "config": {
