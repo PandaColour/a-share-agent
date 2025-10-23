@@ -39,14 +39,13 @@
     "ai_models": {
       "enable_ai_analysis": true,
       "fallback_to_traditional": true,
-      "default_model": "deepseek_v3",
+      "default_model": "deepseek-v3.2",
       "analyst_assignments": {
-        "fundamental": "deepseek_v3",
-        "technical": "gemini_2.5_pro",
-        "sentiment": "deepseek_r1",
-        "debate": "deepseek-r1-0528",
-        "bull_researcher": "deepseek-r1-0528",
-        "bear_researcher": "deepseek_v3"
+        "fundamental": "deepseek-v3.1",
+        "technical": "deepseek-v3.2",
+        "sentiment": "deepseek-v3.1",
+        "bull_researcher": "deepseek-v3.1",
+        "bear_researcher": "deepseek-v3.2"
       },
       "models": {
         "deepseek-r1-0528": {
@@ -57,7 +56,7 @@
             "endpoint": "https://deepbank-llm.daikuan.qihoo.net/v1/chat/completions",
             "headers": {
               "Content-Type": "application/json",
-              "Authorization": "Bearer sk-7276baa7-671a-4863-9ee2-3d6742b8e18a"
+              "Authorization": "Bearer sk-3b7b976b-cd42-47c1-b886-e8fbeb3d3b05"
             },
             "request_format": "openai",
             "model": "360/deepseek-r1-0528",
@@ -73,7 +72,7 @@
             "endpoint": "https://deepbank-llm.daikuan.qihoo.net/v1/chat/completions",
             "headers": {
               "Content-Type": "application/json",
-              "Authorization": "Bearer sk-9b16d968-b7b4-4978-9116-47784504f4e8"
+              "Authorization": "Bearer sk-3b7b976b-cd42-47c1-b886-e8fbeb3d3b05"
             },
             "request_format": "openai",
             "model": "360/deepseek-v3-250324",
@@ -89,7 +88,7 @@
             "endpoint": "https://deepbank-llm.daikuan.qihoo.net/v1/chat/completions",
             "headers": {
               "Content-Type": "application/json",
-              "Authorization": "Bearer sk-9b16d968-b7b4-4978-9116-47784504f4e8"
+              "Authorization": "Bearer sk-3b7b976b-cd42-47c1-b886-e8fbeb3d3b05"
             },
             "request_format": "openai",
             "model": "google/gemini-2.5-pro",
@@ -105,7 +104,7 @@
             "endpoint": "https://deepbank-llm.daikuan.qihoo.net/v1/chat/completions",
             "headers": {
               "Content-Type": "application/json",
-              "Authorization": "Bearer sk-9b16d968-b7b4-4978-9116-47784504f4e8"
+              "Authorization": "Bearer sk-3b7b976b-cd42-47c1-b886-e8fbeb3d3b05"
             },
             "request_format": "openai",
             "model": "360/deepseek-r1",
@@ -121,10 +120,44 @@
             "endpoint": "https://deepbank-llm.daikuan.qihoo.net/v1/chat/completions",
             "headers": {
               "Content-Type": "application/json",
-              "Authorization": "Bearer sk-9b16d968-b7b4-4978-9116-47784504f4e8"
+              "Authorization": "Bearer sk-3b7b976b-cd42-47c1-b886-e8fbeb3d3b05"
             },
             "request_format": "openai",
             "model": "360/360-glm-4.5",
+            "max_tokens": 2048,
+            "temperature": 0.3
+          }
+        },
+
+        "deepseek-v3.2": {
+          "name": "360/deepseek-v3.2",
+          "description": "360/deepseek-v3.2",
+          "type": "custom_http",
+          "config": {
+            "endpoint": "https://deepbank-llm.daikuan.qihoo.net/v1/chat/completions",
+            "headers": {
+              "Content-Type": "application/json",
+              "Authorization": "Bearer sk-3b7b976b-cd42-47c1-b886-e8fbeb3d3b05"
+            },
+            "request_format": "openai",
+            "model": "360/deepseek-v3.2",
+            "max_tokens": 2048,
+            "temperature": 0.3
+          }
+        },
+
+        "deepseek-v3.1": {
+          "name": "360/deepseek-v3.1",
+          "description": "360/deepseek-v3.1",
+          "type": "custom_http",
+          "config": {
+            "endpoint": "https://deepbank-llm.daikuan.qihoo.net/v1/chat/completions",
+            "headers": {
+              "Content-Type": "application/json",
+              "Authorization": "Bearer sk-3b7b976b-cd42-47c1-b886-e8fbeb3d3b05"
+            },
+            "request_format": "openai",
+            "model": "360/deepseek-v3.1",
             "max_tokens": 2048,
             "temperature": 0.3
           }
@@ -205,7 +238,7 @@
     "filters": {
       "description": "全局基础过滤器（应用于所有股票）",
       "enable_price_limits": true,
-      "price_limit_min": 15.0,
+      "price_limit_min": 0.0,
       "price_limit_max": 10000.0,
       "min_market_cap": 1000000000,
       "exclude_st": true,
