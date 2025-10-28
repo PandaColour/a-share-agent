@@ -1,0 +1,26 @@
+{
+  "stocks": [
+    {
+      "symbol": "600010.SH",
+      "name": "包钢股份"
+    },
+    {
+      "symbol": "603993.SH",
+      "name": "洛阳钼业"
+    },
+    {
+      "symbol": "600362.SH",
+      "name": "江西铜业"
+    },
+    {
+      "symbol": "600183.SH",
+      "name": "生益科技"
+    },
+    {
+      "symbol": "002594.SZ",
+      "name": "比亚迪"
+    }
+  ],
+  "description": "固定股票列表配置文件，用于fixed_main.py",
+  "last_updated": "2025-10-24"
+}

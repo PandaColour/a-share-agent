@@ -122,8 +122,8 @@ class SimpleBacktestEngine:
                 logger.warning(f"⚠️ 无法解析目录名: {analysis_dir.name}")
                 continue
 
-            # 读取analysis_detailed.json
-            analysis_file = analysis_dir / "analysis_detailed.json"
+            # 读取analysis_legacy.json
+            analysis_file = analysis_dir / "analysis_legacy.json"
             if not analysis_file.exists():
                 continue
 
