@@ -331,7 +331,7 @@ class MultiSourceDataProvider:
         
         return indicators
     
-    def get_minute_data(self, symbol: str, period: str = "5", days: int = 3) -> pd.DataFrame:
+    def get_minute_data(self, symbol: str, period: str = "5", days: int = 10) -> pd.DataFrame:
         """
         获取分钟级数据（支持多数据源故障转移）
 
@@ -412,7 +412,7 @@ class MultiSourceDataProvider:
             intraday_data = pd.DataFrame()
             if include_intraday:
                 try:
-                    intraday_data = self.get_minute_data(symbol, period="5", days=3)
+                    intraday_data = self.get_minute_data(symbol, period="5", days=10)
                     if not intraday_data.empty:
                         logger.debug(f"✅ 获取到{symbol}的5分钟数据: {len(intraday_data)}条记录")
                     else:
@@ -1066,7 +1066,7 @@ class AkShareSource(DataSourceBase):
         logger.debug(f"AkShare标准化后列名 {symbol}: {data.columns.tolist()}")
         return data
     
-    def get_minute_data(self, symbol: str, period: str = "5", days: int = 3) -> pd.DataFrame:
+    def get_minute_data(self, symbol: str, period: str = "5", days: int = 10) -> pd.DataFrame:
         """获取分钟级数据
 
         Args:

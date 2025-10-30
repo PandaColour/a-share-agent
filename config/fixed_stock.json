@@ -19,6 +19,10 @@
     {
       "symbol": "002594.SZ",
       "name": "比亚迪"
+    },
+    {
+      "symbol": "600376.SH",
+      "name": "首开股份"
     }
   ],
   "description": "固定股票列表配置文件，用于fixed_main.py",
