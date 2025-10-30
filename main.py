@@ -110,6 +110,11 @@ try:
     from agents.portfolio_manager import PortfolioManager
     from data.data_provider import AShareDataProvider
     from utils.decision import TradingDecision
+    from utils.consecutive_change_calculator import (
+        calculate_consecutive_changes,
+        format_consecutive_days,
+        format_consecutive_change
+    )
 except ImportError as e:
     print(f"导入模块失败: {e}")
     print("请确保所有依赖文件都已正确创建")
@@ -651,7 +656,12 @@ class AShareTradingAgentsSystem:
                 change_display = f"{change_sign}{decision.daily_change_percent:.2f}%"
             else:
                 change_display = "0.00%"
-            
+
+            # 计算连续涨跌统计
+            consecutive_stats = calculate_consecutive_changes(data)
+            consecutive_days_display = format_consecutive_days(consecutive_stats['consecutive_days'])
+            consecutive_change_display = format_consecutive_change(consecutive_stats['consecutive_change'])
+
             result = {
                 "股票代码": symbol,
                 "股票名称": name,
@@ -662,6 +672,8 @@ class AShareTradingAgentsSystem:
                 "当日最高": f"{decision.daily_high:.2f}元",
                 "当日最低": f"{decision.daily_low:.2f}元",
                 "当日涨跌": change_display,
+                "连续涨跌日": consecutive_days_display,
+                "连续涨跌幅度": consecutive_change_display,
                 "分析时间": decision.timestamp,
                 "决策理由": decision.reason,
                 "分析师详情": {
@@ -1220,18 +1232,20 @@ class AShareTradingAgentsSystem:
         
         # 详细结果表格
         print(f"\n详细分析结果:")
-        print("-" * 150)
-        print(f"{'股票名称':<8} {'代码':<12} {'建议':<6} {'信心度':<8} {'当前价格':<10} {'涨跌幅':<10} {'风险':<6} {'决策理由':<30}")
-        print("-" * 150)
+        print("-" * 180)
+        print(f"{'股票名称':<8} {'代码':<12} {'建议':<6} {'信心度':<8} {'当前价格':<10} {'涨跌幅':<10} {'连续日':<10} {'连续幅度':<12} {'风险':<6} {'决策理由':<30}")
+        print("-" * 180)
 
         for result in results:
             reason = result['决策理由'][:25] + "..." if len(result['决策理由']) > 25 else result['决策理由']
+            consecutive_days = result.get('连续涨跌日', 'N/A')
+            consecutive_change = result.get('连续涨跌幅度', 'N/A')
 
             print(f"{result['股票名称']:<8} {result['股票代码']:<12} {result['操作建议']:<6} "
                   f"{result['信心度']:<8} {result['当前价格']:<10} "
-                  f"{result['当日涨跌']:<10} {result['风险等级']:<6} {reason:<30}")
+                  f"{result['当日涨跌']:<10} {consecutive_days:<10} {consecutive_change:<12} {result['风险等级']:<6} {reason:<30}")
 
-        print("-" * 150)
+        print("-" * 180)
         print(f"共分析 {len(results)} 只股票，分析时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         
         # 保存结果
