@@ -9,6 +9,7 @@ import sys
 import os
 
 from .base_analyst import BaseAnalyst
+from utils.consecutive_change_calculator import calculate_consecutive_changes
 
 # 添加src路径到系统路径
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -291,10 +292,49 @@ class TechnicalAnalyst(BaseAnalyst):
         analysis["confidence"] += trend_analysis["adjustment"]
         analysis["reasoning"].extend(trend_analysis["reasons"])
         analysis["trend_strength"] = trend_analysis["strength"]
-        
+
+        # 连续涨跌分析
+        consecutive_stats = calculate_consecutive_changes(data)
+        analysis["consecutive_days"] = consecutive_stats["consecutive_days"]
+        analysis["consecutive_change"] = consecutive_stats["consecutive_change"]
+        analysis["consecutive_change_amount"] = consecutive_stats["consecutive_change_amount"]
+
+        # 添加连续涨跌的分析说明
+        if consecutive_stats["consecutive_days"] > 0:
+            analysis["reasoning"].append(
+                f"连续上涨{consecutive_stats['consecutive_days']}天，"
+                f"累计涨幅{consecutive_stats['consecutive_change']:.2f}%"
+            )
+        elif consecutive_stats["consecutive_days"] < 0:
+            analysis["reasoning"].append(
+                f"连续下跌{abs(consecutive_stats['consecutive_days'])}天，"
+                f"累计跌幅{consecutive_stats['consecutive_change']:.2f}%"
+            )
+
+        # 计算最近10天和30天的上涨天数
+        rising_days_10 = self._calculate_rising_days(data, 10)
+        rising_days_30 = self._calculate_rising_days(data, 30)
+        analysis["rising_days_10"] = rising_days_10
+        analysis["rising_days_30"] = rising_days_30
+
+        # 添加上涨天数的分析说明
+        if rising_days_10 >= 7:
+            analysis["reasoning"].append(f"最近10天中有{rising_days_10}天上涨，短期趋势向好")
+            analysis["confidence"] += 0.05
+        elif rising_days_10 <= 3:
+            analysis["reasoning"].append(f"最近10天中仅{rising_days_10}天上涨，短期趋势偏弱")
+            analysis["confidence"] -= 0.05
+
+        if rising_days_30 >= 20:
+            analysis["reasoning"].append(f"最近30天中有{rising_days_30}天上涨，中期趋势强劲")
+            analysis["confidence"] += 0.08
+        elif rising_days_30 <= 10:
+            analysis["reasoning"].append(f"最近30天中仅{rising_days_30}天上涨，中期趋势疲软")
+            analysis["confidence"] -= 0.08
+
         # 确保信心度在合理范围内
         analysis["confidence"] = self._ensure_confidence_range(analysis["confidence"])
-        
+
         return analysis
     
     def _ai_analysis(self, symbol: str, data: pd.DataFrame, info: Dict, 
@@ -455,7 +495,12 @@ class TechnicalAnalyst(BaseAnalyst):
             # 增强分析指标
             multi_timeframe_consistency=enhanced_data.get('multi_timeframe_consistency', 'N/A'),
             volume_price_divergence=enhanced_data.get('volume_price_divergence', 'N/A'),
-            pattern_recognition=enhanced_data.get('pattern_recognition', 'N/A')
+            pattern_recognition=enhanced_data.get('pattern_recognition', 'N/A'),
+            # 连续涨跌统计
+            consecutive_days=traditional_analysis.get('consecutive_days', 0),
+            consecutive_change=traditional_analysis.get('consecutive_change', 0.0),
+            rising_days_10=traditional_analysis.get('rising_days_10', 0),
+            rising_days_30=traditional_analysis.get('rising_days_30', 0)
         )
         
         # 调用AI模型
@@ -1073,3 +1118,43 @@ class TechnicalAnalyst(BaseAnalyst):
             'volume_price_divergence': 'N/A',
             'pattern_recognition': 'N/A'
         }
+
+    def _calculate_rising_days(self, data: pd.DataFrame, days: int) -> int:
+        """
+        计算最近N天的上涨天数
+
+        Args:
+            data: 股票历史数据 DataFrame，必须包含 'Close' 列
+            days: 要统计的天数
+
+        Returns:
+            int: 上涨的天数
+        """
+        try:
+            if data is None or data.empty or 'Close' not in data.columns:
+                logger.warning(f"数据为空或缺少Close列，无法计算最近{days}天上涨天数")
+                return 0
+
+            # 确保数据按日期排序
+            if not data.index.is_monotonic_increasing:
+                data = data.sort_index()
+
+            # 至少需要2天的数据
+            if len(data) < 2:
+                logger.warning(f"数据少于2天，无法计算最近{days}天上涨天数")
+                return 0
+
+            # 取最近N天的数据
+            recent_data = data.tail(min(days, len(data)))
+
+            # 计算每日涨跌
+            daily_changes = recent_data['Close'].diff()
+
+            # 统计上涨天数（去除第一个NaN值）
+            rising_days = (daily_changes > 0).sum()
+
+            return int(rising_days)
+
+        except Exception as e:
+            logger.error(f"计算最近{days}天上涨天数失败: {e}")
+            return 0

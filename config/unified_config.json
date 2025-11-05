@@ -56,7 +56,7 @@
             "endpoint": "https://deepbank-llm.daikuan.qihoo.net/v1/chat/completions",
             "headers": {
               "Content-Type": "application/json",
-              "Authorization": "Bearer sk-3b7b976b-cd42-47c1-b886-e8fbeb3d3b05"
+              "Authorization": "Bearer sk-9228b2e2-5bdd-4083-8b9b-1fc7c32952f2"
             },
             "request_format": "openai",
             "model": "360/deepseek-r1-0528",
@@ -72,26 +72,10 @@
             "endpoint": "https://deepbank-llm.daikuan.qihoo.net/v1/chat/completions",
             "headers": {
               "Content-Type": "application/json",
-              "Authorization": "Bearer sk-3b7b976b-cd42-47c1-b886-e8fbeb3d3b05"
+              "Authorization": "Bearer sk-9228b2e2-5bdd-4083-8b9b-1fc7c32952f2"
             },
             "request_format": "openai",
             "model": "360/deepseek-v3-250324",
-            "max_tokens": 2048,
-            "temperature": 0.3
-          }
-        },
-        "gemini_2.5_pro": {
-          "name": "gemini-2.5-pro",
-          "description": "google/gemini-2.5-pro",
-          "type": "custom_http",
-          "config": {
-            "endpoint": "https://deepbank-llm.daikuan.qihoo.net/v1/chat/completions",
-            "headers": {
-              "Content-Type": "application/json",
-              "Authorization": "Bearer sk-3b7b976b-cd42-47c1-b886-e8fbeb3d3b05"
-            },
-            "request_format": "openai",
-            "model": "google/gemini-2.5-pro",
             "max_tokens": 2048,
             "temperature": 0.3
           }
@@ -104,7 +88,7 @@
             "endpoint": "https://deepbank-llm.daikuan.qihoo.net/v1/chat/completions",
             "headers": {
               "Content-Type": "application/json",
-              "Authorization": "Bearer sk-3b7b976b-cd42-47c1-b886-e8fbeb3d3b05"
+              "Authorization": "Bearer sk-9228b2e2-5bdd-4083-8b9b-1fc7c32952f2"
             },
             "request_format": "openai",
             "model": "360/deepseek-r1",
@@ -112,23 +96,6 @@
             "temperature": 0.3
           }
         },
-        "glm-4.51": {
-          "name": "360/360-glm-4.5",
-          "description": "360/360-glm-4.5",
-          "type": "custom_http",
-          "config": {
-            "endpoint": "https://deepbank-llm.daikuan.qihoo.net/v1/chat/completions",
-            "headers": {
-              "Content-Type": "application/json",
-              "Authorization": "Bearer sk-3b7b976b-cd42-47c1-b886-e8fbeb3d3b05"
-            },
-            "request_format": "openai",
-            "model": "360/360-glm-4.5",
-            "max_tokens": 2048,
-            "temperature": 0.3
-          }
-        },
-
         "deepseek-v3.2": {
           "name": "360/deepseek-v3.2",
           "description": "360/deepseek-v3.2",
@@ -137,7 +104,7 @@
             "endpoint": "https://deepbank-llm.daikuan.qihoo.net/v1/chat/completions",
             "headers": {
               "Content-Type": "application/json",
-              "Authorization": "Bearer sk-3b7b976b-cd42-47c1-b886-e8fbeb3d3b05"
+              "Authorization": "Bearer sk-9228b2e2-5bdd-4083-8b9b-1fc7c32952f2"
             },
             "request_format": "openai",
             "model": "360/deepseek-v3.2",
@@ -154,7 +121,7 @@
             "endpoint": "https://deepbank-llm.daikuan.qihoo.net/v1/chat/completions",
             "headers": {
               "Content-Type": "application/json",
-              "Authorization": "Bearer sk-3b7b976b-cd42-47c1-b886-e8fbeb3d3b05"
+              "Authorization": "Bearer sk-9228b2e2-5bdd-4083-8b9b-1fc7c32952f2"
             },
             "request_format": "openai",
             "model": "360/deepseek-v3.1",
@@ -191,7 +158,7 @@
       
       "technical": {
         "system_prompt": "📈 你是一位具有15年经验的专业技术分析师，精通中国A股市场技术分析。\n\n⚠️ 绝对强制要求：\n🔴 必须基于真实技术数据进行分析，严禁假设或编造任何指标数值\n🔴 所有分析内容必须使用中文\n🔴 操作建议必须使用中文：强烈买入、买入、持有、卖出、强烈卖出\n🔴 绝对不允许使用英文：buy、hold、sell等\n\n💪 专业技能：\n- 多时间框架技术分析（日线、周线、月线）\n- 经典图表形态识别（头肩顶底、双顶双底、三角形等）\n- 趋势线和支撑阻力位精准定位\n- 技术指标综合运用和背离分析\n- 量价关系深度解读\n- A股特有的技术特征和市场节奏把握\n\n🎯 分析框架：\n- 必须识别主要趋势方向和强度\n- 必须提供关键支撑阻力位（具体价格）\n- 必须给出具体的买卖点位建议\n- 必须评估短中期风险和机会\n- 必须考虑成交量配合情况",
-        "user_prompt": "请对股票{symbol}进行专业技术分析（多维度增强框架）：\n\n**价格数据：**\n- 当前价格：{current_price}元\n- 今日最高：{daily_high}元\n- 今日最低：{daily_low}元\n- 涨跌幅：{daily_change}%\n\n**日线技术指标：**\n- 日线MA5：{daily_ma5}元\n- 日线MA20：{daily_ma20}元\n- 日线RSI(14)：{daily_rsi}\n- 日线MACD：{daily_macd}，信号线：{daily_macd_signal}，柱状图：{daily_macd_histogram}\n- 日线KDJ：K={daily_kdj_k}，D={daily_kdj_d}，J={daily_kdj_j}\n- 日线换手率：{daily_turnover_rate}%\n- 日线量价关系：{daily_volume_price_trend}\n- 日线波动率：{daily_volatility}%\n\n**5分钟技术指标：**\n- 短期MA5：{intraday_ma5}元\n- 短期MA20：{intraday_ma20}元\n- 短期RSI(14)：{intraday_rsi}\n- 短期MACD：{intraday_macd}\n- 短期成交量放大：{intraday_volume_ratio}倍\n- 短期动量：{intraday_momentum}\n- 短期波动率：{intraday_volatility}%\n\n**融合指标：**\n- 趋势一致性：{trend_consistency}\n- 波动率预警：{volatility_alert}\n- 动量背离：{momentum_divergence}\n- 成交量放大：{volume_amplification}倍\n- 风险级别：{risk_level}\n- 短期动量：{short_term_momentum}\n\n**🎯 市场相关性分析**（新增）：\n- 市场Beta系数：{market_beta}\n- 与沪深300相关性：{hs300_correlation}\n- 行业技术同步性：{sector_tech_sync}\n- 系统性技术风险：{systematic_tech_risk}%\n\n**🤖 AI技术因子**（新增）：\n- AI因子综合评分：{ai_factor_score}\n- 主要AI信号：{top_ai_factors}\n- AI置信度：{ai_confidence}%\n- 因子权重分布：{factor_weights}\n\n**📊 增强分析指标**：\n- 多时间框架一致性：{multi_timeframe_consistency}\n- 量价背离预警：{volume_price_divergence}\n- 技术形态识别：{pattern_recognition}\n\n**输出格式：**\n```\n🎯 技术面评级：[强烈看涨🚀/看涨📈/中性⚪/看跌📉/强烈看跌🔻]\n💡 操作建议：[强烈买入/买入/持有/卖出/强烈卖出]\n📍 关键点位：支撑{daily_ma20}元，阻力{daily_ma5}元\n📊 Beta风险：{market_beta}（系统性技术风险{systematic_tech_risk}%）\n🤖 AI增强：{ai_factor_score}分，置信度{ai_confidence}%\n🔄 行业同步：{sector_tech_sync}\n\n📈 多时间框架信号：\n- 日线信号：[基于日线指标的主要信号]\n- 短期信号：[基于5分钟数据的短期信号]\n- AI因子信号：[基于AI因子的技术信号]\n\n🎯 融合判断：\n- 传统技术：[基于经典技术指标]\n- AI增强：[基于AI因子的增强判断]\n- 市场相关性：[基于Beta和相关性的市场风险]\n- 最终建议：[综合所有维度的最终判断]\n\n⚠️ 风险提示：\n- 技术风险：[基于融合指标的技术风险]\n- 系统性风险：Beta={market_beta}，系统性风险{systematic_tech_risk}%\n- AI因子风险：[基于AI分析的潜在风险]\n- 行业技术风险：{sector_tech_sync}\n```\n\n**🎯 增强分析要求**：\n1. **多层次技术分析**：优先日线趋势，结合5分钟短期信号，融入AI因子判断\n2. **市场相关性整合**：重点关注Beta={market_beta}对技术信号的影响\n3. **AI因子权重**：AI评分{ai_factor_score}分作为技术分析的重要补充\n4. **风险级别响应**：波动率预警critical时必须特别注明，成交量放大>3倍重点关注\n5. **行业技术对比**：结合{sector_tech_sync}判断个股技术强度\n6. **系统性风险评估**：基于{systematic_tech_risk}%评估市场整体技术风险"
+        "user_prompt": "请对股票{symbol}进行专业技术分析（多维度增强框架）：\n\n**价格数据：**\n- 当前价格：{current_price}元\n- 今日最高：{daily_high}元\n- 今日最低：{daily_low}元\n- 涨跌幅：{daily_change}%\n\n**日线技术指标：**\n- 日线MA5：{daily_ma5}元\n- 日线MA20：{daily_ma20}元\n- 日线RSI(14)：{daily_rsi}\n- 日线MACD：{daily_macd}，信号线：{daily_macd_signal}，柱状图：{daily_macd_histogram}\n- 日线KDJ：K={daily_kdj_k}，D={daily_kdj_d}，J={daily_kdj_j}\n- 日线换手率：{daily_turnover_rate}%\n- 日线量价关系：{daily_volume_price_trend}\n- 日线波动率：{daily_volatility}%\n\n**5分钟技术指标：**\n- 短期MA5：{intraday_ma5}元\n- 短期MA20：{intraday_ma20}元\n- 短期RSI(14)：{intraday_rsi}\n- 短期MACD：{intraday_macd}\n- 短期成交量放大：{intraday_volume_ratio}倍\n- 短期动量：{intraday_momentum}\n- 短期波动率：{intraday_volatility}%\n\n**融合指标：**\n- 趋势一致性：{trend_consistency}\n- 波动率预警：{volatility_alert}\n- 动量背离：{momentum_divergence}\n- 成交量放大：{volume_amplification}倍\n- 风险级别：{risk_level}\n- 短期动量：{short_term_momentum}\n\n**🎯 市场相关性分析**（新增）：\n- 市场Beta系数：{market_beta}\n- 与沪深300相关性：{hs300_correlation}\n- 行业技术同步性：{sector_tech_sync}\n- 系统性技术风险：{systematic_tech_risk}%\n\n**🤖 AI技术因子**（新增）：\n- AI因子综合评分：{ai_factor_score}\n- 主要AI信号：{top_ai_factors}\n- AI置信度：{ai_confidence}%\n- 因子权重分布：{factor_weights}\n\n**📊 增强分析指标**：\n- 多时间框架一致性：{multi_timeframe_consistency}\n- 量价背离预警：{volume_price_divergence}\n- 技术形态识别：{pattern_recognition}\n\n**📈 连续涨跌统计**（新增）：\n- 连续涨跌天数：{consecutive_days}天\n- 连续涨跌幅度：{consecutive_change}%\n- 最近10天上涨天数：{rising_days_10}天\n- 最近30天上涨天数：{rising_days_30}天\n\n**输出格式：**\n```\n🎯 技术面评级：[强烈看涨🚀/看涨📈/中性⚪/看跌📉/强烈看跌🔻]\n💡 操作建议：[强烈买入/买入/持有/卖出/强烈卖出]\n📍 关键点位：支撑{daily_ma20}元，阻力{daily_ma5}元\n📊 Beta风险：{market_beta}（系统性技术风险{systematic_tech_risk}%）\n🤖 AI增强：{ai_factor_score}分，置信度{ai_confidence}%\n🔄 行业同步：{sector_tech_sync}\n📈 连续统计：{consecutive_days}天连续涨跌，累计{consecutive_change}%；最近10天上涨{rising_days_10}天，30天上涨{rising_days_30}天\n\n📈 多时间框架信号：\n- 日线信号：[基于日线指标的主要信号]\n- 短期信号：[基于5分钟数据的短期信号]\n- AI因子信号：[基于AI因子的技术信号]\n\n🎯 融合判断：\n- 传统技术：[基于经典技术指标]\n- AI增强：[基于AI因子的增强判断]\n- 市场相关性：[基于Beta和相关性的市场风险]\n- 最终建议：[综合所有维度的最终判断]\n\n⚠️ 风险提示：\n- 技术风险：[基于融合指标的技术风险]\n- 系统性风险：Beta={market_beta}，系统性风险{systematic_tech_risk}%\n- AI因子风险：[基于AI分析的潜在风险]\n- 行业技术风险：{sector_tech_sync}\n```\n\n**🎯 增强分析要求**：\n1. **多层次技术分析**：优先日线趋势，结合5分钟短期信号，融入AI因子判断\n2. **市场相关性整合**：重点关注Beta={market_beta}对技术信号的影响\n3. **AI因子权重**：AI评分{ai_factor_score}分作为技术分析的重要补充\n4. **风险级别响应**：波动率预警critical时必须特别注明，成交量放大>3倍重点关注\n5. **行业技术对比**：结合{sector_tech_sync}判断个股技术强度\n6. **系统性风险评估**：基于{systematic_tech_risk}%评估市场整体技术风险"
       },
       
       "sentiment": {
@@ -204,10 +171,10 @@
   "stock_selection": {
     "mode": "dynamic",
     "config_count": 5,
-    "longhu_count": 5,
-    "social_count": 5,
+    "longhu_count": 10,
+    "social_count": 10,
     "potential_count": 5,
-    "max_total_stocks": 10,
+    "max_total_stocks": 40,
     "enable_longhu": true,
     "enable_social": true,
     "enable_potential": true,
