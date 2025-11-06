@@ -1,0 +1,30 @@
+{
+  "description": "持仓股票配置文件",
+  "version": "1.0",
+  "last_updated": "2025-11-05",
+  "hold_stocks": [
+    {
+      "symbol": "000797.SZ",
+      "name": "中国武夷",
+      "purchase_date": "2025-11-05",
+      "cost": 3.36
+    },
+    {
+      "symbol": "603686.SH",
+      "name": "福龙马",
+      "purchase_date": "2025-11-05",
+      "cost": 35.125
+    },
+    {
+      "symbol": "000599.SZ",
+      "name": "青岛双星",
+      "purchase_date": "2025-10-31",
+      "cost": 6.667
+    }
+  ],
+  "config": {
+    "max_hold_stocks": 10,
+    "stock_validation": true,
+    "track_performance": true
+  }
+}
