@@ -50,7 +50,13 @@
       "Bash(pip show:*)",
       "Bash(playwright install:*)",
       "Bash(.venv/Scripts/python.exe -m pip list:*)",
-      "Bash(pip search:*)"
+      "Bash(pip search:*)",
+      "Bash(mv:*)",
+      "Bash(findstr:*)",
+      "Bash(test_output.log)",
+      "Bash(test_hold_output_fixed.log)",
+      "Bash(tee:*)",
+      "Bash(hold_mode_test.log)"
     ],
     "deny": [],
     "ask": []

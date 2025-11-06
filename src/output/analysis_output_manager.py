@@ -22,6 +22,7 @@ class AnalysisOutputManager:
     def __init__(self):
         """初始化输出管理器"""
         self.logger = logging.getLogger(__name__)
+        self.output_dir = None  # 输出目录，可在系统初始化后设置
 
     def format_analysis_result(
         self,
@@ -227,6 +228,61 @@ class AnalysisOutputManager:
 
         return price_targets
 
+    def _sort_results(self, results: List[Dict]) -> List[Dict]:
+        """
+        对结果进行排序：按操作建议分组，组内按信心度从高到低、当前价格从高到低排序
+
+        Args:
+            results: 分析结果列表
+
+        Returns:
+            排序后的结果列表
+        """
+        def parse_confidence(confidence_str):
+            """解析信心度字符串为数值"""
+            try:
+                if isinstance(confidence_str, str):
+                    # 移除百分号并转换为浮点数
+                    return float(confidence_str.replace('%', '')) / 100
+                elif isinstance(confidence_str, (int, float)):
+                    return confidence_str
+                return 0.0
+            except:
+                return 0.0
+
+        def parse_price(price_str):
+            """解析价格字符串为数值"""
+            try:
+                if isinstance(price_str, str):
+                    # 移除"元"字并转换为浮点数
+                    return float(price_str.replace('元', ''))
+                elif isinstance(price_str, (int, float)):
+                    return price_str
+                return 0.0
+            except:
+                return 0.0
+
+        # 定义操作建议的优先级顺序
+        action_priority = {
+            '买入': 1,
+            '卖出': 2,
+            '持有': 3,
+            '跳过': 4,
+            '错误': 5
+        }
+
+        # 排序：优先按操作建议分组，组内按信心度降序、价格降序
+        sorted_results = sorted(
+            results,
+            key=lambda x: (
+                action_priority.get(x.get('操作建议', '持有'), 3),
+                parse_confidence(x.get('信心度', '0%')) * -1,  # 信心度降序
+                parse_price(x.get('当前价格', '0元')) * -1   # 价格降序
+            )
+        )
+
+        return sorted_results
+
     def print_analysis_results(self, results: List[Dict]):
         """
         打印分析结果
@@ -238,10 +294,13 @@ class AnalysisOutputManager:
         print("A股量化交易系统 - TradingAgents多智能体分析结果")
         print("="*80)
 
+        # 对结果进行排序
+        sorted_results = self._sort_results(results)
+
         # 统计各种操作建议
-        actions = [r["操作建议"] for r in results if r["操作建议"] not in ["错误", "跳过"]]
-        skipped_actions = [r for r in results if r["操作建议"] == "跳过"]
-        error_actions = [r for r in results if r["操作建议"] == "错误"]
+        actions = [r["操作建议"] for r in sorted_results if r["操作建议"] not in ["错误", "跳过"]]
+        skipped_actions = [r for r in sorted_results if r["操作建议"] == "跳过"]
+        error_actions = [r for r in sorted_results if r["操作建议"] == "错误"]
 
         if actions:
             action_counts = {}
@@ -249,22 +308,35 @@ class AnalysisOutputManager:
                 action_counts[action] = actions.count(action)
 
             print(f"\n操作建议统计 (已分析股票):")
-            for action, count in action_counts.items():
-                percentage = count / len(actions) * 100
-                print(f"  {action}: {count} 只股票 ({percentage:.1f}%)")
+            # 按优先级顺序显示统计
+            action_priority = ['买入', '卖出', '持有']
+            for action in action_priority:
+                if action in action_counts:
+                    count = action_counts[action]
+                    percentage = count / len(actions) * 100
+                    print(f"  {action}: {count} 只股票 ({percentage:.1f}%)")
 
         if skipped_actions:
             print(f"\n跳过统计: {len(skipped_actions)} 只股票 (价格过高)")
         if error_actions:
             print(f"\n错误统计: {len(error_actions)} 只股票 (分析失败)")
 
-        # 详细结果表格
-        print(f"\n详细分析结果:")
+        # 详细结果表格 - 按分组显示
+        print(f"\n详细分析结果 (按操作建议分组，组内按信心度和价格排序):")
         print("-" * 180)
         print(f"{'股票名称':<8} {'代码':<12} {'建议':<6} {'信心度':<8} {'当前价格':<10} {'涨跌幅':<10} {'连续日':<10} {'连续幅度':<12} {'风险':<6} {'决策理由':<30}")
         print("-" * 180)
 
-        for result in results:
+        # 按操作建议分组显示
+        current_action = None
+        for result in sorted_results:
+            action = result['操作建议']
+
+            # 如果是新组，添加组标题
+            if action != current_action and action not in ['错误', '跳过']:
+                print(f"\n【{action}】({[r['操作建议'] for r in sorted_results].count(action)}只):")
+                current_action = action
+
             reason = result['决策理由'][:25] + "..." if len(result['决策理由']) > 25 else result['决策理由']
             consecutive_days = result.get('连续涨跌日', 'N/A')
             consecutive_change = result.get('连续涨跌幅度', 'N/A')
@@ -272,6 +344,16 @@ class AnalysisOutputManager:
             print(f"{result['股票名称']:<8} {result['股票代码']:<12} {result['操作建议']:<6} "
                   f"{result['信心度']:<8} {result['当前价格']:<10} "
                   f"{result['当日涨跌']:<10} {consecutive_days:<10} {consecutive_change:<12} {result['风险等级']:<6} {reason:<30}")
+
+        # 单独显示错误和跳过的股票
+        error_or_skipped = [r for r in sorted_results if r['操作建议'] in ['错误', '跳过']]
+        if error_or_skipped:
+            print(f"\n【其他情况】({len(error_or_skipped)}只):")
+            for result in error_or_skipped:
+                reason = result['决策理由'][:25] + "..." if len(result['决策理由']) > 25 else result['决策理由']
+                print(f"{result['股票名称']:<8} {result['股票代码']:<12} {result['操作建议']:<6} "
+                      f"{result['信心度']:<8} {result['当前价格']:<10} "
+                      f"{result['当日涨跌']:<10} {'N/A':<10} {'N/A':<12} {result['风险等级']:<6} {reason:<30}")
 
         print("-" * 180)
         print(f"共分析 {len(results)} 只股票，分析时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
@@ -285,20 +367,39 @@ class AnalysisOutputManager:
             output_dir: 输出目录，默认为 "outputs"
         """
         try:
-            # 创建时间戳文件夹
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            base_output_dir = Path(output_dir)
-            base_output_dir.mkdir(exist_ok=True)
+            # 对结果进行排序
+            sorted_results = self._sort_results(results)
 
-            # 创建本次分析的专用文件夹
-            session_dir = base_output_dir / timestamp
-            session_dir.mkdir(exist_ok=True)
+            # 确定输出目录和时间戳
+            if self.output_dir:
+                # 使用预设的输出目录（both/select模式下由main.py设置）
+                session_dir = Path(self.output_dir)
+                # 从目录名提取时间戳，或使用当前时间
+                dir_name = session_dir.name
+                # 检查是否是时间戳格式 (YYYYMMDD_HHMMSS，长度15，格式为数字_数字)
+                if dir_name and len(dir_name) == 15 and '_' in dir_name:
+                    parts = dir_name.split('_')
+                    if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
+                        timestamp = dir_name
+                    else:
+                        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                else:
+                    # 使用当前时间作为时间戳
+                    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            else:
+                # 创建时间戳文件夹（向后兼容）
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                base_output_dir = Path(output_dir)
+                base_output_dir.mkdir(exist_ok=True)
+                session_dir = base_output_dir / timestamp
+
+            session_dir.mkdir(parents=True, exist_ok=True)
 
             print(f"\n本次分析结果将保存到: {session_dir}")
 
-            # 1. 保存简化版本到CSV（不包含分析师详情）
+            # 1. 保存简化版本到CSV（不包含分析师详情，使用排序后的结果）
             csv_results = []
-            for result in results:
+            for result in sorted_results:
                 csv_result = {k: v for k, v in result.items() if k != "分析师详情"}
                 csv_results.append(csv_result)
 
@@ -307,15 +408,15 @@ class AnalysisOutputManager:
             df.to_csv(csv_filename, index=False, encoding='utf-8-sig')
             print(f"CSV汇总结果: {csv_filename}")
 
-            # 2. 保存完整版本到JSON（包含分析师详情）
+            # 2. 保存完整版本到JSON（包含分析师详情，使用排序后的结果）
             json_filename = session_dir / "analysis_detailed.json"
             with open(json_filename, 'w', encoding='utf-8') as f:
-                json.dump(results, f, ensure_ascii=False, indent=2)
+                json.dump(sorted_results, f, ensure_ascii=False, indent=2)
             print(f"详细JSON结果: {json_filename}")
 
-            # 3. 单独保存分析师详情到专用文件
+            # 3. 单独保存分析师详情到专用文件（使用排序后的结果）
             analyst_details = []
-            for result in results:
+            for result in sorted_results:
                 if "分析师详情" in result:
                     analyst_detail = {
                         "股票代码": result["股票代码"],
@@ -334,21 +435,22 @@ class AnalysisOutputManager:
                 # 生成分析师总结报告
                 self.generate_analyst_summary_report(analyst_details, session_dir, timestamp)
 
-            # 4. 保存兼容性JSON（与原格式相同）
+            # 4. 保存兼容性JSON（使用排序后的结果）
             legacy_json_filename = session_dir / "analysis_legacy.json"
             with open(legacy_json_filename, 'w', encoding='utf-8') as f:
                 json.dump(csv_results, f, ensure_ascii=False, indent=2)
             print(f"兼容格式JSON: {legacy_json_filename}")
 
-            # 5. 创建本次分析的说明文件
-            readme_content = self.generate_session_readme(results, timestamp)
+            # 5. 创建本次分析的说明文件（使用排序后的结果）
+            readme_content = self.generate_session_readme(sorted_results, timestamp)
             readme_filename = session_dir / "README.md"
             with open(readme_filename, 'w', encoding='utf-8') as f:
                 f.write(readme_content)
             print(f"分析说明文档: {readme_filename}")
 
             print(f"\n本次分析完成，所有结果已保存到: {session_dir}")
-            print(f"文件夹包含: CSV汇总、详细JSON、分析师详情、兼容格式、说明文档")
+            print(f"文件夹包含: 排序后CSV汇总、排序后详细JSON、分析师详情、兼容格式、说明文档")
+            print(f"所有文件已按操作建议分组排序，便于查看")
 
         except Exception as e:
             print(f"保存结果失败: {e}")
@@ -456,10 +558,13 @@ class AnalysisOutputManager:
 
 ## 📁 文件说明
 
-### 主要结果文件
-- `analysis_summary.csv` - 📊 Excel可打开的汇总结果表格
-- `analysis_detailed.json` - 📋 包含分析师详情的完整JSON数据
-- `analysis_legacy.json` - 🔄 兼容旧版本格式的JSON数据
+### 主要结果文件（已排序）
+- `analysis_summary.csv` - 📊 Excel可打开的汇总结果表格（按操作建议分组排序）
+- `analysis_detailed.json` - 📋 包含分析师详情的完整JSON数据（已排序）
+- `analysis_legacy.json` - 🔄 兼容旧版本格式的JSON数据（已排序）
+
+### 原始顺序文件（用于对比）
+- `analysis_detailed_original.json` - 📋 原始顺序的详细JSON数据
 
 ### 详细分析文件
 - `analyst_details.json` - 👥 四个智能分析师的详细分析过程
@@ -475,9 +580,22 @@ class AnalysisOutputManager:
 3. **📰 情感面分析师** - 新闻舆情、市场情绪、政策影响
 4. **🤖 AI因子分析师** - 量化因子、模式识别、智能评分
 
+## 🔄 排序说明
+
+本次输出的结果已按以下规则进行排序：
+
+1. **操作建议优先级**: 买入 → 卖出 → 持有 → 跳过 → 错误
+2. **组内信心度排序**: 在每个操作建议组内，按信心度从高到低排序
+3. **组内价格排序**: 在信心度相同的情况下，按当前价格从高到低排序
+
+这种排序方式可以帮助您：
+- 优先查看高信心的买入推荐
+- 快速识别最具投资价值的股票
+- 便于对比同类别股票的表现
+
 ## 💡 使用建议
 
-1. **快速查看**: 打开 `analysis_summary.csv` 查看所有股票的操作建议
+1. **快速查看**: 打开 `analysis_summary.csv` 查看排序后的所有股票操作建议
 2. **详细分析**: 查看 `analysis_detailed.json` 了解具体分析理由
 3. **分析师视角**: 查看 `analyst_details.json` 了解每个分析师的详细观点
 4. **Excel分析**: 将CSV文件导入Excel进行进一步的数据分析和筛选

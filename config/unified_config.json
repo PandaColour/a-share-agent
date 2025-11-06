@@ -171,10 +171,10 @@
   "stock_selection": {
     "mode": "dynamic",
     "config_count": 5,
-    "longhu_count": 10,
-    "social_count": 10,
+    "longhu_count": 5,
+    "social_count": 5,
     "potential_count": 5,
-    "max_total_stocks": 40,
+    "max_total_stocks": 20,
     "enable_longhu": true,
     "enable_social": true,
     "enable_potential": true,

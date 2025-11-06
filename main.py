@@ -356,7 +356,6 @@ class AShareTradingAgentsSystem:
         # 检查是否有分析失败
         if len(analysis_failures) >= 2:  # 如果2个或以上分析失败
             self.logger.warning(f"多个分析模块失败 {symbol}: {', '.join(analysis_failures)}")
-            from utils.decision import TradingDecision
             return TradingDecision(
                 action="分析失败",
                 confidence=0.0,
@@ -1199,22 +1198,109 @@ class AShareTradingAgentsSystem:
         return False
 
 
+def execute_hold_stock_analysis(system, config, main_logger, start_time, output_dir, analysis_results=None):
+    """执行持仓股票分析
+
+    Args:
+        system: 交易系统实例
+        config: 配置对象
+        main_logger: 日志记录器
+        start_time: 开始时间
+        output_dir: 输出目录
+        analysis_results: 已有的分析结果（可选），如果提供则复用数据
+
+    Returns:
+        (analyzed_symbols, hold_results): 已分析的股票代码列表和分析结果
+    """
+    from src.process.hold_stock_process import HoldStockProcess
+
+    print("\n" + "="*60)
+    print("🔍 开始分析持仓股票")
+    print("="*60)
+    main_logger.info("🔍 ================ 持仓分析开始 ================")
+
+    hold_start_time = time.time()
+    hold_results = []  # 存储持仓分析结果
+
+    try:
+        # 初始化持仓分析流程（传入输出目录）
+        hold_process = HoldStockProcess(system, config, output_dir=output_dir)
+
+        # 执行完整流程（如果提供了analysis_results，则使用数据复用模式）
+        result = hold_process.execute_full_process(analysis_results=analysis_results)
+
+        hold_elapsed = time.time() - hold_start_time
+        total_elapsed = time.time() - start_time
+
+        main_logger.info(f"✅ 持仓分析完成，耗时: {hold_elapsed:.2f}秒")
+        main_logger.info(f"⏱️  总耗时: {total_elapsed:.2f}秒")
+
+        if result.get('success'):
+            print(f"\n✅ 持仓分析完成！")
+            print(f"分析耗时: {hold_elapsed:.2f}秒")
+            print(f"CSV文件: {result.get('csv_file', 'N/A')}")
+
+            if analysis_results:
+                print(f"💡 已复用选股分析结果，节省了AI调用")
+
+            # 提取持仓股票代码和分析结果
+            hold_results = result.get('position_analyses', [])
+        else:
+            print(f"\n❌ 持仓分析失败: {result.get('error', '未知错误')}")
+            main_logger.error(f"❌ 持仓分析失败: {result.get('error', '未知错误')}")
+
+    except Exception as e:
+        print(f"\n❌ 持仓分析出错: {e}")
+        main_logger.error(f"❌ 持仓分析出错: {e}")
+        import traceback
+        traceback.print_exc()
+
+    main_logger.info("🏁 ================ 持仓分析完成 ================")
+
+    # 返回已分析的股票代码列表（使用中文字段名"股票代码"）
+    analyzed_symbols = [r.get('股票代码', '') for r in hold_results] if hold_results else []
+    return analyzed_symbols, hold_results
+
+
 def main():
     """主函数"""
     # 设置控制台输出编码
     import sys
+    import argparse
     if hasattr(sys.stdout, 'reconfigure'):
         try:
             sys.stdout.reconfigure(encoding='utf-8')
         except:
             pass
 
+    # 解析命令行参数
+    parser = argparse.ArgumentParser(description='A股量化交易系统')
+    parser.add_argument('--mode', type=str, default='select',
+                       choices=['select', 'hold', 'both'],
+                       help='运行模式: select=选股分析, hold=持仓分析, both=两者都执行')
+    args = parser.parse_args()
+
     # 总体耗时统计开始
     total_start_time = time.time()
     main_logger = logging.getLogger("AShareTradingSystem")
     main_logger.info("🚀 ================ A股量化交易系统启动 ================")
+    main_logger.info(f"📋 运行模式: {args.mode}")
+
+    # 确定输出目录（在系统启动时就确定，避免后续传递）
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    if args.mode == 'hold':
+        # hold 模式：单独的时间戳目录
+        output_dir = os.path.join("outputs", f"holdings_{timestamp}")
+    else:
+        # select 和 both 模式：使用统一的时间戳目录
+        output_dir = os.path.join("outputs", timestamp)
+
+    os.makedirs(output_dir, exist_ok=True)
+    main_logger.info(f"📁 输出目录: {output_dir}")
 
     print("启动基于TradingAgents的A股量化交易系统")
+    print(f"运行模式: {args.mode}")
+    print(f"输出目录: {output_dir}")
     print("="*60)
     
     # 检查依赖
@@ -1235,6 +1321,10 @@ def main():
 
     try:
         system = AShareTradingAgentsSystem()
+        # 设置输出目录（统一输出路径）
+        system.output_manager.output_dir = output_dir
+        main_logger.info(f"📁 系统输出目录设置为: {output_dir}")
+
         phase1_init_time = time.time() - phase1_start_time
         main_logger.info(f"✅ 系统初始化完成，耗时: {phase1_init_time:.2f}秒")
     except Exception as e:
@@ -1293,7 +1383,53 @@ def main():
     phase1_total_time = time.time() - phase1_start_time
     main_logger.info(f"✅ 第一阶段完成，总耗时: {phase1_total_time:.2f}秒")
 
-    # 第二阶段：股票分析
+    # ========== 根据模式执行不同流程 ==========
+    if args.mode == 'hold':
+        # 仅执行持仓分析
+        execute_hold_stock_analysis(system, config, main_logger, total_start_time, output_dir)
+        return
+    elif args.mode == 'both':
+        # both模式：将持仓股票合并到选股列表，然后一起分析
+        print("\n" + "="*60)
+        print("准备合并持仓股票到选股列表")
+        print("="*60)
+
+        try:
+            import json
+            hold_config_path = os.path.join("config", "hold_stock.json")
+            if os.path.exists(hold_config_path):
+                with open(hold_config_path, 'r', encoding='utf-8') as f:
+                    hold_config = json.load(f)
+                    hold_stocks = hold_config.get('hold_stocks', [])
+
+                    # 将持仓股票合并到stock_list（去重）
+                    existing_symbols = set(s[0] for s in stock_list)  # stock_list是元组列表 [(symbol, name), ...]
+                    added_count = 0
+
+                    for stock in hold_stocks:
+                        symbol = stock['symbol']
+                        name = stock['name']
+                        if symbol not in existing_symbols:
+                            stock_list.append((symbol, name))
+                            existing_symbols.add(symbol)
+                            added_count += 1
+
+                    print(f"✅ 已将 {added_count} 只持仓股票加入选股列表")
+                    print(f"📊 当前选股列表共 {len(stock_list)} 只股票（包含 {len(hold_stocks)} 只持仓股票）")
+                    main_logger.info(f"✅ 合并持仓股票: 新增{added_count}只, 总计{len(stock_list)}只")
+            else:
+                print(f"⚠️  未找到持仓配置文件: {hold_config_path}")
+                main_logger.warning(f"未找到持仓配置文件: {hold_config_path}")
+        except Exception as e:
+            print(f"⚠️  读取持仓股票失败: {e}")
+            main_logger.error(f"读取持仓股票失败: {e}")
+
+        print("\n" + "="*60)
+        print("开始统一分析（包含持仓股票）")
+        print("="*60)
+        # 继续执行选股流程（后面的代码）
+
+    # 第二阶段：股票分析（选股模式）
     phase2_start_time = time.time()
     main_logger.info("📈 第二阶段：股票分析开始...")
 
@@ -1324,7 +1460,25 @@ def main():
         main_logger.info(f"📊 分析结果: 成功分析{len(results)}只股票")
 
         system.print_analysis_results(results)
-        
+
+        # ========== both模式：从分析结果中提取持仓股票数据，执行持仓分析 ==========
+        if args.mode == 'both':
+            print("\n" + "="*60)
+            print("第二部分：持仓股票分析（基于已有分析结果）")
+            print("="*60)
+
+            try:
+                # 调用持仓分析，传入已有的分析结果
+                execute_hold_stock_analysis(
+                    system, config, main_logger, total_start_time, output_dir,
+                    analysis_results=results  # 传入已有的分析结果
+                )
+            except Exception as e:
+                print(f"⚠️  持仓分析失败: {e}")
+                main_logger.error(f"持仓分析失败: {e}")
+                import traceback
+                traceback.print_exc()
+
         # 分析完成后进行历史学习
         if system.enable_learning:
             print("\n正在从历史记录中学习...")
@@ -1333,7 +1487,7 @@ def main():
                 print("历史学习完成，已更新分析师权重")
             else:
                 print(f"历史学习失败: {learning_result.get('error', '未知错误')}")
-        
+
         print("\n分析完成！您可以查看输出的CSV和JSON文件获取详细结果。")
 
     except Exception as e:
