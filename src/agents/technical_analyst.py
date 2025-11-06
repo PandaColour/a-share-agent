@@ -293,37 +293,83 @@ class TechnicalAnalyst(BaseAnalyst):
         analysis["reasoning"].extend(trend_analysis["reasons"])
         analysis["trend_strength"] = trend_analysis["strength"]
 
-        # 连续涨跌分析
+        # 连续涨跌分析（增强短期信号）
         consecutive_stats = calculate_consecutive_changes(data)
         analysis["consecutive_days"] = consecutive_stats["consecutive_days"]
         analysis["consecutive_change"] = consecutive_stats["consecutive_change"]
         analysis["consecutive_change_amount"] = consecutive_stats["consecutive_change_amount"]
 
-        # 添加连续涨跌的分析说明
-        if consecutive_stats["consecutive_days"] > 0:
-            analysis["reasoning"].append(
-                f"连续上涨{consecutive_stats['consecutive_days']}天，"
-                f"累计涨幅{consecutive_stats['consecutive_change']:.2f}%"
-            )
-        elif consecutive_stats["consecutive_days"] < 0:
-            analysis["reasoning"].append(
-                f"连续下跌{abs(consecutive_stats['consecutive_days'])}天，"
-                f"累计跌幅{consecutive_stats['consecutive_change']:.2f}%"
-            )
+        # 短期信号评分（新增）
+        short_term_score = 0
 
-        # 计算最近10天和30天的上涨天数
+        # 添加连续涨跌的分析说明（增强版）
+        if consecutive_stats["consecutive_days"] >= 2:
+            consecutive_days = consecutive_stats["consecutive_days"]
+            consecutive_change = consecutive_stats["consecutive_change"]
+
+            if consecutive_days >= 2 and consecutive_change >= 3.0:
+                # 连续2天涨3%以上 → 短期强势信号
+                analysis["reasoning"].append(
+                    f"🚀 连续上涨{consecutive_days}天累计{consecutive_change:.2f}%，短期动量强劲"
+                )
+                short_term_score += 30
+                analysis["confidence"] += 0.15
+
+                if analysis["recommendation"] == "持有":
+                    analysis["recommendation"] = "买入"
+
+            elif consecutive_days >= 3 and consecutive_change >= 5.0:
+                # 连续3天涨5%以上 → 可能过热，谨慎追高
+                analysis["reasoning"].append(
+                    f"⚠️ 连续上涨{consecutive_days}天累计{consecutive_change:.2f}%，可能短期过热"
+                )
+                short_term_score -= 10
+                analysis["confidence"] -= 0.05  # 降低信心度（追高风险）
+
+            elif consecutive_days >= 2:
+                analysis["reasoning"].append(
+                    f"连续上涨{consecutive_days}天，累计涨幅{consecutive_change:.2f}%"
+                )
+
+        elif consecutive_stats["consecutive_days"] <= -2:
+            consecutive_days = abs(consecutive_stats["consecutive_days"])
+            consecutive_change = consecutive_stats["consecutive_change"]
+
+            if consecutive_days >= 3 and consecutive_change <= -8.0:
+                # 连续3天跌8%以上 → 可能超跌反弹机会
+                analysis["reasoning"].append(
+                    f"📉 连续下跌{consecutive_days}天累计{abs(consecutive_change):.2f}%，可能存在超跌反弹机会"
+                )
+                short_term_score += 15
+            else:
+                analysis["reasoning"].append(
+                    f"连续下跌{consecutive_days}天，累计跌幅{abs(consecutive_change):.2f}%"
+                )
+
+        # 计算最近10天和30天的上涨天数（增强权重）
         rising_days_10 = self._calculate_rising_days(data, 10)
         rising_days_30 = self._calculate_rising_days(data, 30)
         analysis["rising_days_10"] = rising_days_10
         analysis["rising_days_30"] = rising_days_30
 
-        # 添加上涨天数的分析说明
+        # 添加上涨天数的分析说明（增强短期信号权重）
         if rising_days_10 >= 7:
+            analysis["reasoning"].append(f"📈 最近10天中有{rising_days_10}天上涨，短期趋势强劲")
+            analysis["confidence"] += 0.10  # 从0.05提升到0.10
+            short_term_score += 20
+
+            if analysis["recommendation"] == "持有":
+                analysis["recommendation"] = "买入"
+
+        elif rising_days_10 >= 5:
             analysis["reasoning"].append(f"最近10天中有{rising_days_10}天上涨，短期趋势向好")
             analysis["confidence"] += 0.05
+            short_term_score += 10
+
         elif rising_days_10 <= 3:
             analysis["reasoning"].append(f"最近10天中仅{rising_days_10}天上涨，短期趋势偏弱")
             analysis["confidence"] -= 0.05
+            short_term_score -= 10
 
         if rising_days_30 >= 20:
             analysis["reasoning"].append(f"最近30天中有{rising_days_30}天上涨，中期趋势强劲")
@@ -331,6 +377,19 @@ class TechnicalAnalyst(BaseAnalyst):
         elif rising_days_30 <= 10:
             analysis["reasoning"].append(f"最近30天中仅{rising_days_30}天上涨，中期趋势疲软")
             analysis["confidence"] -= 0.08
+
+        # 🔥 短期突破信号检测（新增）
+        short_term_breakout = self._detect_short_term_breakout(data, indicators, current_price)
+        if short_term_breakout["signal"]:
+            analysis["reasoning"].extend(short_term_breakout["reasons"])
+            analysis["confidence"] += short_term_breakout["confidence_adjustment"]
+            short_term_score += short_term_breakout["score"]
+
+            if short_term_breakout["signal"] == "strong_buy":
+                analysis["recommendation"] = "强烈买入"
+
+        # 记录短期评分
+        analysis["short_term_score"] = short_term_score
 
         # 确保信心度在合理范围内
         analysis["confidence"] = self._ensure_confidence_range(analysis["confidence"])
@@ -1158,3 +1217,120 @@ class TechnicalAnalyst(BaseAnalyst):
         except Exception as e:
             logger.error(f"计算最近{days}天上涨天数失败: {e}")
             return 0
+
+    def _detect_short_term_breakout(self, data: pd.DataFrame, indicators: Dict, current_price: float) -> Dict:
+        """
+        检测短期突破信号（针对10天5%目标优化）
+
+        Args:
+            data: 股票历史数据
+            indicators: 技术指标字典
+            current_price: 当前价格
+
+        Returns:
+            Dict: 包含信号、原因、信心度调整和评分
+        """
+        result = {
+            "signal": None,
+            "reasons": [],
+            "confidence_adjustment": 0.0,
+            "score": 0
+        }
+
+        try:
+            if data.empty or len(data) < 10:
+                return result
+
+            # 获取指标
+            ma5 = indicators.get('daily_ma5', 0)
+            ma20 = indicators.get('daily_ma20', 0)
+            rsi = indicators.get('daily_rsi', 50)
+            volume = data['Volume'].iloc[-1] if 'Volume' in data.columns else 0
+            avg_volume_5 = data['Volume'].tail(5).mean() if 'Volume' in data.columns and len(data) >= 5 else 1
+
+            # 计算换手率和成交量比率
+            turnover_rate = indicators.get('daily_turnover_rate', 0)
+            volume_ratio = volume / avg_volume_5 if avg_volume_5 > 0 else 0
+
+            # 信号1: 日内突破（价格突破MA20 + 放量）
+            if ma20 > 0 and current_price > ma20:
+                price_above_ma20 = (current_price - ma20) / ma20 * 100
+
+                if 1.0 <= price_above_ma20 <= 3.0 and volume_ratio >= 1.5:
+                    # 突破MA20且在合理区间（1-3%）+ 放量1.5倍
+                    result["reasons"].append(f"💥 日线突破MA20（+{price_above_ma20:.1f}%）且放量{volume_ratio:.1f}倍")
+                    result["confidence_adjustment"] += 0.12
+                    result["score"] += 25
+
+                    if volume_ratio >= 2.0:
+                        result["signal"] = "buy"
+                        result["score"] += 10
+
+            # 信号2: 放量突破（成交量>2倍 + 换手率>3%）
+            if volume_ratio >= 2.0:
+                result["reasons"].append(f"🔥 放量突破：成交量{volume_ratio:.1f}倍")
+                result["confidence_adjustment"] += 0.10
+                result["score"] += 20
+
+                if turnover_rate > 3.0:
+                    result["reasons"].append(f"💰 换手率{turnover_rate:.1f}%，资金活跃")
+                    result["confidence_adjustment"] += 0.08
+                    result["score"] += 15
+
+                if volume_ratio >= 3.0:
+                    result["signal"] = "strong_buy"
+                    result["score"] += 20
+
+            # 信号3: 技术指标共振（MA金叉 + RSI中位 + 放量）
+            if ma5 > 0 and ma20 > 0 and ma5 > ma20:
+                if 40 <= rsi <= 70:  # RSI在健康区间
+                    if volume_ratio >= 1.5:
+                        result["reasons"].append(f"⚡ 技术共振：MA金叉+RSI{rsi:.0f}+放量{volume_ratio:.1f}倍")
+                        result["confidence_adjustment"] += 0.15
+                        result["score"] += 30
+                        result["signal"] = "buy"
+
+            # 信号4: 缩量回调后放量拉升（经典模式）
+            if len(data) >= 5 and 'Volume' in data.columns:
+                recent_volumes = data['Volume'].tail(5).values
+                if len(recent_volumes) >= 5:
+                    # 前3天缩量，最近2天放量
+                    early_avg = recent_volumes[:3].mean()
+                    recent_avg = recent_volumes[3:].mean()
+
+                    if recent_avg > early_avg * 1.8 and volume_ratio >= 2.0:
+                        result["reasons"].append("📊 缩量回调后放量拉升（经典突破模式）")
+                        result["confidence_adjustment"] += 0.10
+                        result["score"] += 25
+                        result["signal"] = "buy"
+
+            # 信号5: V型反转（快速下跌后快速反弹）
+            if len(data) >= 5:
+                recent_closes = data['Close'].tail(5).values
+                if len(recent_closes) >= 5:
+                    # 前3天下跌，后2天上涨
+                    early_change = (recent_closes[2] - recent_closes[0]) / recent_closes[0] * 100
+                    recent_change = (recent_closes[4] - recent_closes[2]) / recent_closes[2] * 100
+
+                    if early_change < -3.0 and recent_change > 3.0:
+                        result["reasons"].append(f"🔄 V型反转：先跌{abs(early_change):.1f}%后涨{recent_change:.1f}%")
+                        result["confidence_adjustment"] += 0.08
+                        result["score"] += 20
+
+            # 风险控制：避免追高
+            if rsi > 80:
+                result["reasons"].append(f"⚠️ RSI{rsi:.0f}超买，短期追高风险")
+                result["confidence_adjustment"] -= 0.10
+                result["score"] -= 20
+                result["signal"] = None  # 取消买入信号
+
+            if ma5 > 0 and current_price > ma5 * 1.10:
+                # 股价高于MA5超过10%，远离均线
+                result["reasons"].append("⚠️ 股价远离均线，追高风险")
+                result["confidence_adjustment"] -= 0.08
+                result["score"] -= 15
+
+        except Exception as e:
+            logger.error(f"检测短期突破信号失败: {e}")
+
+        return result

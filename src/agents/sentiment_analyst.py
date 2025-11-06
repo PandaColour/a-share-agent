@@ -334,7 +334,7 @@ class SentimentAnalyst(BaseAnalyst):
         }
 
     def _traditional_analysis(self, symbol: str, data: pd.DataFrame, info: Dict, indicators: Dict) -> Dict:
-        """传统情感面分析 - 集成新闻过滤器"""
+        """传统情感面分析 - 增强龙虎榜和社交媒体权重（短期优化）"""
         analysis = {
             "analyst_type": "情感面分析",
             "recommendation": "持有",
@@ -342,15 +342,15 @@ class SentimentAnalyst(BaseAnalyst):
             "reasoning": [],
             "time_horizon": "short"  # 情感面分析关注短期(0-14天)
         }
-        
+
         # 获取公司名称
         company_name = info.get('longName', '') or info.get('shortName', '') or symbol
-        
+
         # 1. 价格趋势分析 (传统部分)
         if not data.empty and len(data) > 5:
             recent_returns = data['Close'].pct_change().tail(5)
             avg_return = recent_returns.mean()
-            
+
             if not pd.isna(avg_return):
                 if avg_return > 0.02:
                     analysis["reasoning"].append("近期涨势良好")
@@ -360,26 +360,34 @@ class SentimentAnalyst(BaseAnalyst):
                     analysis["reasoning"].append("近期跌幅较大")
                     analysis["confidence"] -= 0.1
                     analysis["recommendation"] = "卖出"
-        
-        # 2. 成交量分析
+
+        # 2. 成交量分析（增强权重）
         if not data.empty and len(data) > 20:
             recent_volume = data['Volume'].tail(5).mean()
             avg_volume = data['Volume'].tail(20).mean()
-            
+
             if not pd.isna(recent_volume) and not pd.isna(avg_volume) and avg_volume > 0:
-                if recent_volume > avg_volume * 1.5:
-                    analysis["reasoning"].append("成交量放大")
-                    analysis["confidence"] += 0.1
-        
+                volume_ratio = recent_volume / avg_volume
+
+                if volume_ratio > 2.0:
+                    # 放量2倍以上 → 短期强信号
+                    analysis["reasoning"].append(f"🔥 成交量大幅放大{volume_ratio:.1f}倍")
+                    analysis["confidence"] += 0.15  # 从0.1提升到0.15
+                    if analysis["recommendation"] == "持有":
+                        analysis["recommendation"] = "买入"
+                elif volume_ratio > 1.5:
+                    analysis["reasoning"].append(f"成交量放大{volume_ratio:.1f}倍")
+                    analysis["confidence"] += 0.10
+
         # 3. 新闻情感分析（基础分析中不获取新闻，避免网络请求）
         # 在基础分析中设置默认值，新闻分析在analyze_with_news_data中处理
         analysis["news_count"] = 0
         analysis["news_sentiment"] = "中性"
         analysis["reasoning"].append("基础分析模式，如需新闻分析请使用analyze_with_news_data方法")
-        
+
         # 确保信心度在合理范围内
         analysis["confidence"] = self._ensure_confidence_range(analysis["confidence"])
-        
+
         return analysis
     
     def _ai_analysis(self, symbol: str, data: pd.DataFrame, info: Dict,
@@ -904,35 +912,60 @@ class SentimentAnalyst(BaseAnalyst):
             }
 
     def _get_social_media_sentiment_data(self, symbol: str, social_media_data: Dict = None) -> Dict:
-        """获取社交媒体情感数据（使用预收集数据）"""
+        """获取社交媒体情感数据（增强龙虎榜权重 - 短期优化）"""
         try:
             # 使用预收集的社交媒体数据
             if social_media_data and isinstance(social_media_data, dict):
                 # 从预收集数据中提取信息
                 longhu_data = social_media_data.get('longhu_data', [])
 
-                # 检查是否在龙虎榜中出现（作为关注度指标）
+                # 检查是否在龙虎榜中出现（作为关注度指标）- 增强分析
                 longhu_appearances = 0
+                longhu_detail = ""
+
                 if longhu_data:
                     for stock_info in longhu_data:
                         if symbol in str(stock_info):
                             longhu_appearances += 1
 
-                # 从预收集数据中获取社交媒体指标
-                social_mentions = social_media_data.get('social_mentions', 'N/A')
-                institutional_attention = social_media_data.get('institutional_attention', 'N/A')
-                retail_discussion = social_media_data.get('retail_discussion', 'N/A')
+                # 龙虎榜评分增强（针对短期交易）
+                if longhu_appearances >= 3:
+                    # 3次以上龙虎榜 → 主力高度关注
+                    longhu_detail = f"🔥 龙虎榜{longhu_appearances}次（主力高度关注）"
+                    social_mentions = "极高"
+                    institutional_attention = "高度关注"
+                    retail_discussion = "极度活跃"
+                elif longhu_appearances >= 2:
+                    # 2次龙虎榜 → 短期强信号
+                    longhu_detail = f"💥 龙虎榜{longhu_appearances}次（持续关注）"
+                    social_mentions = "高"
+                    institutional_attention = "关注"
+                    retail_discussion = "活跃"
+                elif longhu_appearances >= 1:
+                    # 1次龙虎榜 → 有关注度
+                    longhu_detail = f"📊 龙虎榜{longhu_appearances}次"
+                    social_mentions = "中"
+                    institutional_attention = "关注"
+                    retail_discussion = "活跃"
+                else:
+                    # 未上龙虎榜
+                    longhu_detail = "未登龙虎榜"
+                    social_mentions = "低"
+                    institutional_attention = "一般"
+                    retail_discussion = "平淡"
 
-                # 如果没有直接的社交媒体数据，基于龙虎榜数据推断
-                if social_mentions == 'N/A':
-                    if longhu_appearances > 0:
-                        social_mentions = "高"
-                        institutional_attention = "关注"
-                        retail_discussion = "活跃"
-                    else:
-                        social_mentions = "低"
-                        institutional_attention = "一般"
-                        retail_discussion = "平淡"
+                # 从预收集数据中获取社交媒体指标（覆盖默认值）
+                social_mentions_data = social_media_data.get('social_mentions', social_mentions)
+                institutional_attention_data = social_media_data.get('institutional_attention', institutional_attention)
+                retail_discussion_data = social_media_data.get('retail_discussion', retail_discussion)
+
+                # 如果有实际的社交媒体数据，使用它
+                if social_mentions_data != 'N/A' and social_mentions_data != "数据未收集":
+                    social_mentions = social_mentions_data
+                if institutional_attention_data != 'N/A':
+                    institutional_attention = institutional_attention_data
+                if retail_discussion_data != 'N/A':
+                    retail_discussion = retail_discussion_data
 
             else:
                 # 没有预收集数据时的默认值
@@ -943,6 +976,7 @@ class SentimentAnalyst(BaseAnalyst):
 
             return {
                 'longhu_appearances': longhu_appearances,
+                'longhu_detail': longhu_detail if 'longhu_detail' in locals() else '',
                 'social_mentions': social_mentions,
                 'institutional_attention': institutional_attention,
                 'retail_discussion': retail_discussion
@@ -952,6 +986,7 @@ class SentimentAnalyst(BaseAnalyst):
             logger.error(f"处理社交媒体情感数据失败: {e}")
             return {
                 'longhu_appearances': 'N/A',
+                'longhu_detail': '',
                 'social_mentions': 'N/A',
                 'institutional_attention': 'N/A',
                 'retail_discussion': 'N/A'
