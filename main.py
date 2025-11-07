@@ -1369,6 +1369,26 @@ def main():
                     print(f"  - {source}: {count} 只")
                     source_info.append(f"{source}={count}")
             main_logger.info(f"📊 股票来源分布: {', '.join(source_info)}")
+
+        # 前日涨幅过滤
+        filter_config = config.get('analysis_settings.filters.previous_day_change', {})
+        if filter_config.get('enabled', False):
+            try:
+                from src.filters.previous_day_filter import PreviousDayChangeFilter
+
+                original_count = len(stock_list)
+                print(f"\n正在过滤前日大涨股票（阈值: {filter_config.get('max_increase_percent', 9.0)}%）...")
+                main_logger.info(f"🔍 启动前日涨幅过滤器")
+
+                prev_day_filter = PreviousDayChangeFilter(config, system.data_provider)
+                stock_list = prev_day_filter.filter_stocks(stock_list)
+
+                filtered_count = original_count - len(stock_list)
+                print(f"过滤完成: 保留 {len(stock_list)} 只，过滤 {filtered_count} 只")
+                main_logger.info(f"✅ 过滤完成: 保留{len(stock_list)}只，过滤{filtered_count}只")
+            except Exception as filter_error:
+                print(f"⚠️ 前日涨幅过滤失败: {filter_error}，跳过过滤")
+                main_logger.warning(f"前日涨幅过滤失败: {filter_error}")
     except Exception as e:
         print(f"动态股票选择失败: {e}")
         print("使用传统配置文件股票列表...")

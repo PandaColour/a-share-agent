@@ -56,7 +56,8 @@
       "Bash(test_output.log)",
       "Bash(test_hold_output_fixed.log)",
       "Bash(tee:*)",
-      "Bash(hold_mode_test.log)"
+      "Bash(hold_mode_test.log)",
+      "Bash(del /f \"D:\\github\\a-share-agent\\src\\qt\\trades_widget.py\")"
     ],
     "deny": [],
     "ask": []

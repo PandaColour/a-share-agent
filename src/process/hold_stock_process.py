@@ -80,11 +80,11 @@ class HoldStockProcess:
                 print(f"\n💡 使用已有分析结果（无需重新调用AI）")
                 print(f"🔍 从 {len(analysis_results)} 个分析结果中提取 {len(hold_stocks)} 只持仓股票...")
 
-                # 创建 symbol -> result 的映射（analysis_results 使用 'symbol' 字段）
+                # 创建 symbol -> result 的映射（analysis_results 使用中文字段名）
                 result_map = {}
                 for r in analysis_results:
-                    # 尝试多种可能的字段名
-                    symbol = r.get('symbol') or r.get('股票代码')
+                    # 优先使用中文字段名（format_analysis_result 返回的格式）
+                    symbol = r.get('股票代码') or r.get('symbol')
                     if symbol:
                         result_map[symbol] = r
 

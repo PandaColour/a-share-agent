@@ -68,12 +68,17 @@ class HoldStockAnalyzer:
 
             # 6. 获取系统分析建议（如果提供了existing_result则复用，否则调用系统）
             if existing_result:
+                # 从选股分析结果中提取数据（使用中文字段名）
+                recommendation = existing_result.get('操作建议', '持有')
+                confidence_str = existing_result.get('信心度', '0%')  # 已经是 "60.20%" 格式
+                reason = existing_result.get('决策理由', '')
+
                 system_analysis = {
-                    'recommendation': existing_result.get('action', '持有'),
-                    'confidence': f"{existing_result.get('confidence', 0)*100:.0f}%",
-                    'reason': existing_result.get('reason', '')[:100]
+                    'recommendation': recommendation,
+                    'confidence': confidence_str,  # 直接使用字符串格式
+                    'reason': reason[:100] if reason else ''
                 }
-                self.logger.info(f"使用已有分析结果: {system_analysis['recommendation']}")
+                self.logger.info(f"使用已有分析结果: {system_analysis['recommendation']} (信心度: {confidence_str})")
             else:
                 system_analysis = self._get_system_analysis(symbol, name)
 
