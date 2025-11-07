@@ -358,13 +358,14 @@ class AnalysisOutputManager:
         print("-" * 180)
         print(f"共分析 {len(results)} 只股票，分析时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
-    def save_results(self, results: List[Dict], output_dir: str = "outputs"):
+    def save_results(self, results: List[Dict], output_dir: str = "outputs", holdings_summary: Dict = None):
         """
         保存分析结果到文件
 
         Args:
             results: 分析结果列表
             output_dir: 输出目录，默认为 "outputs"
+            holdings_summary: 持仓分析概览（可选），如果提供则在README中包含
         """
         try:
             # 对结果进行排序
@@ -441,8 +442,8 @@ class AnalysisOutputManager:
                 json.dump(csv_results, f, ensure_ascii=False, indent=2)
             print(f"兼容格式JSON: {legacy_json_filename}")
 
-            # 5. 创建本次分析的说明文件（使用排序后的结果）
-            readme_content = self.generate_session_readme(sorted_results, timestamp)
+            # 5. 创建本次分析的说明文件（使用排序后的结果，包含持仓概览）
+            readme_content = self.generate_session_readme(sorted_results, timestamp, holdings_summary)
             readme_filename = session_dir / "README.md"
             with open(readme_filename, 'w', encoding='utf-8') as f:
                 f.write(readme_content)
@@ -514,13 +515,14 @@ class AnalysisOutputManager:
         except Exception as e:
             print(f"生成分析师总结报告失败: {e}")
 
-    def generate_session_readme(self, results: List[Dict], timestamp: str) -> str:
+    def generate_session_readme(self, results: List[Dict], timestamp: str, holdings_summary: Dict = None) -> str:
         """
         生成本次分析会话的README文档
 
         Args:
             results: 分析结果列表
             timestamp: 时间戳
+            holdings_summary: 持仓分析概览（可选）
 
         Returns:
             README内容字符串
@@ -545,7 +547,23 @@ class AnalysisOutputManager:
 - **成功分析**: {successful_analyses} 只
 - **分析系统**: A股TradingAgents多智能体系统
 
-## 🎯 操作建议分布
+"""
+
+            # 如果有持仓分析，添加持仓概览
+            if holdings_summary:
+                profit_symbol = "+" if holdings_summary.get('总收益', 0) >= 0 else ""
+                readme_content += f"""### 💼 持仓概览
+
+- **持仓数量**: {holdings_summary.get('持仓数量', 0)} 只
+- **总成本**: ¥{holdings_summary.get('总成本', 0):.2f}
+- **总市值**: ¥{holdings_summary.get('总市值', 0):.2f}
+- **总收益**: {profit_symbol}¥{holdings_summary.get('总收益', 0):.2f} ({profit_symbol}{holdings_summary.get('总收益率', 0):.2f}%)
+- **盈亏分布**: {holdings_summary.get('盈利股票数', 0)}盈 / {holdings_summary.get('亏损股票数', 0)}亏 / {holdings_summary.get('持平股票数', 0)}平
+- **需要操作**: {holdings_summary.get('需要操作股票数', 0)} 只
+
+"""
+
+            readme_content += f"""## 🎯 操作建议分布
 
 """
 
@@ -562,10 +580,16 @@ class AnalysisOutputManager:
 - `analysis_summary.csv` - 📊 Excel可打开的汇总结果表格（按操作建议分组排序）
 - `analysis_detailed.json` - 📋 包含分析师详情的完整JSON数据（已排序）
 - `analysis_legacy.json` - 🔄 兼容旧版本格式的JSON数据（已排序）
+"""
 
-### 原始顺序文件（用于对比）
-- `analysis_detailed_original.json` - 📋 原始顺序的详细JSON数据
+            # 如果有持仓分析，添加持仓文件说明
+            if holdings_summary:
+                readme_content += f"""
+### 持仓分析文件
+- `holdings_analysis.csv` - 💼 持仓股票详细分析表格
+"""
 
+            readme_content += f"""
 ### 详细分析文件
 - `analyst_details.json` - 👥 四个智能分析师的详细分析过程
 - `analyst_summary_report.json` - 📊 分析师表现统计报告
@@ -599,7 +623,14 @@ class AnalysisOutputManager:
 2. **详细分析**: 查看 `analysis_detailed.json` 了解具体分析理由
 3. **分析师视角**: 查看 `analyst_details.json` 了解每个分析师的详细观点
 4. **Excel分析**: 将CSV文件导入Excel进行进一步的数据分析和筛选
+"""
 
+            # 如果有持仓分析，添加持仓使用建议
+            if holdings_summary:
+                readme_content += f"""5. **持仓监控**: 打开 `holdings_analysis.csv` 查看持仓股票的收益和操作建议
+"""
+
+            readme_content += f"""
 ## ⚠️ 免责声明
 
 本分析结果仅供参考，不构成投资建议。投资有风险，决策需谨慎。
