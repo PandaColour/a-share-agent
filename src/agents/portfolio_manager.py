@@ -54,13 +54,13 @@ class PortfolioManager:
         # 选择决策模式
         if self.enable_debate and len(analyses) >= 2:
             if self.use_multi_round_debate and self.config_manager:
-                logger.info(f"🎯 启用多轮辩论模式进行决策: {symbol}")
+                logger.info(f"[INFO] Enabling multi-round debate mode for decision: {symbol}")
                 return self._make_decision_with_multi_round_debate(symbol, analyses, risk_assessment, price_info)
             else:
-                logger.info(f"🎯 启用传统辩论模式进行决策: {symbol}")
+                logger.info(f"[INFO] Enabling traditional debate mode for decision: {symbol}")
                 return self._make_decision_with_debate(symbol, analyses, risk_assessment, price_info)
         else:
-            logger.info(f"📊 使用传统模式进行决策: {symbol}")
+            logger.info(f"[INFO] Using traditional mode for decision: {symbol}")
             return self._make_traditional_decision(symbol, analyses, risk_assessment, price_info)
     
     def _make_traditional_decision(self, symbol: str, analyses: List[Dict], 

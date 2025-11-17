@@ -106,7 +106,7 @@ class MultiRoundDebateManager:
         Returns:
             Dict: 完整的辩论结果
         """
-        logger.info(f"🎯 开始多轮辩论: {symbol}({company_name})")
+        logger.info(f"[INFO] Starting multi-round debate: {symbol}({company_name})")
 
         # 初始化辩论状态
         self._initialize_debate_state(symbol, company_name, market_data, analyses, risk_assessment)
@@ -131,7 +131,7 @@ class MultiRoundDebateManager:
 
             while self.debate_controller.should_continue_debate(self.current_debate_state):
                 round_count += 1
-                logger.info(f"🔄 执行第 {round_count} 轮辩论: {symbol}")
+                logger.info(f"[INFO] Executing round {round_count} debate: {symbol}")
 
                 # 确定下一个发言者
                 next_speaker = self.debate_controller.get_next_speaker(self.current_debate_state)

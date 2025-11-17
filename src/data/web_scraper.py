@@ -14,13 +14,13 @@ import sys
 logger = logging.getLogger(__name__)
 
 # 诊断日志：记录导入时的Python环境
-logger.info(f"[INFO] web_scraper 模块加载 - Python: {sys.executable}")
+logger.info(f"[INFO] web_scraper module loaded - Python: {sys.executable}")
 logger.info(f"[INFO] sys.path[0:3]: {sys.path[:3]}")
 
 try:
     from playwright.async_api import async_playwright, Browser, Page, TimeoutError as PlaywrightTimeoutError
     PLAYWRIGHT_AVAILABLE = True
-    logger.info("[SUCCESS] Playwright 导入成功")
+    logger.info("[SUCCESS] Playwright import successful")
 except ImportError as e:
     PLAYWRIGHT_AVAILABLE = False
     logger.warning(f"[WARNING] Playwright 未安装，网页抓取功能不可用")
@@ -132,7 +132,7 @@ class WebScraper:
             for selector in news_selectors:
                 try:
                     await page.wait_for_selector(selector, timeout=3000)
-                    logger.debug(f"  ✓ 找到容器: {selector}")
+                    logger.debug(f"  [OK] Found container: {selector}")
                     news_container_found = True
                     break
                 except PlaywrightTimeoutError:
@@ -181,7 +181,7 @@ class WebScraper:
             for item_selector in news_item_selectors:
                 news_items = await page.query_selector_all(item_selector)
                 if len(news_items) > 0:
-                    logger.debug(f"  ✓ 使用项目选择器: {item_selector} (找到 {len(news_items)} 项)")
+                    logger.debug(f"  [OK] Using item selector: {item_selector} (found {len(news_items)} items)")
                     break
 
             for i, item in enumerate(news_items[:max_news * 2]):  # 多抓取一些，过滤后返回
@@ -327,7 +327,7 @@ class WebScraper:
             for selector in discussion_selectors:
                 try:
                     await page.wait_for_selector(selector, timeout=3000)
-                    logger.debug(f"  ✓ 找到容器: {selector}")
+                    logger.debug(f"  [OK] Found container: {selector}")
                     discussion_container_found = True
                     break
                 except PlaywrightTimeoutError:
@@ -384,7 +384,7 @@ class WebScraper:
             for item_selector in discussion_item_selectors:
                 feed_items = await page.query_selector_all(item_selector)
                 if len(feed_items) > 0:
-                    logger.debug(f"  ✓ 使用项目选择器: {item_selector} (找到 {len(feed_items)} 项)")
+                    logger.debug(f"  [OK] Using item selector: {item_selector} (found {len(feed_items)} items)")
                     break
 
             for i, item in enumerate(feed_items[:max_items * 2]):  # 多抓取一些，过滤后返回

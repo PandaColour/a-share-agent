@@ -43,7 +43,7 @@ try:
     except (ImportError, ValueError):
         from src.data.web_scraper import scrape_news_for_sentiment, PLAYWRIGHT_AVAILABLE
     WEB_SCRAPER_AVAILABLE = True
-    logger.info(f"[SUCCESS] 网页抓取模块导入成功，PLAYWRIGHT_AVAILABLE={PLAYWRIGHT_AVAILABLE}")
+    logger.info(f"[SUCCESS] Web scraper module imported successfully, PLAYWRIGHT_AVAILABLE={PLAYWRIGHT_AVAILABLE}")
 except ImportError as e:
     logger.warning(f"[WARNING] 网页抓取模块导入失败: {e}")
     logger.warning(f"   Python: {sys.executable}")
@@ -98,11 +98,11 @@ class SentimentAnalyst(BaseAnalyst):
         )
 
         if self.enable_web_scraping:
-            logger.info("[SUCCESS] 网页数据抓取功能已启用（东方财富+雪球）")
+            logger.info("[SUCCESS] Web data scraping enabled (EastMoney + Xueqiu)")
         elif web_scraping_enabled and not (WEB_SCRAPER_AVAILABLE and PLAYWRIGHT_AVAILABLE):
-            logger.warning("⚠️ 配置启用了网页抓取，但 Playwright 不可用")
+            logger.warning("[WARNING] Web scraping enabled in config but Playwright unavailable")
         else:
-            logger.info("⚠️ 网页数据抓取功能已禁用")
+            logger.info("[INFO] Web data scraping disabled")
     
         
 

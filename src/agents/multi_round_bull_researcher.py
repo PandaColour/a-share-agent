@@ -75,7 +75,7 @@ class MultiRoundBullResearcher:
         Returns:
             str: 看涨研究员的论证内容
         """
-        logger.info(f"🐂 看涨研究员开始第 {debate_context['debate_round']} 轮辩论: {debate_context['symbol']}")
+        logger.info(f"[INFO] Bull researcher starting round {debate_context['debate_round']} debate: {debate_context['symbol']}")
 
         try:
             # 获取辩论prompt配置

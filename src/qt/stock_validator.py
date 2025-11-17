@@ -139,34 +139,72 @@ class StockValidator(QObject):
 
     def _get_stock_info(self, code: str) -> Optional[dict]:
         """获取股票基本信息"""
+        from datetime import datetime, timedelta
+
         try:
             # 先检查缓存
             if code in self.stock_cache:
                 return self.stock_cache[code]
 
-            # 获取实时行情数据进行验证
-            if code.endswith('.SZ'):
-                symbol = code[:-3]
-                data = ak.stock_zh_a_hist(symbol=symbol, period="daily", start_date="20241101", end_date="20241110", adjust="")
-            elif code.endswith('.SH'):
-                symbol = code[:-3]
-                data = ak.stock_zh_a_hist(symbol=symbol, period="daily", start_date="20241101", end_date="20241110", adjust="")
-            elif code.endswith('.BJ'):
-                symbol = code[:-3]
-                data = ak.stock_bj_hist(symbol=symbol, period="daily", start_date="20241101", end_date="20241110", adjust="")
-            else:
-                return None
+            # 方法1: 尝试使用实时行情数据进行验证（优先）
+            try:
+                symbol = code[:-3]  # 去掉交易所后缀
+                data = ak.stock_zh_a_spot_em()
+                stock_row = data[data['代码'] == symbol]
 
-            if data is not None and len(data) > 0:
-                # 获取股票名称
+                if not stock_row.empty:
+                    name = stock_row.iloc[0]['名称']
+                    result = {'code': code, 'name': name, 'valid': True}
+                    self.stock_cache[code] = result
+                    print(f"实时行情验证成功: {code} - {name}")
+                    return result
+            except Exception as e:
+                print(f"实时行情验证失败 {code}: {e}")
+
+            # 方法2: 使用历史数据进行验证（备用）
+            try:
+                symbol = code[:-3]
+                # 计算日期范围：从30天前到今天
+                end_date = datetime.now().strftime('%Y%m%d')
+                start_date = (datetime.now() - timedelta(days=30)).strftime('%Y%m%d')
+
+                if code.endswith('.SZ') or code.endswith('.SH'):
+                    data = ak.stock_zh_a_hist(symbol=symbol, period="daily", start_date=start_date, end_date=end_date, adjust="")
+                elif code.endswith('.BJ'):
+                    data = ak.stock_bj_hist(symbol=symbol, period="daily", start_date=start_date, end_date=end_date, adjust="")
+                else:
+                    return None
+
+                if data is not None and len(data) > 0:
+                    # 获取股票名称
+                    stock_list = ak.stock_info_a_code_name()
+                    stock_info = stock_list[stock_list['code'] == symbol]
+
+                    if len(stock_info) > 0:
+                        name = stock_info.iloc[0]['name']
+                        result = {'code': code, 'name': name, 'valid': True}
+                        self.stock_cache[code] = result
+                        print(f"历史数据验证成功: {code} - {name}")
+                        return result
+
+            except Exception as e:
+                print(f"历史数据验证失败 {code}: {e}")
+
+            # 方法3: 仅通过股票列表验证（最后备用）
+            try:
+                symbol = code[:-3]
                 stock_list = ak.stock_info_a_code_name()
-                stock_info = stock_list[stock_list['code'] == code[:-3]]
+                stock_info = stock_list[stock_list['code'] == symbol]
 
                 if len(stock_info) > 0:
                     name = stock_info.iloc[0]['name']
                     result = {'code': code, 'name': name, 'valid': True}
                     self.stock_cache[code] = result
+                    print(f"股票列表验证成功: {code} - {name}")
                     return result
+
+            except Exception as e:
+                print(f"股票列表验证失败 {code}: {e}")
 
             return None
 
