@@ -4,16 +4,16 @@
   "last_updated": "2025-11-05",
   "hold_stocks": [
     {
-      "symbol": "000559.SZ",
-      "name": "万向钱潮",
-      "purchase_date": "2025-11-07",
-      "cost": 13.876
+      "symbol": "001209.SZ",
+      "name": "洪兴股份",
+      "purchase_date": "2025-11-13",
+      "cost": 22.083
     },
     {
-      "symbol": "688472.SH",
-      "name": "阿特斯",
-      "purchase_date": "2025-11-07",
-      "cost": 13.876
+      "symbol": "000962.SZ",
+      "name": "东方钽业",
+      "purchase_date": "2025-11-12",
+      "cost": 27.65
     }
   ],
   "config": {

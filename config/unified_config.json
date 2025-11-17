@@ -192,10 +192,17 @@
 
   "analysis_settings": {
     "web_scraping": {
-      "enabled": false,
-      "description": "网页数据抓取配置（Playwright增强）",
+      "enabled": true,
+      "description": "网页数据抓取配置（Playwright增强）- 支持雪球登录",
       "eastmoney_news": true,
-      "xueqiu_discussions": true,
+      "xueqiu_discussions": false,
+      "xueqiu_login": {
+        "enabled": true,
+        "phone": "18666662508",
+        "password": "cpurun100",
+        "auto_login": true,
+        "note": "输入雪球手机号和密码启用讨论抓取。留空则不使用雪球功能。"
+      },
       "max_news_per_stock": 10,
       "max_discussions_per_stock": 15,
       "timeout_seconds": 30,
@@ -210,7 +217,7 @@
       "previous_day_change": {
         "enabled": true,
         "max_increase_percent": 9.0,
-        "description": "过滤前一天涨幅超过9%的股票，避免追高"
+        "description": "过滤前一天涨幅超过9%的股票，避免追高。持仓股票直接跳过过滤"
       },
       "min_market_cap": 1000000000,
       "exclude_st": true,

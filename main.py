@@ -1263,75 +1263,6 @@ def main():
         import traceback
         traceback.print_exc()
         return
-    
-    # 继续第一阶段：股票选择
-    stock_selection_start = time.time()
-    main_logger.info("🎯 开始股票选择...")
-
-    try:
-        from config.config_manager import get_config
-        from src.stock.stock_selection_manager import StockSelectionManager
-        config = get_config()
-        print("正在使用股票选择管理器...")
-
-        # 初始化股票选择管理器
-        stock_manager = StockSelectionManager(config)
-
-        # 获取选股结果和元数据
-        stock_list, metadata = stock_manager.get_selected_stocks()
-
-        stock_selection_time = time.time() - stock_selection_start
-        main_logger.info(f"✅ 股票选择完成，耗时: {stock_selection_time:.2f}秒")
-
-        # 显示选股信息
-        selection_method = metadata.get('selection_method', 'unknown')
-        print(f"选股完成，方法: {selection_method}")
-        print(f"共选择 {len(stock_list)} 只股票")
-        main_logger.info(f"📊 选股结果: 方法={selection_method}, 数量={len(stock_list)}")
-
-        # 显示来源分布（如果有）
-        sources = metadata.get('sources', {})
-        if sources:
-            print("股票来源分布:")
-            source_info = []
-            for source, count in sources.items():
-                if count > 0:
-                    print(f"  - {source}: {count} 只")
-                    source_info.append(f"{source}={count}")
-            main_logger.info(f"📊 股票来源分布: {', '.join(source_info)}")
-
-        # 前日涨幅过滤
-        filter_config = config.get('analysis_settings.filters.previous_day_change', {})
-        if filter_config.get('enabled', False):
-            try:
-                from src.filters.previous_day_filter import PreviousDayChangeFilter
-
-                original_count = len(stock_list)
-                print(f"\n正在过滤前日大涨股票（阈值: {filter_config.get('max_increase_percent', 9.0)}%）...")
-                main_logger.info(f"🔍 启动前日涨幅过滤器")
-
-                prev_day_filter = PreviousDayChangeFilter(config, system.data_provider)
-                stock_list = prev_day_filter.filter_stocks(stock_list)
-
-                filtered_count = original_count - len(stock_list)
-                print(f"过滤完成: 保留 {len(stock_list)} 只，过滤 {filtered_count} 只")
-                main_logger.info(f"✅ 过滤完成: 保留{len(stock_list)}只，过滤{filtered_count}只")
-            except Exception as filter_error:
-                print(f"⚠️ 前日涨幅过滤失败: {filter_error}，跳过过滤")
-                main_logger.warning(f"前日涨幅过滤失败: {filter_error}")
-    except Exception as e:
-        print(f"动态股票选择失败: {e}")
-        print("使用传统配置文件股票列表...")
-        try:
-            from src.stock import get_all_stocks
-            stock_list = get_all_stocks()[:20]  # 限制数量
-        except ImportError:
-            print("无法导入股票列表，使用默认列表")
-            stock_list = []
-    
-    # 第一阶段总结
-    phase1_total_time = time.time() - phase1_start_time
-    main_logger.info(f"✅ 第一阶段完成，总耗时: {phase1_total_time:.2f}秒")
 
     # ========== 根据模式确定股票列表来源 ==========
     # 获取通用配置（所有模式都需要）
@@ -1419,7 +1350,19 @@ def main():
                     print(f"\n正在过滤前日大涨股票（阈值: {filter_config.get('max_increase_percent', 9.0)}%）...")
                     main_logger.info(f"🔍 启动前日涨幅过滤器")
 
-                    prev_day_filter = PreviousDayChangeFilter(config, system.data_provider)
+                    # 构建持仓股票列表（用于过滤器例外处理）
+                    hold_stock_symbols = []
+                    try:
+                        import json
+                        hold_config_path = os.path.join("config", "hold_stock.json")
+                        if os.path.exists(hold_config_path):
+                            with open(hold_config_path, 'r', encoding='utf-8') as f:
+                                hold_config = json.load(f)
+                                hold_stock_symbols = [stock['symbol'] for stock in hold_config.get('hold_stocks', [])]
+                    except Exception as e:
+                        main_logger.warning(f"读取持仓配置失败: {e}")
+
+                    prev_day_filter = PreviousDayChangeFilter(config, system.data_provider, hold_stock_symbols)
                     stock_list = prev_day_filter.filter_stocks(stock_list)
 
                     filtered_count = original_count - len(stock_list)
@@ -1437,6 +1380,10 @@ def main():
             except ImportError:
                 print("无法导入股票列表，使用默认列表")
                 stock_list = []
+
+    # 第一阶段总结（系统初始化 + 股票选择）
+    phase1_total_time = time.time() - phase1_start_time
+    main_logger.info(f"✅ 第一阶段完成（系统初始化 + 股票选择），总耗时: {phase1_total_time:.2f}秒")
 
     # 第二阶段：股票分析（所有模式统一执行）
     phase2_start_time = time.time()
