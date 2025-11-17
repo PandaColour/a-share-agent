@@ -14,21 +14,21 @@ import sys
 logger = logging.getLogger(__name__)
 
 # 诊断日志：记录导入时的Python环境
-logger.info(f"🔍 web_scraper 模块加载 - Python: {sys.executable}")
-logger.info(f"🔍 sys.path[0:3]: {sys.path[:3]}")
+logger.info(f"[INFO] web_scraper 模块加载 - Python: {sys.executable}")
+logger.info(f"[INFO] sys.path[0:3]: {sys.path[:3]}")
 
 try:
     from playwright.async_api import async_playwright, Browser, Page, TimeoutError as PlaywrightTimeoutError
     PLAYWRIGHT_AVAILABLE = True
-    logger.info("✅ Playwright 导入成功")
+    logger.info("[SUCCESS] Playwright 导入成功")
 except ImportError as e:
     PLAYWRIGHT_AVAILABLE = False
-    logger.warning(f"⚠️ Playwright 未安装，网页抓取功能不可用")
+    logger.warning(f"[WARNING] Playwright 未安装，网页抓取功能不可用")
     logger.warning(f"   导入错误详情: {e}")
     logger.warning(f"   当前Python: {sys.executable}")
 except Exception as e:
     PLAYWRIGHT_AVAILABLE = False
-    logger.error(f"❌ Playwright 导入时发生未知错误: {e}")
+    logger.error(f"[ERROR] Playwright 导入时发生未知错误: {e}")
     logger.error(f"   当前Python: {sys.executable}")
 
 
@@ -52,7 +52,7 @@ class WebScraper:
         self._xueqiu_session = None
 
         if not PLAYWRIGHT_AVAILABLE:
-            logger.error("❌ Playwright 不可用，无法初始化 WebScraper")
+            logger.error("[ERROR] Playwright 不可用，无法初始化 WebScraper")
 
     async def __aenter__(self):
         """异步上下文管理器入口"""
@@ -65,9 +65,9 @@ class WebScraper:
                 headless=self.headless,
                 args=['--no-sandbox', '--disable-setuid-sandbox']
             )
-            logger.info("✅ Playwright 浏览器启动成功")
+            logger.info("[SUCCESS] Playwright 浏览器启动成功")
         except Exception as e:
-            logger.error(f"❌ 启动浏览器失败: {e}")
+            logger.error(f"[ERROR] 启动浏览器失败: {e}")
 
         return self
 
@@ -102,7 +102,7 @@ class WebScraper:
 
             # 东方财富个股页面
             url = f"https://quote.eastmoney.com/{clean_symbol}.html"
-            logger.info(f"📰 抓取东方财富新闻: {url}")
+            logger.info(f"[INFO] 抓取东方财富新闻: {url}")
 
             page = await self.browser.new_page()
             await page.goto(url, timeout=self.timeout)
@@ -139,7 +139,7 @@ class WebScraper:
                     continue
 
             if not news_container_found:
-                logger.warning(f"⚠️ 无法找到新闻容器: {symbol}")
+                logger.warning(f"[WARNING] 无法找到新闻容器: {symbol}")
                 logger.info(f"💡 网页可能已改版，建议运行诊断工具")
 
                 # 尝试抓取任何链接作为降级方案
@@ -165,7 +165,7 @@ class WebScraper:
 
                 await page.close()
                 if news_list:
-                    logger.info(f"✅ 降级方案抓取到 {len(news_list)} 条新闻")
+                    logger.info(f"[SUCCESS] 降级方案抓取到 {len(news_list)} 条新闻")
                 return news_list
 
             # 提取新闻项（尝试多种结构）
@@ -232,10 +232,10 @@ class WebScraper:
                     continue
 
             await page.close()
-            logger.info(f"✅ 抓取到 {len(news_list)} 条东方财富新闻")
+            logger.info(f"[SUCCESS] 抓取到 {len(news_list)} 条东方财富新闻")
 
         except Exception as e:
-            logger.error(f"❌ 抓取东方财富新闻失败: {e}")
+            logger.error(f"[ERROR] 抓取东方财富新闻失败: {e}")
 
         return news_list
 
@@ -334,7 +334,7 @@ class WebScraper:
                     continue
 
             if not discussion_container_found:
-                logger.warning(f"⚠️ 无法找到讨论容器: {symbol}")
+                logger.warning(f"[WARNING] 无法找到讨论容器: {symbol}")
                 logger.info(f"💡 网页可能已改版，建议运行诊断工具")
 
                 # 尝试抓取任何帖子链接作为降级方案
@@ -362,7 +362,7 @@ class WebScraper:
 
                 await page.close()
                 if discussions:
-                    logger.info(f"✅ 降级方案抓取到 {len(discussions)} 条讨论")
+                    logger.info(f"[SUCCESS] 降级方案抓取到 {len(discussions)} 条讨论")
                 return discussions
 
             # 滚动页面加载更多内容
@@ -439,10 +439,10 @@ class WebScraper:
                     continue
 
             await page.close()
-            logger.info(f"✅ 抓取到 {len(discussions)} 条雪球讨论")
+            logger.info(f"[SUCCESS] 抓取到 {len(discussions)} 条雪球讨论")
 
         except Exception as e:
-            logger.error(f"❌ 抓取雪球讨论失败: {e}")
+            logger.error(f"[ERROR] 抓取雪球讨论失败: {e}")
 
         return discussions
 

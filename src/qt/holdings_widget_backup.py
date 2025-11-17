@@ -14,79 +14,93 @@ import akshare as ak
 from src.utils.trading_calendar import trading_calendar, calculate_position_metrics
 
 
-def load_holdings_config():
-    """加载持仓配置"""
-    try:
-        config_path = os.path.join("config", "hold_stock.json")
-        if not os.path.exists(config_path):
-            return []
+class HoldingsRefreshThread(QThread):
+    """刷新持仓数据的后台线程"""
+    data_signal = pyqtSignal(list)  # 发送持仓数据
+    error_signal = pyqtSignal(str)  # 发送错误信息
 
-        with open(config_path, 'r', encoding='utf-8') as f:
-            config = json.load(f)
+    def __init__(self):
+        super().__init__()
+        self.hold_stocks = []
 
-        return config.get('hold_stocks', [])
-    except Exception as e:
-        print(f"加载持仓配置失败: {e}")
-        return []
-
-def get_stock_current_price(symbol: str):
-    """获取股票当前价格"""
-    from datetime import datetime, timedelta
-
-    try:
-        # 统一处理股票代码
-        if symbol.endswith(('.SZ', '.SH')):
-            code = symbol[:-3]
-        else:
-            code = symbol
-
-        # 方法1: 尝试实时行情（优先）
+    def run(self):
+        """刷新持仓数据"""
         try:
-            data = ak.stock_zh_a_spot_em()
-            stock_row = data[data['代码'] == code]
-            if not stock_row.empty:
-                price = float(stock_row.iloc[0]['最新价'])
-                print(f"实时行情获取成功: {symbol} = {price}")
-                return price
+            # 读取持仓配置
+            config_path = os.path.join("config", "hold_stock.json")
+            if not os.path.exists(config_path):
+                self.error_signal.emit("未找到持仓配置文件")
+                return
+
+            with open(config_path, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+
+            self.hold_stocks = config.get('hold_stocks', [])
+
+            # 为每只股票获取实时价格并计算指标
+            for stock in self.hold_stocks:
+                try:
+                    # 获取实时价格
+                    symbol = stock.get('symbol', '')
+                    if symbol.endswith('.SZ'):
+                        code = symbol[:-3]
+                        real_time_data = ak.stock_zh_a_spot_em()
+                        stock_row = real_time_data[real_time_data['代码'] == code]
+                        if not stock_row.empty:
+                            current_price = float(stock_row.iloc[0]['最新价'])
+                        else:
+                            current_price = stock.get('cost', 0.0)
+                    elif symbol.endswith('.SH'):
+                        code = symbol[:-3]
+                        real_time_data = ak.stock_zh_a_spot_em()
+                        stock_row = real_time_data[real_time_data['代码'] == code]
+                        if not stock_row.empty:
+                            current_price = float(stock_row.iloc[0]['最新价'])
+                        else:
+                            current_price = stock.get('cost', 0.0)
+                    else:
+                        current_price = stock.get('cost', 0.0)
+
+                    # 设置当前价格
+                    stock['current_price'] = current_price
+
+                    # 使用 trading_calendar 计算所有指标
+                    cost = stock.get('cost', 0.0)
+                    purchase_date_str = stock.get('purchase_date', '')
+
+                    if purchase_date_str:
+                        try:
+                            purchase_date = datetime.strptime(purchase_date_str, '%Y-%m-%d')
+                        except ValueError:
+                            purchase_date = datetime.now()
+                    else:
+                        purchase_date = datetime.now()
+
+                    # 使用统一的方法计算所有持仓指标
+                    metrics = calculate_position_metrics(
+                        cost_price=cost,
+                        current_price=current_price,
+                        purchase_date=purchase_date
+                    )
+
+                    # 将计算结果更新到股票数据中
+                    stock.update(metrics)
+
+                except Exception as stock_error:
+                    # 如果某只股票获取失败，使用默认值
+                    cost = stock.get('cost', 0.0)
+                    stock['current_price'] = cost
+
+                    # 获取默认指标（当前价=成本价，无盈亏）
+                    purchase_date = datetime.now()
+                    metrics = calculate_position_metrics(cost, cost, purchase_date)
+                    metrics['risk_warning'] = '[错误] 数据获取失败'
+                    stock.update(metrics)
+
+            self.data_signal.emit(self.hold_stocks)
+
         except Exception as e:
-            print(f"实时行情获取失败: {e}")
-
-        # 方法2: 使用历史数据（获取到今天的数据）
-        try:
-            # 计算日期范围：从30天前到今天
-            end_date = datetime.now().strftime('%Y%m%d')
-            start_date = (datetime.now() - timedelta(days=30)).strftime('%Y%m%d')
-
-            data = ak.stock_zh_a_hist(symbol=code, period="daily", start_date=start_date, end_date=end_date)
-            if not data.empty:
-                price = float(data.iloc[-1]['收盘'])
-                latest_date = data.iloc[-1]['日期']
-                print(f"历史数据获取成功: {symbol} = {price} (日期: {latest_date})")
-                return price
-        except Exception as e:
-            print(f"历史数据获取失败: {e}")
-
-        # 方法3: 尝试单只股票历史数据（另一种接口）
-        try:
-            # 使用更近期的数据
-            end_date = datetime.now().strftime('%Y-%m-%d')
-            start_date = (datetime.now() - timedelta(days=10)).strftime('%Y-%m-%d')
-
-            data = ak.stock_zh_a_daily(symbol=f"sh{code}" if symbol.endswith('.SH') else f"sz{code}",
-                                      start_date=start_date, end_date=end_date)
-            if not data.empty:
-                price = float(data.iloc[-1]['close'])
-                print(f"单只股票数据获取成功: {symbol} = {price}")
-                return price
-        except Exception as e:
-            print(f"单只股票数据获取失败: {e}")
-
-        print(f"所有方法都失败了: {symbol}")
-
-    except Exception as e:
-        print(f"获取股票 {symbol} 价格失败: {e}")
-
-    return None
+            self.error_signal.emit(f"刷新失败: {str(e)}")
 
 
 class HoldingsWidget(QWidget):
@@ -94,8 +108,17 @@ class HoldingsWidget(QWidget):
 
     def __init__(self):
         super().__init__()
+        self.refresh_thread = None
         self.init_ui()
-        # 不在启动时自动刷新，用户需要手动点击刷新按钮
+        # 初始加载数据 - 添加异常处理
+        try:
+            self.refresh_holdings()
+        except Exception as e:
+            # 如果刷新失败，显示错误信息但不阻止程序启动
+            if hasattr(self, 'status_label'):
+                self.status_label.setText("初始化数据加载失败")
+                self.status_label.setStyleSheet("color: #f44336; padding: 5px;")
+            print(f"持仓数据初始化失败: {e}")
 
     def init_ui(self):
         """初始化UI"""
@@ -202,75 +225,24 @@ class HoldingsWidget(QWidget):
         layout.addLayout(stats_layout)
 
         # 状态栏
-        self.status_label = QLabel("就绪 - 点击刷新按钮获取最新数据")
+        self.status_label = QLabel("就绪")
         self.status_label.setStyleSheet("color: #666666; padding: 5px;")
         layout.addWidget(self.status_label)
 
         self.setLayout(layout)
 
     def refresh_holdings(self):
-        """刷新持仓数据（同步方式）"""
+        """刷新持仓数据"""
         self.refresh_btn.setEnabled(False)
         self.status_label.setText("正在刷新...")
         self.status_label.setStyleSheet("color: #FF9800; padding: 5px;")
 
-        # 直接在主线程中处理，避免线程问题
-        try:
-            # 加载持仓配置
-            hold_stocks = load_holdings_config()
-
-            if not hold_stocks:
-                self.show_error("未找到持仓配置或配置为空")
-                self.refresh_btn.setEnabled(True)
-                return
-
-            # 处理每只股票的数据
-            processed_stocks = []
-            for stock in hold_stocks:
-                # 复制原始数据
-                processed_stock = stock.copy()
-
-                # 获取当前价格
-                symbol = processed_stock.get('symbol', '')
-                current_price = get_stock_current_price(symbol)
-
-                if current_price is None:
-                    current_price = processed_stock.get('cost', 0.0)
-                    print(f"使用成本价作为当前价格: {symbol}")
-
-                processed_stock['current_price'] = current_price
-
-                # 计算持仓指标
-                cost = processed_stock.get('cost', 0.0)
-                purchase_date_str = processed_stock.get('purchase_date', '')
-
-                if purchase_date_str:
-                    try:
-                        purchase_date = datetime.strptime(purchase_date_str, '%Y-%m-%d')
-                    except ValueError:
-                        purchase_date = datetime.now()
-                else:
-                    purchase_date = datetime.now()
-
-                # 使用统一的方法计算所有持仓指标
-                metrics = calculate_position_metrics(
-                    cost_price=cost,
-                    current_price=current_price,
-                    purchase_date=purchase_date
-                )
-
-                # 将计算结果更新到股票数据中，但过滤掉不需要显示的datetime对象
-                display_metrics = {k: v for k, v in metrics.items() if k not in ['purchase_date', 'current_date']}
-                processed_stock.update(display_metrics)
-                processed_stocks.append(processed_stock)
-
-            # 更新表格
-            self.update_holdings_table(processed_stocks)
-
-        except Exception as e:
-            self.show_error(f"刷新失败: {str(e)}")
-        finally:
-            self.refresh_btn.setEnabled(True)
+        # 启动刷新线程
+        self.refresh_thread = HoldingsRefreshThread()
+        self.refresh_thread.data_signal.connect(self.update_holdings_table)
+        self.refresh_thread.error_signal.connect(self.show_error)
+        self.refresh_thread.finished.connect(lambda: self.refresh_btn.setEnabled(True))
+        self.refresh_thread.start()
 
     def update_holdings_table(self, holdings):
         """更新持仓表格"""

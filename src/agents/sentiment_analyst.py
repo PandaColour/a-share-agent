@@ -43,14 +43,14 @@ try:
     except (ImportError, ValueError):
         from src.data.web_scraper import scrape_news_for_sentiment, PLAYWRIGHT_AVAILABLE
     WEB_SCRAPER_AVAILABLE = True
-    logger.info(f"✅ 网页抓取模块导入成功，PLAYWRIGHT_AVAILABLE={PLAYWRIGHT_AVAILABLE}")
+    logger.info(f"[SUCCESS] 网页抓取模块导入成功，PLAYWRIGHT_AVAILABLE={PLAYWRIGHT_AVAILABLE}")
 except ImportError as e:
-    logger.warning(f"⚠️ 网页抓取模块导入失败: {e}")
+    logger.warning(f"[WARNING] 网页抓取模块导入失败: {e}")
     logger.warning(f"   Python: {sys.executable}")
     WEB_SCRAPER_AVAILABLE = False
     PLAYWRIGHT_AVAILABLE = False
 except Exception as e:
-    logger.error(f"❌ 网页抓取模块导入时发生未知错误: {e}")
+    logger.error(f"[ERROR] 网页抓取模块导入时发生未知错误: {e}")
     logger.error(f"   Python: {sys.executable}")
     WEB_SCRAPER_AVAILABLE = False
     PLAYWRIGHT_AVAILABLE = False
@@ -98,7 +98,7 @@ class SentimentAnalyst(BaseAnalyst):
         )
 
         if self.enable_web_scraping:
-            logger.info("✅ 网页数据抓取功能已启用（东方财富+雪球）")
+            logger.info("[SUCCESS] 网页数据抓取功能已启用（东方财富+雪球）")
         elif web_scraping_enabled and not (WEB_SCRAPER_AVAILABLE and PLAYWRIGHT_AVAILABLE):
             logger.warning("⚠️ 配置启用了网页抓取，但 Playwright 不可用")
         else:

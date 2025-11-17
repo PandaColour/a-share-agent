@@ -1212,8 +1212,10 @@ def main():
     # 解析命令行参数
     parser = argparse.ArgumentParser(description='A股量化交易系统')
     parser.add_argument('--mode', type=str, default='select',
-                       choices=['select', 'hold', 'both'],
-                       help='运行模式: select=选股分析, hold=持仓分析, both=两者都执行')
+                       choices=['select', 'hold', 'both', 'custom'],
+                       help='运行模式: select=选股分析, hold=持仓分析, both=两者都执行, custom=自定义股票分析')
+    parser.add_argument('--stocks', type=str, nargs='*',
+                       help='自定义模式下要分析的股票代码列表 (如: 000001.SZ)')
     args = parser.parse_args()
 
     # 总体耗时统计开始
@@ -1269,7 +1271,35 @@ def main():
     from config.config_manager import get_config
     config = get_config()
 
-    if args.mode == 'hold':
+    if args.mode == 'custom':
+        # custom 模式：分析指定的股票
+        print("\n" + "="*60)
+        print("自定义模式：分析指定股票")
+        print("="*60)
+
+        if not args.stocks:
+            print("❌ 自定义模式需要指定股票代码，请使用 --stocks 参数")
+            print("   例如: python main.py --mode custom --stocks 000001.SZ 600036.SH")
+            sys.exit(1)
+
+        stock_list = []
+        for stock_code in args.stocks:
+            # 验证股票代码格式
+            if not stock_code.endswith(('.SZ', '.SH', '.BJ')):
+                print(f"⚠️  股票代码格式不正确: {stock_code}，应为 6位数字.交易所 后缀")
+                continue
+
+            stock_list.append((stock_code, f"股票{stock_code}"))
+
+        if not stock_list:
+            print("❌ 没有有效的股票代码")
+            sys.exit(1)
+
+        print(f"将分析 {len(stock_list)} 只股票:")
+        for stock_code, _ in stock_list:
+            print(f"  - {stock_code}")
+
+    elif args.mode == 'hold':
         # hold 模式：只加载持仓股票
         print("\n" + "="*60)
         print("持仓模式：仅分析持仓股票")
@@ -1342,7 +1372,8 @@ def main():
 
             # 前日涨幅过滤
             filter_config = config.get('analysis_settings.filters.previous_day_change', {})
-            if filter_config.get('enabled', False):
+            # 自定义模式跳过过滤器
+            if filter_config.get('enabled', False) and args.mode != 'custom':
                 try:
                     from src.filters.previous_day_filter import PreviousDayChangeFilter
 

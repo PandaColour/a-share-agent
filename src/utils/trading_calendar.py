@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """
 中国A股交易日历工具
-处理交易日判断、节假日检查等
+处理交易日判断、节假日检查、持仓分析等
 """
 import pandas as pd
 from datetime import datetime, timedelta
-from typing import List
+from typing import List, Dict, Optional, Tuple
 import logging
 
 logger = logging.getLogger(__name__)
@@ -262,6 +262,167 @@ class TradingCalendar:
                 self.holidays[year].discard(holiday)
             self.logger.info(f"移除 {year} 年 {len(holidays)} 个节假日，剩余 {len(self.holidays[year])} 个")
 
+    def calculate_holding_days(self, purchase_date: datetime, end_date: datetime = None) -> int:
+        """
+        计算持股天数（仅计算交易日）
+
+        Args:
+            purchase_date: 买入日期
+            end_date: 结束日期（默认为当前日期）
+
+        Returns:
+            持股交易日天数
+        """
+        if end_date is None:
+            end_date = datetime.now()
+
+        trading_days = 0
+        check_date = purchase_date + timedelta(days=1)  # 从买入后第一天开始计算
+
+        while check_date <= end_date:
+            if self.is_trading_day(check_date):
+                trading_days += 1
+            check_date = check_date + timedelta(days=1)
+
+        return trading_days
+
+    def calculate_position_metrics(self,
+                                 cost_price: float,
+                                 current_price: float,
+                                 purchase_date: datetime,
+                                 end_date: datetime = None,
+                                 stop_loss_percent: float = 0.1,
+                                 profit_target_percent: float = 0.05) -> Dict:
+        """
+        计算持仓分析指标
+
+        Args:
+            cost_price: 成本价
+            current_price: 当前价格
+            purchase_date: 买入日期
+            end_date: 结束日期（默认为当前日期）
+            stop_loss_percent: 止损百分比（默认10%）
+            profit_target_percent: 盈利目标百分比（默认5%）
+
+        Returns:
+            包含所有分析指标的字典
+        """
+        # 计算持股天数
+        holding_days = self.calculate_holding_days(purchase_date, end_date)
+
+        # 计算盈亏
+        profit = current_price - cost_price
+        profit_percent = (profit / cost_price * 100) if cost_price > 0 else 0
+
+        # 计算止损价格和盈利目标
+        stop_loss_price = cost_price * (1 - stop_loss_percent)
+        profit_target = cost_price * (1 + profit_target_percent)
+
+        # 计算平均日盈利
+        avg_daily_profit = profit / holding_days if holding_days > 0 else 0
+
+        # 风险提示
+        if current_price <= stop_loss_price:
+            risk_warning = '[警告] 已破止损'
+            risk_level = 'danger'
+        elif current_price >= profit_target:
+            risk_warning = '[目标] 已达目标'
+            risk_level = 'success'
+        else:
+            risk_warning = '[正常] 持续持有'
+            risk_level = 'normal'
+
+        return {
+            'holding_days': holding_days,
+            'profit': profit,
+            'profit_percent': profit_percent,
+            'stop_loss_price': stop_loss_price,
+            'profit_target': profit_target,
+            'avg_daily_profit': avg_daily_profit,
+            'risk_warning': risk_warning,
+            'risk_level': risk_level,
+            'purchase_date': purchase_date,
+            'current_date': end_date or datetime.now()
+        }
+
+    def get_position_summary(self, stocks: List[Dict]) -> Dict:
+        """
+        计算持仓汇总信息
+
+        Args:
+            stocks: 持股列表，每只股票应包含 cost, current_price, purchase_date
+
+        Returns:
+            持仓汇总信息
+        """
+        if not stocks:
+            return {
+                'total_stocks': 0,
+                'total_cost': 0.0,
+                'total_value': 0.0,
+                'total_profit': 0.0,
+                'total_profit_percent': 0.0,
+                'total_holding_days': 0,
+                'avg_holding_days': 0.0,
+                'profitable_stocks': 0,
+                'loss_stocks': 0,
+                'risk_summary': {'danger': 0, 'warning': 0, 'normal': 0, 'success': 0}
+            }
+
+        total_cost = 0.0
+        total_value = 0.0
+        total_profit = 0.0
+        total_holding_days = 0
+        profitable_stocks = 0
+        loss_stocks = 0
+        risk_summary = {'danger': 0, 'warning': 0, 'normal': 0, 'success': 0}
+
+        for stock in stocks:
+            cost = stock.get('cost', 0.0)
+            current_price = stock.get('current_price', cost)
+            purchase_date_str = stock.get('purchase_date', '')
+
+            if purchase_date_str:
+                try:
+                    purchase_date = datetime.strptime(purchase_date_str, '%Y-%m-%d')
+                except ValueError:
+                    purchase_date = datetime.now()
+            else:
+                purchase_date = datetime.now()
+
+            # 计算单股指标
+            metrics = self.calculate_position_metrics(cost, current_price, purchase_date)
+
+            total_cost += cost
+            total_value += current_price
+            total_profit += metrics['profit']
+            total_holding_days += metrics['holding_days']
+
+            if metrics['profit'] > 0:
+                profitable_stocks += 1
+            elif metrics['profit'] < 0:
+                loss_stocks += 1
+
+            # 风险汇总
+            risk_level = metrics['risk_level']
+            risk_summary[risk_level] = risk_summary.get(risk_level, 0) + 1
+
+        total_profit_percent = (total_profit / total_cost * 100) if total_cost > 0 else 0
+        avg_holding_days = total_holding_days / len(stocks) if stocks else 0
+
+        return {
+            'total_stocks': len(stocks),
+            'total_cost': total_cost,
+            'total_value': total_value,
+            'total_profit': total_profit,
+            'total_profit_percent': total_profit_percent,
+            'total_holding_days': total_holding_days,
+            'avg_holding_days': avg_holding_days,
+            'profitable_stocks': profitable_stocks,
+            'loss_stocks': loss_stocks,
+            'risk_summary': risk_summary
+        }
+
 
 # 全局实例
 trading_calendar = TradingCalendar()
@@ -280,3 +441,26 @@ def should_apply_previous_day_filter(data_date: datetime, filter_date: datetime 
 def get_trading_info() -> dict:
     """获取当前交易日信息（快捷函数）"""
     return trading_calendar.get_trading_day_info()
+
+
+def calculate_holding_days(purchase_date: datetime, end_date: datetime = None) -> int:
+    """计算持股天数（快捷函数）"""
+    return trading_calendar.calculate_holding_days(purchase_date, end_date)
+
+
+def calculate_position_metrics(cost_price: float,
+                            current_price: float,
+                            purchase_date: datetime,
+                            end_date: datetime = None,
+                            stop_loss_percent: float = 0.1,
+                            profit_target_percent: float = 0.05) -> Dict:
+    """计算持仓分析指标（快捷函数）"""
+    return trading_calendar.calculate_position_metrics(
+        cost_price, current_price, purchase_date, end_date,
+        stop_loss_percent, profit_target_percent
+    )
+
+
+def get_position_summary(stocks: List[Dict]) -> Dict:
+    """计算持仓汇总信息（快捷函数）"""
+    return trading_calendar.get_position_summary(stocks)
