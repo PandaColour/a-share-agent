@@ -48,6 +48,22 @@
         "bear_researcher": "deepseek-v3.2"
       },
       "models": {
+        "deepseek-v3.2-exp": {
+          "name": "deepseek-v3.2-exp 685B满血版",
+          "description": "阿里云 deepseek-v3.2-exp 685B满血版",
+          "type": "custom_http",
+          "config": {
+            "endpoint": "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
+            "headers": {
+              "Content-Type": "application/json",
+              "Authorization": "Bearer sk-e250c8979bb1464b83570a1c0f21e240"
+            },
+            "request_format": "openai",
+            "model": "deepseek-v3.2-exp",
+            "max_tokens": 2048,
+            "temperature": 0.3
+          }
+        },
         "deepseek-r1-0528": {
           "name": "deepseek-r1-0528",
           "description": "多轮辩论系统使用的AI模型",
