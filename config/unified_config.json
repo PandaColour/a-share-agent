@@ -17,6 +17,116 @@
       "min_confidence_threshold": 0.5,
       "description": "多轮辩论系统配置 - enable_debate控制是否启用辩论，false时回归传统统计决策。短期优化：降低阈值到50%以捕捉更多短期机会"
     },
+
+    "buy_point_optimization": {
+      "enabled": true,
+      "version": "1.0.0",
+      "description": "买点优化配置 - 右侧交易优先，减少回调后等待时间",
+
+      "signal_weights": {
+        "right_side": 0.6,
+        "left_side": 0.4,
+        "description": "右侧交易（确认信号）权重60%，左侧交易（预测信号）权重40%"
+      },
+
+      "trend_confirmation": {
+        "enabled": true,
+        "min_gain_threshold": 0.015,
+        "volume_multiplier": 1.3,
+        "consecutive_up_days": 2,
+        "ma_breakthrough_required": false,
+        "description": "趋势确认参数 - 最小涨幅1.5%，成交量放大1.3倍，连续上涨2天"
+      },
+
+      "signal_types": {
+        "right_side_signals": {
+          "breakthrough": 0.3,
+          "volume_surge": 0.25,
+          "ma_alignment": 0.2,
+          "momentum_confirm": 0.25,
+          "description": "右侧交易信号权重配置"
+        },
+        "left_side_signals": {
+          "oversold": 0.2,
+          "support_level": 0.15,
+          "undervalued": 0.15,
+          "contrarian": 0.1,
+          "description": "左侧交易信号权重配置"
+        }
+      },
+
+      "position_sizing": {
+        "base_position": 0.1,
+        "max_position": 0.25,
+        "min_position": 0.05,
+        "right_side_bonus": 1.3,
+        "trend_multiplier": {
+          "confirmed_uptrend": 1.4,
+          "early_uptrend": 1.1,
+          "consolidation": 0.8,
+          "weak_downtrend": 0.5,
+          "strong_downtrend": 0.3
+        },
+        "quality_multiplier": {
+          "excellent": 1.2,
+          "good": 1.1,
+          "general": 1.0,
+          "poor": 0.8
+        },
+        "description": "动态仓位管理配置"
+      },
+
+      "trend_status_multipliers": {
+        "confirmed_uptrend": 1.5,
+        "early_uptrend": 1.2,
+        "consolidation": 1.0,
+        "weak_downtrend": 0.7,
+        "strong_downtrend": 0.5,
+        "description": "趋势状态对应的分数乘数"
+      },
+
+      "wait_time_warning": {
+        "long_wait_threshold": 7.0,
+        "short_wait_threshold": 3.0,
+        "description": "等待时间预警阈值（天）"
+      },
+
+      "decision_engine": {
+        "right_side_bonus_weights": {
+          "trend_confirmed": 0.2,
+          "right_side_signals": 0.15,
+          "signal_quality": 0.1,
+          "description": "决策引擎右侧交易奖励权重"
+        },
+        "max_right_side_bonus": 0.3,
+        "description": "最大右侧交易加成30%"
+      },
+
+      "performance_estimation": {
+        "base_return": 0.05,
+        "strength_adjustment_max": 0.1,
+        "trend_adjustments": {
+          "confirmed_uptrend": 0.05,
+          "early_uptrend": 0.03,
+          "consolidation": 0.0,
+          "weak_downtrend": -0.02,
+          "strong_downtrend": -0.05
+        },
+        "description": "预期表现估算参数"
+      },
+
+      "fallback_settings": {
+        "enable_fallback": true,
+        "fallback_confidence": 0.3,
+        "description": "降级设置 - 优化功能异常时的处理"
+      },
+
+      "logging": {
+        "enable_debug": false,
+        "log_optimization_details": true,
+        "description": "日志配置"
+      }
+    },
     
     "data_sources": {
       "primary_source": "tushare",
@@ -39,13 +149,13 @@
     "ai_models": {
       "enable_ai_analysis": true,
       "fallback_to_traditional": true,
-      "default_model": "deepseek-v3.2",
+      "default_model": "deepseek-v3.2-exp",
       "analyst_assignments": {
-        "fundamental": "deepseek-v3.1",
-        "technical": "deepseek-v3.2",
-        "sentiment": "deepseek-v3.1",
-        "bull_researcher": "deepseek-v3.1",
-        "bear_researcher": "deepseek-v3.2"
+        "fundamental": "deepseek-v3.2-exp",
+        "technical": "deepseek-v3.2-exp",
+        "sentiment": "deepseek-v3.2-exp",
+        "bull_researcher": "deepseek-v3.2-exp",
+        "bear_researcher": "deepseek-v3.2-exp"
       },
       "models": {
         "deepseek-v3.2-exp": {
