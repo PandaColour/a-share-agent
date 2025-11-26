@@ -249,13 +249,37 @@ class BuyPointOptimizer:
                         })
                         break
 
-            # RSI超卖信号
+            # RSI超卖信号（加强判断：不仅要超卖，还要开始回升）
             rsi = indicators.get('daily_rsi', 50)
-            if rsi < 30:
+            if rsi < 25:  # 从30提高到25，更极端的超卖
+                # 检查RSI是否开始回升（相比前一天）
+                rsi_prev = indicators.get('daily_rsi_prev', rsi)
+                if rsi > rsi_prev:  # RSI开始回升
+                    left_signals.append({
+                        "type": "oversold",
+                        "content": f"RSI{rsi:.0f}极度超卖且开始回升",
+                        "weight": self.signal_type_weights["oversold"] * 1.3,
+                        "confidence": base_confidence * 0.75
+                    })
+                else:
+                    # RSI超卖但仍在下降，降低权重
+                    left_signals.append({
+                        "type": "oversold",
+                        "content": f"RSI{rsi:.0f}超卖但仍在下探",
+                        "weight": self.signal_type_weights["oversold"] * 0.5,
+                        "confidence": base_confidence * 0.4
+                    })
+
+            # MACD底背离检查（新增）
+            macd = indicators.get('daily_macd', 0)
+            macd_signal = indicators.get('daily_macd_signal', 0)
+            macd_histogram = indicators.get('daily_macd_histogram', 0)
+
+            if macd < 0 and macd > macd_signal:  # MACD在0轴下方金叉
                 left_signals.append({
-                    "type": "oversold",
-                    "content": f"RSI{rsi:.0f}进入超卖区间",
-                    "weight": self.signal_type_weights["oversold"] * 1.2,
+                    "type": "contrarian",
+                    "content": "MACD在低位出现金叉信号",
+                    "weight": self.signal_type_weights["contrarian"] * 1.5,
                     "confidence": base_confidence * 0.7
                 })
 

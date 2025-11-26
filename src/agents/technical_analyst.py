@@ -17,6 +17,15 @@ src_dir = os.path.dirname(current_dir)
 if src_dir not in sys.path:
     sys.path.insert(0, src_dir)
 
+# 导入买点优化模块
+try:
+    from utils.trend_confirmer import TrendConfirmer
+    from utils.buy_point_optimizer import BuyPointOptimizer
+    OPTIMIZATION_AVAILABLE = True
+except ImportError as e:
+    logging.warning(f"买点优化模块不可用: {e}")
+    OPTIMIZATION_AVAILABLE = False
+
 # 导入AI因子模块
 try:
     from factors import get_factor_manager, initialize_factors
@@ -24,6 +33,7 @@ try:
     # 初始化因子
     initialize_factors()
 except ImportError as e:
+    logger = logging.getLogger(__name__)
     logger.warning(f"AI因子模块不可用: {e}")
     FACTORS_AVAILABLE = False
 
@@ -32,12 +42,52 @@ logger = logging.getLogger(__name__)
 class TechnicalAnalyst(BaseAnalyst):
     def __init__(self):
         super().__init__("technical")
+
+        # 初始化买点优化模块
+        if OPTIMIZATION_AVAILABLE:
+            self.buy_point_optimizer = BuyPointOptimizer()
+            self.trend_confirmer = TrendConfirmer()
+            logger.info("技术分析师买点优化模块初始化完成")
+        else:
+            self.buy_point_optimizer = None
+            self.trend_confirmer = None
+            logger.warning("技术分析师买点优化模块不可用，使用传统模式")
     
         
     def analyze(self, symbol: str, data: pd.DataFrame, info: Dict, indicators: Dict) -> Dict:
         # 首先进行传统分析
         analysis = self._traditional_analysis(symbol, data, info, indicators)
-        
+
+        # 买点优化分析（如果可用）
+        if OPTIMIZATION_AVAILABLE and self.buy_point_optimizer:
+            try:
+                optimization_result = self._execute_buy_point_optimization(
+                    symbol, data, indicators, analysis
+                )
+
+                # 更新分析结果
+                analysis["buy_optimization"] = optimization_result
+
+                # 根据优化结果调整最终建议
+                self._adjust_recommendation_based_on_optimization(analysis, optimization_result)
+
+                # 添加优化理由
+                optimization_reasoning = optimization_result.get("optimization_reasoning", [])
+                analysis["reasoning"].extend(optimization_reasoning)
+
+                # 添加等待时间预警
+                trend_conf = optimization_result.get("trend_confirmation")
+                if trend_conf and hasattr(trend_conf, 'expected_wait_days'):
+                    wait_days = trend_conf.expected_wait_days
+                    if wait_days > 7:
+                        analysis["reasoning"].append(f"⏰ 预期等待时间较长：{wait_days:.1f}天")
+                    elif wait_days <= 3:
+                        analysis["reasoning"].append(f"🚀 短期确认信号，等待时间约{wait_days:.1f}天")
+
+            except Exception as e:
+                logger.error(f"买点优化失败 {symbol}: {e}")
+                analysis["reasoning"].append("⚠️ 买点优化功能异常，使用传统分析")
+
         # AI因子增强分析
         if FACTORS_AVAILABLE:
             try:
@@ -1334,3 +1384,81 @@ class TechnicalAnalyst(BaseAnalyst):
             logger.error(f"检测短期突破信号失败: {e}")
 
         return result
+
+    def _execute_buy_point_optimization(self, symbol: str, data: pd.DataFrame,
+                                     indicators: Dict, traditional_analysis: Dict) -> Dict:
+        """
+        执行买点优化
+
+        Args:
+            symbol: 股票代码
+            data: 价格数据
+            indicators: 技术指标
+            traditional_analysis: 传统分析结果
+
+        Returns:
+            Dict: 买点优化结果
+        """
+        try:
+            # 准备优化所需的数据
+            current_price = data['Close'].iloc[-1] if not data.empty else 0
+            indicators["current_price"] = current_price
+
+            # 执行优化
+            optimization_result = self.buy_point_optimizer.optimize_buy_signals(
+                symbol, data, indicators, traditional_analysis
+            )
+
+            return optimization_result
+
+        except Exception as e:
+            logger.error(f"执行买点优化失败 {symbol}: {e}")
+            return {
+                "symbol": symbol,
+                "optimized_score": 0.0,
+                "buy_recommendation": "暂停 - 优化功能异常",
+                "optimization_reasoning": ["⚠️ 买点优化功能出现异常"]
+            }
+
+    def _adjust_recommendation_based_on_optimization(self, analysis: Dict, optimization_result: Dict):
+        """
+        根据优化结果调整建议
+
+        Args:
+            analysis: 原始分析结果
+            optimization_result: 优化结果
+        """
+        try:
+            optimized_score = optimization_result.get("optimized_score", 0)
+            buy_recommendation = optimization_result.get("buy_recommendation", "")
+            trend_confirmation = optimization_result.get("trend_confirmation")
+
+            # 根据优化评分调整信心度
+            if optimized_score > 0.7:
+                analysis["confidence"] = max(analysis["confidence"], optimized_score)
+                if "强烈买入" in buy_recommendation:
+                    analysis["recommendation"] = "强烈买入"
+                elif "买入" in buy_recommendation:
+                    analysis["recommendation"] = "买入"
+            elif optimized_score > 0.5:
+                analysis["confidence"] = max(analysis["confidence"], optimized_score * 0.8)
+                if "买入" in buy_recommendation:
+                    analysis["recommendation"] = "买入"
+            elif optimized_score < 0.3:
+                # 信号很弱时降低建议强度
+                if analysis["recommendation"] in ["强烈买入", "买入"]:
+                    analysis["recommendation"] = "持有"
+                analysis["confidence"] = min(analysis["confidence"], 0.4)
+
+            # 根据趋势状态调整（TrendConfirmation是dataclass，使用属性访问）
+            if trend_confirmation and hasattr(trend_confirmation, 'status'):
+                from utils.trend_confirmer import TrendStatus
+                if trend_confirmation.status in [TrendStatus.WEAK_DOWNTREND, TrendStatus.STRONG_DOWNTREND]:
+                    # 下跌趋势时，避免买入建议
+                    if analysis["recommendation"] in ["强烈买入", "买入"]:
+                        analysis["recommendation"] = "持有"
+                    analysis["confidence"] *= 0.7
+
+        except Exception as e:
+            logger.error(f"调整建议失败: {e}")
+

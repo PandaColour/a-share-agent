@@ -4,16 +4,16 @@
   "last_updated": "2025-11-05",
   "hold_stocks": [
     {
-      "symbol": "001209.SZ",
-      "name": "洪兴股份",
-      "purchase_date": "2025-11-13",
-      "cost": 22.083
+      "symbol": "000547.SZ",
+      "name": "航天发展",
+      "purchase_date": "2025-11-25",
+      "cost": 11.005
     },
     {
-      "symbol": "000962.SZ",
-      "name": "东方钽业",
-      "purchase_date": "2025-11-12",
-      "cost": 27.65
+      "symbol": "001216.SZ",
+      "name": "华瓷股份",
+      "purchase_date": "2025-11-25",
+      "cost": 18.357
     }
   ],
   "config": {

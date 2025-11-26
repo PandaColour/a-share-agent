@@ -20,22 +20,22 @@
 
     "buy_point_optimization": {
       "enabled": true,
-      "version": "1.0.0",
-      "description": "买点优化配置 - 右侧交易优先，减少回调后等待时间",
+      "version": "2.0.0",
+      "description": "买点优化配置v2 - 更严格的买点判断，避免下降途中抄底",
 
       "signal_weights": {
-        "right_side": 0.6,
-        "left_side": 0.4,
-        "description": "右侧交易（确认信号）权重60%，左侧交易（预测信号）权重40%"
+        "right_side": 0.75,
+        "left_side": 0.25,
+        "description": "右侧交易（确认信号）权重75%，左侧交易（预测信号）权重25% - 提高右侧权重"
       },
 
       "trend_confirmation": {
         "enabled": true,
-        "min_gain_threshold": 0.015,
-        "volume_multiplier": 1.3,
-        "consecutive_up_days": 2,
+        "min_gain_threshold": 0.025,
+        "volume_multiplier": 1.5,
+        "consecutive_up_days": 3,
         "ma_breakthrough_required": false,
-        "description": "趋势确认参数 - 最小涨幅1.5%，成交量放大1.3倍，连续上涨2天"
+        "description": "趋势确认参数 - 最小涨幅2.5%，成交量放大1.5倍，连续上涨3天（更严格）"
       },
 
       "signal_types": {
@@ -47,11 +47,11 @@
           "description": "右侧交易信号权重配置"
         },
         "left_side_signals": {
-          "oversold": 0.2,
+          "oversold": 0.15,
           "support_level": 0.15,
-          "undervalued": 0.15,
+          "undervalued": 0.1,
           "contrarian": 0.1,
-          "description": "左侧交易信号权重配置"
+          "description": "左侧交易信号权重配置（降低超卖权重）"
         }
       },
 
