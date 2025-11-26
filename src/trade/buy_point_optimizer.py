@@ -11,7 +11,6 @@ from typing import Dict, List, Tuple, Optional
 import logging
 
 from .trend_confirmer import TrendConfirmer, TrendConfirmation, TrendStatus
-from .buy_point_config import get_buy_point_config
 
 logger = logging.getLogger(__name__)
 
@@ -20,14 +19,22 @@ class BuyPointOptimizer:
 
     def __init__(self):
         # 从配置文件加载参数
+        import sys
+        import os
+        # 添加config路径
+        config_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'config')
+        if config_dir not in sys.path:
+            sys.path.insert(0, config_dir)
+
+        from config_manager import get_buy_point_config
         config = get_buy_point_config()
 
         self.trend_confirmer = TrendConfirmer()
 
         # 从配置文件获取信号权重
         self.signal_weights = config.get('signal_weights', {
-            "right_side": 0.6,
-            "left_side": 0.4
+            "right_side": 0.75,
+            "left_side": 0.25
         })
 
         # 从配置文件获取信号类型权重
@@ -40,9 +47,9 @@ class BuyPointOptimizer:
             "momentum_confirm": signal_types.get('right_side_signals', {}).get('momentum_confirm', 0.25),
 
             # 左侧交易信号（预测性）
-            "oversold": signal_types.get('left_side_signals', {}).get('oversold', 0.2),
+            "oversold": signal_types.get('left_side_signals', {}).get('oversold', 0.15),
             "support_level": signal_types.get('left_side_signals', {}).get('support_level', 0.15),
-            "undervalued": signal_types.get('left_side_signals', {}).get('undervalued', 0.15),
+            "undervalued": signal_types.get('left_side_signals', {}).get('undervalued', 0.1),
             "contrarian": signal_types.get('left_side_signals', {}).get('contrarian', 0.1)
         }
 

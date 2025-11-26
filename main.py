@@ -28,7 +28,7 @@ import warnings
 import logging
 from logging.handlers import RotatingFileHandler
 
-from src.utils.decision import TradingDecision
+from src.trade.decision import TradingDecision
 
 # Add config directory to path
 config_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config')
@@ -109,7 +109,7 @@ try:
     from agents.risk_manager import RiskManager
     from agents.portfolio_manager import PortfolioManager
     from data.data_provider import AShareDataProvider
-    from utils.decision import TradingDecision
+    from trade.decision import TradingDecision
     from output.analysis_output_manager import AnalysisOutputManager
 except ImportError as e:
     print(f"导入模块失败: {e}")

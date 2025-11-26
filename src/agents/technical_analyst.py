@@ -19,8 +19,8 @@ if src_dir not in sys.path:
 
 # 导入买点优化模块
 try:
-    from utils.trend_confirmer import TrendConfirmer
-    from utils.buy_point_optimizer import BuyPointOptimizer
+    from trade.trend_confirmer import TrendConfirmer
+    from trade.buy_point_optimizer import BuyPointOptimizer
     OPTIMIZATION_AVAILABLE = True
 except ImportError as e:
     logging.warning(f"买点优化模块不可用: {e}")
@@ -1452,7 +1452,7 @@ class TechnicalAnalyst(BaseAnalyst):
 
             # 根据趋势状态调整（TrendConfirmation是dataclass，使用属性访问）
             if trend_confirmation and hasattr(trend_confirmation, 'status'):
-                from utils.trend_confirmer import TrendStatus
+                from trade.trend_confirmer import TrendStatus
                 if trend_confirmation.status in [TrendStatus.WEAK_DOWNTREND, TrendStatus.STRONG_DOWNTREND]:
                     # 下跌趋势时，避免买入建议
                     if analysis["recommendation"] in ["强烈买入", "买入"]:

@@ -3,7 +3,7 @@
 
 from datetime import datetime
 from typing import Dict, List
-from utils.decision import TradingDecision
+from trade.decision import TradingDecision
 from .bull_researcher import BullResearcher
 from .bear_researcher import BearResearcher
 from .debate_manager import DebateManager

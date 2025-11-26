@@ -2,7 +2,13 @@
 # -*- coding: utf-8 -*-
 """
 分析历史"买入"建议的准确性
-分析不同信心度区间在接下来5天超过5%涨幅的概率
+
+策略说明：
+- 假设在分析日期按当前价格买入
+- 持有15个交易日后卖出（第15个交易日收盘价）
+- 统计盈利比例（收益>0的比例）
+- 统计收益率分布、平均收益、最高/最低收益等
+- 按信心度区间分析不同置信水平的表现
 """
 
 import os
@@ -104,17 +110,17 @@ class BuyRecommendationAnalyzer:
         except:
             return 0.0
 
-    def get_future_max_gain(self, symbol: str, start_date: str, buy_price: float, days: int = 5) -> Tuple[float, bool]:
+    def get_15day_return(self, symbol: str, start_date: str, buy_price: float) -> Tuple[float, float, bool]:
         """
-        获取未来N天的最高涨幅
+        获取买入后15个交易日的收益率和最高涨幅
 
         Returns:
-            (max_gain, data_valid): 最高涨幅百分比, 数据是否有效
+            (return_15d, max_gain_15d, data_valid): 15日收益率, 15日内最高涨幅, 数据是否有效
         """
         try:
-            # 计算结束日期（开始日期后30天，确保有足够数据）
+            # 计算结束日期（开始日期后40天，确保有足够数据）
             start_dt = pd.to_datetime(start_date)
-            end_dt = start_dt + timedelta(days=30)
+            end_dt = start_dt + timedelta(days=40)
             end_date = end_dt.strftime('%Y-%m-%d')
 
             # 获取股票数据（只返回DataFrame）
@@ -125,7 +131,7 @@ class BuyRecommendationAnalyzer:
             )
 
             if data is None or data.empty:
-                return 0.0, False
+                return 0.0, 0.0, False
 
             # 确保数据按日期排序
             data = data.sort_index()
@@ -133,27 +139,35 @@ class BuyRecommendationAnalyzer:
             # 找到开始日期之后的数据
             future_data = data[data.index > start_dt]
 
-            if len(future_data) < 1:
-                return 0.0, False
+            if len(future_data) < 15:
+                # 数据不足15个交易日
+                return 0.0, 0.0, False
 
-            # 取接下来N天的数据
-            future_data = future_data.head(days)
+            # 取接下来15个交易日的数据
+            future_15d = future_data.head(15)
 
-            # 计算最高涨幅（列名可能是 'high' 或 'High'）
-            high_col = 'High' if 'High' in future_data.columns else 'high'
-            max_high = future_data[high_col].max()
-            max_gain = ((max_high - buy_price) / buy_price) * 100
+            # 获取第15天的收盘价（列名可能是 'close' 或 'Close'）
+            close_col = 'Close' if 'Close' in future_15d.columns else 'close'
+            sell_price = future_15d.iloc[14][close_col]  # 第15个交易日的收盘价
 
-            return max_gain, True
+            # 计算15日收益率
+            return_15d = ((sell_price - buy_price) / buy_price) * 100
+
+            # 计算15日内最高涨幅
+            high_col = 'High' if 'High' in future_15d.columns else 'high'
+            max_high = future_15d[high_col].max()
+            max_gain_15d = ((max_high - buy_price) / buy_price) * 100
+
+            return return_15d, max_gain_15d, True
 
         except Exception as e:
             print(f"    ⚠️  获取 {symbol} 未来价格失败: {e}")
-            return 0.0, False
+            return 0.0, 0.0, False
 
     def analyze_recommendations(self):
         """分析所有买入建议的表现"""
         print("\n" + "="*80)
-        print("🔍 开始分析买入建议的准确性...")
+        print("🔍 开始分析买入建议的准确性（15个交易日持仓）...")
         print("="*80)
 
         results = []
@@ -168,13 +182,13 @@ class BuyRecommendationAnalyzer:
             print(f"\n[{i}/{len(self.buy_records)}] {name}({symbol}) - {date}")
             print(f"  买入价: ¥{price:.2f}, 信心度: {confidence:.1%}")
 
-            # 获取未来5天的最高涨幅
-            max_gain, valid = self.get_future_max_gain(symbol, date, price, days=5)
+            # 获取15个交易日的收益率和最高涨幅
+            return_15d, max_gain_15d, valid = self.get_15day_return(symbol, date, price)
 
             if valid:
-                exceeds_5pct = max_gain >= 5.0
-                result_icon = "✅" if exceeds_5pct else "❌"
-                print(f"  {result_icon} 5天最高涨幅: {max_gain:+.2f}%")
+                is_profitable = return_15d > 0
+                result_icon = "✅" if is_profitable else "❌"
+                print(f"  {result_icon} 15日收益: {return_15d:+.2f}% | 期间最高: {max_gain_15d:+.2f}%")
 
                 results.append({
                     'symbol': symbol,
@@ -182,11 +196,12 @@ class BuyRecommendationAnalyzer:
                     'date': date,
                     'price': price,
                     'confidence': confidence,
-                    'max_gain_5d': max_gain,
-                    'exceeds_5pct': exceeds_5pct
+                    'return_15d': return_15d,
+                    'max_gain_15d': max_gain_15d,
+                    'is_profitable': is_profitable
                 })
             else:
-                print(f"  ⚠️  无法获取未来数据（可能是最近的建议）")
+                print(f"  ⚠️  无法获取未来数据（可能是最近的建议或数据不足15个交易日）")
 
         print(f"\n✅ 完成分析，有效样本数: {len(results)}")
         return results
@@ -200,21 +215,54 @@ class BuyRecommendationAnalyzer:
         df = pd.DataFrame(results)
 
         print("\n" + "="*80)
-        print("📊 买入建议准确性分析报告")
+        print("📊 买入建议准确性分析报告（15个交易日持仓）")
         print("="*80)
 
         # 总体统计
         total_count = len(df)
-        success_count = df['exceeds_5pct'].sum()
-        success_rate = success_count / total_count * 100
+        profitable_count = df['is_profitable'].sum()
+        profitable_rate = profitable_count / total_count * 100
+
+        avg_return = df['return_15d'].mean()
+        median_return = df['return_15d'].median()
+        max_return = df['return_15d'].max()
+        min_return = df['return_15d'].min()
+        std_return = df['return_15d'].std()
 
         print(f"\n【总体表现】")
         print(f"  样本数量: {total_count}")
-        print(f"  成功次数: {success_count} (5天内涨幅≥5%)")
-        print(f"  成功率: {success_rate:.2f}%")
-        print(f"  平均涨幅: {df['max_gain_5d'].mean():+.2f}%")
-        print(f"  最高涨幅: {df['max_gain_5d'].max():+.2f}%")
-        print(f"  最低涨幅: {df['max_gain_5d'].min():+.2f}%")
+        print(f"  盈利次数: {profitable_count}")
+        print(f"  盈利比例: {profitable_rate:.2f}% (15日后收益>0的比例)")
+        print(f"  平均收益率: {avg_return:+.2f}%")
+        print(f"  中位数收益率: {median_return:+.2f}%")
+        print(f"  最高收益率: {max_return:+.2f}%")
+        print(f"  最低收益率: {min_return:+.2f}%")
+        print(f"  收益率标准差: {std_return:.2f}%")
+
+        # 收益率分布统计
+        print(f"\n【收益率分布】")
+        gain_ranges = [
+            (10, float('inf'), "涨幅>10%"),
+            (5, 10, "涨幅5%-10%"),
+            (0, 5, "涨幅0%-5%"),
+            (-5, 0, "跌幅0%-5%"),
+            (-10, -5, "跌幅5%-10%"),
+            (float('-inf'), -10, "跌幅>10%")
+        ]
+
+        print(f"\n{'收益区间':<15} {'数量':<8} {'占比':<10}")
+        print("-" * 40)
+        for low, high, label in gain_ranges:
+            if high == float('inf'):
+                mask = df['return_15d'] >= low
+            elif low == float('-inf'):
+                mask = df['return_15d'] < high
+            else:
+                mask = (df['return_15d'] >= low) & (df['return_15d'] < high)
+
+            count = mask.sum()
+            percentage = count / total_count * 100
+            print(f"{label:<15} {count:<8} {percentage:>6.2f}%")
 
         # 按信心度区间统计
         print(f"\n【按信心度区间分析】")
@@ -226,7 +274,7 @@ class BuyRecommendationAnalyzer:
             (0.63, 1.00, ">63%")
         ]
 
-        print(f"\n{'区间':<12} {'样本数':<8} {'成功数':<8} {'成功率':<10} {'平均涨幅':<12} {'最高涨幅':<12}")
+        print(f"\n{'信心度区间':<12} {'样本数':<8} {'盈利数':<8} {'盈利率':<10} {'平均收益':<12} {'最高收益':<12}")
         print("-" * 80)
 
         for low, high, label in confidence_ranges:
@@ -235,38 +283,40 @@ class BuyRecommendationAnalyzer:
 
             if len(subset) > 0:
                 count = len(subset)
-                success = subset['exceeds_5pct'].sum()
-                rate = success / count * 100
-                avg_gain = subset['max_gain_5d'].mean()
-                max_gain = subset['max_gain_5d'].max()
+                profitable = subset['is_profitable'].sum()
+                rate = profitable / count * 100
+                avg_return = subset['return_15d'].mean()
+                max_return = subset['return_15d'].max()
 
-                print(f"{label:<12} {count:<8} {success:<8} {rate:>6.2f}%    {avg_gain:>+7.2f}%      {max_gain:>+7.2f}%")
+                print(f"{label:<12} {count:<8} {profitable:<8} {rate:>6.2f}%    {avg_return:>+7.2f}%      {max_return:>+7.2f}%")
             else:
                 print(f"{label:<12} {'0':<8} {'-':<8} {'-':<10} {'-':<12} {'-':<12}")
 
-        # 详细列表（前10个成功案例和前10个失败案例）
-        print(f"\n【成功案例 Top 10】（涨幅最高）")
-        success_cases = df[df['exceeds_5pct'] == True].nlargest(10, 'max_gain_5d')
-        if len(success_cases) > 0:
-            print(f"\n{'日期':<12} {'代码':<12} {'名称':<12} {'信心度':<8} {'涨幅':<10}")
-            print("-" * 80)
-            for _, row in success_cases.iterrows():
-                print(f"{row['date']:<12} {row['symbol']:<12} {row['name']:<12} {row['confidence']:>6.1%}  {row['max_gain_5d']:>+7.2f}%")
+        # 详细列表（前10个最佳和最差案例）
+        print(f"\n【最佳案例 Top 10】（收益率最高）")
+        best_cases = df.nlargest(10, 'return_15d')
+        if len(best_cases) > 0:
+            print(f"\n{'日期':<12} {'代码':<12} {'名称':<12} {'信心度':<8} {'15日收益':<10} {'期间最高':<10}")
+            print("-" * 85)
+            for _, row in best_cases.iterrows():
+                print(f"{row['date']:<12} {row['symbol']:<12} {row['name']:<12} "
+                      f"{row['confidence']:>6.1%}  {row['return_15d']:>+7.2f}%    {row['max_gain_15d']:>+7.2f}%")
         else:
-            print("  无成功案例")
+            print("  无案例")
 
-        print(f"\n【失败案例 Top 10】（跌幅最大）")
-        fail_cases = df[df['exceeds_5pct'] == False].nsmallest(10, 'max_gain_5d')
-        if len(fail_cases) > 0:
-            print(f"\n{'日期':<12} {'代码':<12} {'名称':<12} {'信心度':<8} {'涨幅':<10}")
-            print("-" * 80)
-            for _, row in fail_cases.iterrows():
-                print(f"{row['date']:<12} {row['symbol']:<12} {row['name']:<12} {row['confidence']:>6.1%}  {row['max_gain_5d']:>+7.2f}%")
+        print(f"\n【最差案例 Top 10】（亏损最大）")
+        worst_cases = df.nsmallest(10, 'return_15d')
+        if len(worst_cases) > 0:
+            print(f"\n{'日期':<12} {'代码':<12} {'名称':<12} {'信心度':<8} {'15日收益':<10} {'期间最高':<10}")
+            print("-" * 85)
+            for _, row in worst_cases.iterrows():
+                print(f"{row['date']:<12} {row['symbol']:<12} {row['name']:<12} "
+                      f"{row['confidence']:>6.1%}  {row['return_15d']:>+7.2f}%    {row['max_gain_15d']:>+7.2f}%")
         else:
-            print("  无失败案例")
+            print("  无案例")
 
         # 保存详细结果到CSV
-        output_file = "outputs/buy_recommendation_analysis.csv"
+        output_file = "outputs/buy_recommendation_analysis_15d.csv"
         df.to_csv(output_file, index=False, encoding='utf-8-sig')
         print(f"\n💾 详细结果已保存到: {output_file}")
 
@@ -276,7 +326,7 @@ class BuyRecommendationAnalyzer:
 def main():
     """主函数"""
     print("="*80)
-    print("📊 买入建议准确性分析工具")
+    print("📊 买入建议准确性分析工具（15个交易日持仓策略）")
     print("="*80)
 
     analyzer = BuyRecommendationAnalyzer()
@@ -295,6 +345,11 @@ def main():
     analyzer.generate_report(results)
 
     print("\n✅ 分析完成！")
+    print("\n📝 分析说明:")
+    print("  - 假设在分析当日收盘价买入")
+    print("  - 持有15个交易日后卖出（第15个交易日收盘价）")
+    print("  - 统计实际收益率和盈利概率")
+    print("  - 同时记录持仓期间的最高涨幅（作为参考）")
 
 
 if __name__ == "__main__":

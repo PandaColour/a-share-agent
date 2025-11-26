@@ -12,8 +12,6 @@ import numpy as np
 from typing import Dict, List, Optional, Tuple
 import logging
 
-from .buy_point_config import get_buy_point_config
-
 logger = logging.getLogger(__name__)
 
 class TrendStatus(Enum):
@@ -89,6 +87,14 @@ class TrendConfirmer:
             raw_score = 0.0
 
             # 从配置文件获取参数
+            import sys
+            import os
+            # 添加config路径
+            config_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'config')
+            if config_dir not in sys.path:
+                sys.path.insert(0, config_dir)
+
+            from config_manager import get_buy_point_config
             config = get_buy_point_config()
             trend_config = config.get('trend_confirmation', {})
 
