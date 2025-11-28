@@ -404,18 +404,8 @@ class AnalysisOutputManager:
                 # 复制除分析师详情外的所有字段
                 csv_result = {k: v for k, v in result.items() if k != "分析师详情"}
 
-                # 从分析师详情中提取三个主要分析师的策略和信心度
+                # 从分析师详情中提取主要分析师的策略和信心度
                 analyst_details = result.get("分析师详情", {})
-
-                # 基本面分析师
-                fundamental = analyst_details.get("基本面分析师", {})
-                if fundamental:
-                    fundamental_output = fundamental.get("输出结果", {})
-                    csv_result["基本面_策略"] = fundamental_output.get("推荐操作", "N/A")
-                    csv_result["基本面_信心度"] = fundamental_output.get("信心度", "N/A")
-                else:
-                    csv_result["基本面_策略"] = "N/A"
-                    csv_result["基本面_信心度"] = "N/A"
 
                 # 技术面分析师
                 technical = analyst_details.get("技术面分析师", {})
@@ -427,15 +417,15 @@ class AnalysisOutputManager:
                     csv_result["技术面_策略"] = "N/A"
                     csv_result["技术面_信心度"] = "N/A"
 
-                # 情感面分析师
-                sentiment = analyst_details.get("情感面分析师", {})
-                if sentiment:
-                    sentiment_output = sentiment.get("输出结果", {})
-                    csv_result["情感面_策略"] = sentiment_output.get("推荐操作", "N/A")
-                    csv_result["情感面_信心度"] = sentiment_output.get("信心度", "N/A")
+                # AI因子分析师
+                ai_factor = analyst_details.get("AI因子分析师", {})
+                if ai_factor:
+                    ai_output = ai_factor.get("输出结果", {})
+                    csv_result["AI_策略"] = ai_output.get("推荐操作", "N/A")
+                    csv_result["AI_信心度"] = ai_output.get("信心度", "N/A")
                 else:
-                    csv_result["情感面_策略"] = "N/A"
-                    csv_result["情感面_信心度"] = "N/A"
+                    csv_result["AI_策略"] = "N/A"
+                    csv_result["AI_信心度"] = "N/A"
 
                 csv_results.append(csv_result)
 
@@ -444,9 +434,8 @@ class AnalysisOutputManager:
             # 定义输出列的顺序（去掉分析时间）
             column_order = [
                 "股票代码", "股票名称", "操作建议", "信心度",
-                "基本面_策略", "基本面_信心度",
                 "技术面_策略", "技术面_信心度",
-                "情感面_策略", "情感面_信心度",
+                "AI_策略", "AI_信心度",
                 "风险等级", "当前价格", "当日最高", "当日最低", "当日涨跌",
                 "连续涨跌日", "连续涨跌幅度", "决策理由"
             ]

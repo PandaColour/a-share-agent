@@ -10,7 +10,7 @@
     },
 
     "debate_settings": {
-      "enable_debate": true,
+      "enable_debate": false,
       "enable_multi_round_debate": true,
       "debate_rounds": 2,
       "force_opposing_views": true,

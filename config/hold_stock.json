@@ -4,16 +4,10 @@
   "last_updated": "2025-11-05",
   "hold_stocks": [
     {
-      "symbol": "000547.SZ",
-      "name": "航天发展",
-      "purchase_date": "2025-11-25",
-      "cost": 11.005
-    },
-    {
-      "symbol": "001216.SZ",
-      "name": "华瓷股份",
-      "purchase_date": "2025-11-25",
-      "cost": 18.357
+      "symbol": "000505.SZ",
+      "name": "京粮控股",
+      "purchase_date": "2025-11-27",
+      "cost": 8.234
     }
   ],
   "config": {

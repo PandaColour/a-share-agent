@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-分析5%止盈策略的持仓天数
+分析5%止盈策略的持仓天数和各分析师建议的准确度
 
 策略说明：
 - 假设在分析日期按当前价格买入
@@ -10,6 +10,7 @@
 - 如果收益率≥5%，立即卖出
 - 如果15个交易日内未达到5%，第15天强制卖出
 - 统计平均持仓天数、止盈成功率、持仓天数分布等
+- 分析各分析师（总体、基本面、技术面、情感面、AI因子）的操作建议准确度
 """
 
 import os
@@ -39,6 +40,194 @@ sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
 from src.data.multi_source_data_provider import MultiSourceDataProvider
 
 
+class AnalystAccuracyAnalyzer:
+    """分析师建议准确度分析器"""
+
+    ANALYSTS = {
+        'overall': '操作建议',
+        'fundamental': '基本面分析师',
+        'technical': '技术面分析师',
+        'sentiment': '情感面分析师',
+        'ai_factor': 'AI因子分析师'
+    }
+
+    def __init__(self):
+        self.analyst_recommendations = {key: [] for key in self.ANALYSTS.keys()}
+
+    def extract_analyst_recommendations(self, record: Dict) -> None:
+        """从记录中提取各分析师的操作建议"""
+        # 总体建议
+        self.analyst_recommendations['overall'].append({
+            'recommendation': record.get('操作建议', '未知'),
+            'confidence': record.get('信心度', '0%')
+        })
+
+        # 各分析师建议
+        analyst_details = record.get('分析师详情', {})
+
+        # 基本面分析师
+        fundamental = analyst_details.get('基本面分析师', {}).get('输出结果', {})
+        self.analyst_recommendations['fundamental'].append({
+            'recommendation': fundamental.get('推荐操作', '未知'),
+            'confidence': fundamental.get('信心度', '0%')
+        })
+
+        # 技术面分析师
+        technical = analyst_details.get('技术面分析师', {}).get('输出结果', {})
+        self.analyst_recommendations['technical'].append({
+            'recommendation': technical.get('推荐操作', '未知'),
+            'confidence': technical.get('信心度', '0%')
+        })
+
+        # 情感面分析师
+        sentiment = analyst_details.get('情感面分析师', {}).get('输出结果', {})
+        self.analyst_recommendations['sentiment'].append({
+            'recommendation': sentiment.get('推荐操作', '未知'),
+            'confidence': sentiment.get('信心度', '0%')
+        })
+
+        # AI因子分析师
+        ai_factor = analyst_details.get('AI因子分析师', {}).get('输出结果', {})
+        self.analyst_recommendations['ai_factor'].append({
+            'recommendation': ai_factor.get('推荐操作', '未知'),
+            'confidence': ai_factor.get('信心度', '0%')
+        })
+
+    def calculate_accuracy(self, results: List[Dict], analyst_key: str) -> Dict:
+        """计算特定分析师的准确度"""
+        if analyst_key not in self.analyst_recommendations:
+            return {}
+
+        recommendations = self.analyst_recommendations[analyst_key]
+
+        if len(recommendations) != len(results):
+            print(f"⚠️  警告: {analyst_key} 建议数量({len(recommendations)})与结果数量({len(results)})不匹配")
+            return {}
+
+        stats = {
+            '买入建议数': 0,
+            '持有建议数': 0,
+            '卖出建议数': 0,
+            '买入_止盈成功': 0,
+            '买入_止盈失败': 0,
+            '买入_平均收益': 0.0,
+            '买入_平均持仓天数': 0.0,
+            '买入_止盈率': 0.0,
+            '持有_止盈成功': 0,
+            '持有_平均收益': 0.0,
+            '卖出_平均收益': 0.0
+        }
+
+        buy_returns = []
+        buy_days = []
+        hold_returns = []
+        sell_returns = []
+
+        for i, (rec, result) in enumerate(zip(recommendations, results)):
+            recommendation = rec['recommendation']
+
+            if recommendation == '买入':
+                stats['买入建议数'] += 1
+                if result['hit_target']:
+                    stats['买入_止盈成功'] += 1
+                else:
+                    stats['买入_止盈失败'] += 1
+                buy_returns.append(result['return_pct'])
+                buy_days.append(result['holding_days'])
+
+            elif recommendation == '持有':
+                stats['持有建议数'] += 1
+                hold_returns.append(result['return_pct'])
+                if result['hit_target']:
+                    stats['持有_止盈成功'] += 1
+
+            elif recommendation == '卖出':
+                stats['卖出建议数'] += 1
+                sell_returns.append(result['return_pct'])
+
+        # 计算平均值
+        if buy_returns:
+            stats['买入_平均收益'] = np.mean(buy_returns)
+            stats['买入_平均持仓天数'] = np.mean(buy_days)
+            stats['买入_止盈率'] = stats['买入_止盈成功'] / stats['买入建议数'] * 100
+
+        if hold_returns:
+            stats['持有_平均收益'] = np.mean(hold_returns)
+
+        if sell_returns:
+            stats['卖出_平均收益'] = np.mean(sell_returns)
+
+        return stats
+
+    def generate_comparison_report(self, results: List[Dict]) -> None:
+        """生成各分析师对比报告"""
+        print("\n" + "="*100)
+        print("📊 各分析师操作建议准确度对比分析")
+        print("="*100)
+
+        # 计算各分析师统计
+        analyst_stats = {}
+        for key, name in self.ANALYSTS.items():
+            analyst_stats[key] = self.calculate_accuracy(results, key)
+
+        # 打印对比表格
+        print(f"\n{'分析师':<15} {'买入数':<8} {'持有数':<8} {'卖出数':<8} {'买入止盈率':<12} {'买入平均收益':<14} {'买入平均持仓':<12}")
+        print("-" * 100)
+
+        for key, name in self.ANALYSTS.items():
+            stats = analyst_stats[key]
+            if stats:
+                print(f"{name:<15} "
+                      f"{stats['买入建议数']:<8} "
+                      f"{stats['持有建议数']:<8} "
+                      f"{stats['卖出建议数']:<8} "
+                      f"{stats['买入_止盈率']:>6.2f}%      "
+                      f"{stats['买入_平均收益']:>+7.2f}%       "
+                      f"{stats['买入_平均持仓天数']:>6.2f}天")
+
+        # 详细分析
+        print("\n" + "="*100)
+        print("📈 各分析师详细表现")
+        print("="*100)
+
+        for key, name in self.ANALYSTS.items():
+            stats = analyst_stats[key]
+            if not stats:
+                continue
+
+            print(f"\n【{name}】")
+            print(f"  总建议数: {stats['买入建议数'] + stats['持有建议数'] + stats['卖出建议数']}")
+
+            if stats['买入建议数'] > 0:
+                print(f"\n  买入建议 ({stats['买入建议数']}次):")
+                print(f"    止盈成功: {stats['买入_止盈成功']}次 ({stats['买入_止盈率']:.2f}%)")
+                print(f"    止盈失败: {stats['买入_止盈失败']}次")
+                print(f"    平均收益: {stats['买入_平均收益']:+.2f}%")
+                print(f"    平均持仓: {stats['买入_平均持仓天数']:.2f}天")
+
+            if stats['持有建议数'] > 0:
+                print(f"\n  持有建议 ({stats['持有建议数']}次):")
+                print(f"    止盈成功: {stats['持有_止盈成功']}次")
+                print(f"    平均收益: {stats['持有_平均收益']:+.2f}%")
+
+            if stats['卖出建议数'] > 0:
+                print(f"\n  卖出建议 ({stats['卖出建议数']}次):")
+                print(f"    平均收益: {stats['卖出_平均收益']:+.2f}%")
+                print(f"    (如果误卖后继续持有的表现)")
+
+        # 保存详细统计到JSON
+        output_file = "outputs/analyst_accuracy_report.json"
+        with open(output_file, 'w', encoding='utf-8') as f:
+            json.dump({
+                'analyst_stats': analyst_stats,
+                'total_samples': len(results),
+                'analysis_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            }, f, ensure_ascii=False, indent=2)
+
+        print(f"\n💾 分析师准确度报告已保存到: {output_file}")
+        print("="*100)
+
+
 class TakeProfitStrategyAnalyzer:
     """5%止盈策略分析器"""
 
@@ -47,6 +236,7 @@ class TakeProfitStrategyAnalyzer:
         self.target_profit = target_profit  # 目标收益率（%）
         self.data_provider = MultiSourceDataProvider()
         self.buy_records = []
+        self.analyst_analyzer = AnalystAccuracyAnalyzer()
 
     def load_all_analyses(self):
         """加载所有历史分析结果"""
@@ -72,7 +262,7 @@ class TakeProfitStrategyAnalyzer:
                 with open(json_file, 'r', encoding='utf-8') as f:
                     data = json.load(f)
 
-                # 提取"买入"建议
+                # 提取"买入"建议（基于总体建议）
                 buy_count = 0
                 for record in data:
                     if record.get('操作建议') == '买入':
@@ -208,6 +398,8 @@ class TakeProfitStrategyAnalyzer:
         print("="*80)
 
         results = []
+        # 重置分析师建议记录，只保留有效的
+        self.analyst_analyzer = AnalystAccuracyAnalyzer()
 
         for i, record in enumerate(self.buy_records, 1):
             symbol = record['股票代码']
@@ -231,6 +423,9 @@ class TakeProfitStrategyAnalyzer:
                 status = f"第{holding_days}天止盈" if hit_target else f"第{holding_days}天到期"
 
                 print(f"  {result_icon} {status}: {return_pct:+.2f}%")
+
+                # 只有在数据有效时才提取分析师建议
+                self.analyst_analyzer.extract_analyst_recommendations(record)
 
                 results.append({
                     'symbol': symbol,
@@ -377,7 +572,7 @@ class TakeProfitStrategyAnalyzer:
 def main():
     """主函数"""
     print("="*80)
-    print("📊 5%止盈策略分析工具")
+    print("📊 5%止盈策略与分析师准确度分析工具")
     print("="*80)
 
     # 可以修改目标收益率
@@ -395,8 +590,15 @@ def main():
     # 2. 分析每个建议的止盈策略表现
     results = analyzer.analyze_all_recommendations()
 
+    if not results:
+        print("\n❌ 没有有效的分析结果")
+        return
+
     # 3. 生成统计报告
     analyzer.generate_report(results)
+
+    # 4. 生成分析师准确度对比报告
+    analyzer.analyst_analyzer.generate_comparison_report(results)
 
     print("\n✅ 分析完成！")
     print("\n📝 策略说明:")
@@ -406,6 +608,10 @@ def main():
     print(f"  - 如果收益率≥{target_profit}%，立即卖出")
     print(f"  - 如果15个交易日内未达到{target_profit}%，第15天强制卖出")
     print(f"  - 统计持仓天数分布、止盈成功率等指标")
+    print(f"\n📊 分析师准确度说明:")
+    print(f"  - 对比总体建议、基本面、技术面、情感面、AI因子等各分析师的操作建议")
+    print(f"  - 计算各分析师建议'买入'、'持有'、'卖出'的准确度")
+    print(f"  - 评估各分析师的止盈成功率、平均收益率、平均持仓天数")
 
 
 if __name__ == "__main__":
