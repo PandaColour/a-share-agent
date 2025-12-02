@@ -8,6 +8,12 @@
       "name": "京粮控股",
       "purchase_date": "2025-11-27",
       "cost": 8.234
+    },
+    {
+      "symbol": "603122.SH",
+      "name": "合富中国",
+      "purchase_date": "2025-12-02",
+      "cost": 25.56
     }
   ],
   "config": {

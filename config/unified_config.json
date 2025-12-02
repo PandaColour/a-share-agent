@@ -10,7 +10,7 @@
     },
 
     "debate_settings": {
-      "enable_debate": false,
+      "enable_debate": true,
       "enable_multi_round_debate": true,
       "debate_rounds": 2,
       "force_opposing_views": true,
@@ -309,7 +309,7 @@
     "score_threshold": 15,
     "filters": {
       "description": "潜力股专用技术过滤器（仅应用于AUTO_DISCOVERY类型股票）- 优化早期动量发现",
-      "max_daily_change": 10,
+      "max_daily_change": 30,
       "min_daily_change": -3,
       "max_rsi": 80,
       "min_volume_ratio": 1.0,
