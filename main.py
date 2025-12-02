@@ -103,9 +103,7 @@ warnings.filterwarnings('ignore')
 sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
 
 try:
-    from agents.fundamental_analyst import FundamentalAnalyst
     from agents.technical_analyst import TechnicalAnalyst
-    from agents.sentiment_analyst import SentimentAnalyst
     from agents.risk_manager import RiskManager
     from agents.portfolio_manager import PortfolioManager
     from data.data_provider import AShareDataProvider
@@ -135,9 +133,7 @@ class AShareTradingAgentsSystem:
         
         # 主线程组件
         self.data_provider = AShareDataProvider()
-        self.fundamental_analyst = FundamentalAnalyst()
         self.technical_analyst = TechnicalAnalyst()
-        self.sentiment_analyst = SentimentAnalyst()
         self.risk_manager = RiskManager()
         # 初始化投资组合管理器
         self.portfolio_manager = PortfolioManager()
@@ -186,14 +182,12 @@ class AShareTradingAgentsSystem:
 
 
     def _get_thread_components(self):
-        """获取线程本地组件实例（确保线程安全）"""
+        """获取线程本地组件实例(确保线程安全)"""
         if not hasattr(self._thread_local, 'components'):
             # 为每个线程创建独立的组件实例
             self._thread_local.components = {
                 'data_provider': AShareDataProvider(),
-                'fundamental_analyst': FundamentalAnalyst(),
                 'technical_analyst': TechnicalAnalyst(),
-                'sentiment_analyst': SentimentAnalyst(),
                 'risk_manager': RiskManager(),
                 'portfolio_manager': PortfolioManager()
             }
@@ -211,23 +205,19 @@ class AShareTradingAgentsSystem:
             components = self._get_thread_components()
             return {k: v for k, v in components.items() if k != 'data_provider'}
         
-    def analyze_stock(self, symbol: str, stock_name: str = None, price_limit_min: float = None, 
+    def analyze_stock(self, symbol: str, stock_name: str = None, price_limit_min: float = None,
                      price_limit_max: float = None, use_thread_safe: bool = False) -> TradingDecision:
         """分析单只股票"""
         # 选择使用主线程组件还是线程安全组件
         if use_thread_safe:
             components = self._get_thread_components()
             data_provider = components['data_provider']
-            fundamental_analyst = components['fundamental_analyst']
             technical_analyst = components['technical_analyst']
-            sentiment_analyst = components['sentiment_analyst']
             risk_manager = components['risk_manager']
             portfolio_manager = components['portfolio_manager']
         else:
             data_provider = self.data_provider
-            fundamental_analyst = self.fundamental_analyst
             technical_analyst = self.technical_analyst
-            sentiment_analyst = self.sentiment_analyst
             risk_manager = self.risk_manager
             portfolio_manager = self.portfolio_manager
 
@@ -320,39 +310,26 @@ class AShareTradingAgentsSystem:
             "analysis_timestamp": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         }
 
-        # 基本面分析
-        fundamental_analysis = fundamental_analyst.analyze(symbol, data, info, indicators)
-        if fundamental_analysis.get("recommendation") == "无法分析":
-            analysis_failures.append("基本面分析失败")
-        fundamental_analysis["analyst_inputs"] = analyst_inputs.copy()
-        analyses.append(fundamental_analysis)
-
         # 技术面分析
         technical_analysis = technical_analyst.analyze(symbol, data, info, indicators)
         if technical_analysis.get("recommendation") == "无法分析":
             analysis_failures.append("技术面分析失败")
         technical_analysis["analyst_inputs"] = analyst_inputs.copy()
         analyses.append(technical_analysis)
-        
-        # 情感面分析（使用不包含网络请求的方法）
-        sentiment_analysis = sentiment_analyst.analyze_with_data(symbol, data, {})
-        if sentiment_analysis.get("recommendation") == "无法分析":
-            analysis_failures.append("情感面分析失败")
-        sentiment_analysis["analyst_inputs"] = analyst_inputs.copy()  # 保持一致性
-        analyses.append(sentiment_analysis)
-        
+
         # AI因子分析（如果启用）
         ai_factor_analysis = None
         if self.ai_factor_enabled and self.factor_manager:
             try:
                 ai_factor_analysis = self._ai_factor_analysis(symbol, data, indicators)
                 if ai_factor_analysis:
+                    ai_factor_analysis["analyst_inputs"] = analyst_inputs.copy()
                     analyses.append(ai_factor_analysis)
                     self.logger.info(f"AI因子分析完成: {symbol}")
             except Exception as e:
                 self.logger.error(f"AI因子分析失败 {symbol}: {e}")
                 analysis_failures.append("AI因子分析失败")
-        
+
         # 检查是否有分析失败
         if len(analysis_failures) >= 2:  # 如果2个或以上分析失败
             self.logger.warning(f"多个分析模块失败 {symbol}: {', '.join(analysis_failures)}")
@@ -562,12 +539,10 @@ class AShareTradingAgentsSystem:
             
             # 获取缓存数据分析的轻量级组件（避免重复初始化数据源）
             components = self._get_cached_analysis_components()
-            fundamental_analyst = components['fundamental_analyst']
             technical_analyst = components['technical_analyst']
-            sentiment_analyst = components['sentiment_analyst']
             risk_manager = components['risk_manager']
             portfolio_manager = components['portfolio_manager']
-            
+
             # 多智能体分析
             analyses = []
 
@@ -582,44 +557,11 @@ class AShareTradingAgentsSystem:
                 "analysis_timestamp": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             }
 
-            # 基本面分析
-            fundamental_analysis = fundamental_analyst.analyze(symbol, data, info, indicators)
-            fundamental_analysis["analyst_inputs"] = analyst_inputs.copy()
-            analyses.append(fundamental_analysis)
-
             # 技术面分析
             technical_analysis = technical_analyst.analyze(symbol, data, info, indicators)
             technical_analysis["analyst_inputs"] = analyst_inputs.copy()
             analyses.append(technical_analysis)
 
-            # 情感面分析（使用预收集的新闻和网页数据）
-            news_data = cached_data.get('news_data', [])
-            web_data = cached_data.get('web_data', {'news': [], 'discussions': []})
-
-            # 合并所有新闻数据和网页数据
-            total_news_count = len(news_data) + len(web_data.get('news', []))
-            total_discussions = len(web_data.get('discussions', []))
-
-            # 构造包含网页数据的 market_data
-            market_data = {}
-            if web_data.get('news') or web_data.get('discussions'):
-                market_data['web_news'] = web_data.get('news', [])
-                market_data['web_discussions'] = web_data.get('discussions', [])
-
-            if news_data:
-                # 使用带新闻数据的分析方法
-                sentiment_analysis = sentiment_analyst.analyze_with_news_data(
-                    symbol, data, market_data, news_data
-                )
-                print(f"    情感分析: {len(news_data)}条传统新闻, {len(web_data.get('news', []))}条网页新闻, {total_discussions}条讨论")
-            else:
-                # 使用普通分析方法，但传入 market_data
-                sentiment_analysis = sentiment_analyst.analyze_with_data(symbol, data, {}, market_data)
-                print(f"    情感分析: {total_news_count}条网页新闻, {total_discussions}条讨论")
-
-            sentiment_analysis["analyst_inputs"] = analyst_inputs.copy()
-            analyses.append(sentiment_analysis)
-            
             # AI因子分析（如果启用）
             if self.ai_factor_enabled and self.factor_manager:
                 try:

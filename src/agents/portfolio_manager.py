@@ -16,13 +16,13 @@ logger = logging.getLogger(__name__)
 
 class PortfolioManager:
     def __init__(self):
-        # 内部初始化配置管理器，简化依赖传递
+        # 内部初始化配置管理器,简化依赖传递
         from config.config_manager import get_config
         self.config_manager = get_config()
+        # 只保留技术面分析和AI因子分析
         self.decision_weights = {
-            "基本面分析": 0.4,
-            "技术面分析": 0.35,
-            "情感面分析": 0.25
+            "技术面分析": 0.6,
+            "AI因子分析": 0.4
         }
         # 初始化辩论系统组件
         self.bull_researcher = BullResearcher()

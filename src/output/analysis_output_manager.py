@@ -104,7 +104,7 @@ class AnalysisOutputManager:
         """格式化分析师详情"""
         analyst_details = {}
 
-        # 准备分析师输入信息（所有分析师共享相同的输入）
+        # 准备分析师输入信息(所有分析师共享相同的输入)
         analyst_inputs = {}
         if analyses:
             analyst_inputs = analyses[0].get("analyst_inputs", {})
@@ -113,19 +113,7 @@ class AnalysisOutputManager:
         for analysis in analyses:
             analyst_type = analysis.get("analyst_type", "")
 
-            if analyst_type == "基本面分析":
-                analyst_details["基本面分析师"] = {
-                    "输入信息": analyst_inputs.copy(),
-                    "输出结果": {
-                        "推荐操作": analysis.get("recommendation", "持有"),
-                        "信心度": f"{analysis.get('confidence', 0.5):.2%}",
-                        "推理过程": analysis.get("reasoning", []),
-                        "估值状况": analysis.get("valuation_status", "N/A"),
-                        "财务健康": analysis.get("financial_health", "N/A"),
-                        "目标价格区间": analysis.get("target_price_range", {"low": 0, "high": 0})
-                    }
-                }
-            elif analyst_type == "技术面分析":
+            if analyst_type == "技术面分析":
                 analyst_details["技术面分析师"] = {
                     "输入信息": analyst_inputs.copy(),
                     "输出结果": {
@@ -134,17 +122,6 @@ class AnalysisOutputManager:
                         "推理过程": analysis.get("reasoning", []),
                         "技术指标": analysis.get("technical_indicators", {}),
                         "趋势分析": analysis.get("trend_analysis", "N/A")
-                    }
-                }
-            elif analyst_type == "情感面分析":
-                analyst_details["情感面分析师"] = {
-                    "输入信息": analyst_inputs.copy(),
-                    "输出结果": {
-                        "推荐操作": analysis.get("recommendation", "持有"),
-                        "信心度": f"{analysis.get('confidence', 0.5):.2%}",
-                        "推理过程": analysis.get("reasoning", []),
-                        "市场情绪": analysis.get("market_sentiment", "中性"),
-                        "新闻分析": analysis.get("news_analysis", {})
                     }
                 }
             elif analyst_type == "AI因子分析":
@@ -515,7 +492,7 @@ class AnalysisOutputManager:
             }
 
             # 统计各分析师的推荐情况
-            analyst_types = ["基本面分析师", "技术面分析师", "情感面分析师", "AI因子分析师", "多轮辩论分析师"]
+            analyst_types = ["技术面分析师", "AI因子分析师", "多轮辩论分析师"]
 
             for analyst_type in analyst_types:
                 recommendations = {}
@@ -630,18 +607,16 @@ class AnalysisOutputManager:
 
             readme_content += f"""
 ### 详细分析文件
-- `analyst_details.json` - 👥 四个智能分析师的详细分析过程
+- `analyst_details.json` - 👥 两个智能分析师的详细分析过程
 - `analyst_summary_report.json` - 📊 分析师表现统计报告
 - `README.md` - 📄 本分析会话说明文档（当前文件）
 
 ## 🤖 智能分析师说明
 
-本次分析使用了四个AI智能分析师：
+本次分析使用了两个核心AI智能分析师：
 
-1. **📊 基本面分析师** - 财务数据、估值分析、行业对比
-2. **📈 技术面分析师** - 技术指标、图表形态、趋势分析
-3. **📰 情感面分析师** - 新闻舆情、市场情绪、政策影响
-4. **🤖 AI因子分析师** - 量化因子、模式识别、智能评分
+1. **📈 技术面分析师** - 技术指标、图表形态、趋势分析
+2. **🤖 AI因子分析师** - 量化因子、模式识别、智能评分
 
 ## 🔄 排序说明
 
