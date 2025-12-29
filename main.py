@@ -21,7 +21,7 @@ import numpy as np
 import time
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, List, Tuple, Optional
 from pathlib import Path
 import warnings
@@ -1117,8 +1117,14 @@ def main():
     # 解析命令行参数
     parser = argparse.ArgumentParser(description='A股量化交易系统')
     parser.add_argument('--mode', type=str, default='select',
-                       choices=['select', 'hold', 'both'],
-                       help='运行模式: select=选股分析, hold=持仓分析, both=两者都执行')
+                       choices=['select', 'hold', 'both', 'backtest'],
+                       help='运行模式: select=选股分析, hold=持仓分析, both=两者都执行, backtest=历史回测')
+    parser.add_argument('--start-date', type=str, default=None,
+                       help='回测开始日期 (YYYY-MM-DD)')
+    parser.add_argument('--end-date', type=str, default=None,
+                       help='回测结束日期 (YYYY-MM-DD)')
+    parser.add_argument('--months', type=int, default=3,
+                       help='回测向前月数（当未指定日期时使用）')
     args = parser.parse_args()
 
     # 总体耗时统计开始
@@ -1127,9 +1133,12 @@ def main():
     main_logger.info("🚀 ================ A股量化交易系统启动 ================")
     main_logger.info(f"📋 运行模式: {args.mode}")
 
-    # 统一输出目录结构（所有模式都使用相同格式）
+    # 根据模式设置输出目录（回测使用独立目录）
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_dir = os.path.join("outputs", timestamp)
+    if args.mode == 'backtest':
+        output_dir = os.path.join("backtest_results", timestamp)
+    else:
+        output_dir = os.path.join("outputs", timestamp)
     os.makedirs(output_dir, exist_ok=True)
     main_logger.info(f"📁 输出目录: {output_dir}")
 
@@ -1168,6 +1177,134 @@ def main():
         main_logger.error(f"❌ 系统初始化失败: {e}")
         import traceback
         traceback.print_exc()
+        return
+
+    # ========== 回测模式：历史数据回测 ==========
+    if args.mode == 'backtest':
+        print("\n" + "="*60)
+        print("历史回测模式：对历史数据进行逐日分析和模拟交易")
+        print("="*60)
+
+        from src.backtest.historical_backtest_runner import HistoricalBacktestRunner
+
+        # 创建历史回测运行器
+        backtest_runner = HistoricalBacktestRunner(system)
+
+        # 显示回测配置
+        if args.start_date and args.end_date:
+            print(f"回测时间范围: {args.start_date} 至 {args.end_date}")
+        else:
+            end_date = datetime.now().strftime("%Y-%m-%d")
+            start_date = (datetime.now() - timedelta(days=30 * args.months)).strftime("%Y-%m-%d")
+            print(f"回测时间范围: {start_date} 至 {end_date} (最近{args.months}个月)")
+
+        print("股票池: 使用选股系统自动选择（复用 config/dynamic_stock.json 或重新选股）")
+        print("\n开始历史回测...")
+
+        # 运行历史回测
+        backtest_results = backtest_runner.run_historical_backtest(
+            symbols=None,  # 使用选股系统
+            start_date=args.start_date,
+            end_date=args.end_date,
+            months_back=args.months
+        )
+
+        # 打印回测结果
+        if 'error' in backtest_results:
+            print(f"\n❌ 回测失败: {backtest_results['error']}")
+        else:
+            print("\n" + "="*60)
+            print("回测结果摘要")
+            print("="*60)
+
+            config_info = backtest_results.get('backtest_config', {})
+            print(f"回测时间范围: {config_info.get('start_date')} 至 {config_info.get('end_date')}")
+            print(f"回测股票数量: {config_info.get('stock_count')} 只")
+            print(f"交易日数量: {config_info.get('trading_days')} 天")
+            print(f"生成决策数: {config_info.get('decision_count')} 条")
+            print(f"初始资金: ¥{config_info.get('initial_capital', 0):,.0f}")
+
+            print(f"\n收益指标:")
+            print(f"  总收益率: {backtest_results.get('total_return', 0):.2%}")
+            print(f"  年化收益率: {backtest_results.get('annualized_return', 0):.2%}")
+            print(f"  最终资金: ¥{backtest_results.get('final_capital', 0):,.2f}")
+            print(f"  盈亏金额: ¥{backtest_results.get('profit', 0):,.2f}")
+
+            print(f"\n风险指标:")
+            print(f"  年化波动率: {backtest_results.get('volatility', 0):.2%}")
+            print(f"  夏普比率: {backtest_results.get('sharpe_ratio', 0):.2f}")
+            print(f"  最大回撤: {backtest_results.get('max_drawdown', 0):.2%}")
+
+            print(f"\n交易统计:")
+            print(f"  总交易次数: {backtest_results.get('total_trades', 0)} 笔")
+            print(f"  买入次数: {backtest_results.get('buy_trades', 0)} 笔")
+            print(f"  卖出次数: {backtest_results.get('sell_trades', 0)} 笔")
+            print(f"  胜率: {backtest_results.get('win_rate', 0):.2%}")
+            print(f"  平均持有天数: {backtest_results.get('avg_holding_days', 0):.1f} 天")
+
+            # 保存回测结果
+            backtest_output_file = os.path.join(output_dir, "backtest_results.json")
+            import json
+            with open(backtest_output_file, 'w', encoding='utf-8') as f:
+                # 简化结果（移除大数组和DataFrame）
+                simplified_results = {
+                    k: v for k, v in backtest_results.items()
+                    if k not in ['daily_returns', 'portfolio_values', 'trade_history', 'historical_data']
+                }
+                simplified_results['trade_summary'] = {
+                    'total_trades': len(backtest_results.get('trade_history', [])),
+                    'first_5_trades': backtest_results.get('trade_history', [])[:5]
+                }
+                json.dump(simplified_results, f, ensure_ascii=False, indent=2)
+
+            print(f"\n回测结果已保存至: {backtest_output_file}")
+
+            # 保存详细交易记录（添加股票名称）
+            trade_history = backtest_results.get('trade_history', [])
+            symbol_to_name = backtest_results.get('symbol_to_name', {})
+
+            # 为每条交易记录添加股票名称
+            enhanced_trade_history = []
+            for trade in trade_history:
+                enhanced_trade = trade.copy()
+                symbol = trade.get('symbol', '')
+                enhanced_trade['name'] = symbol_to_name.get(symbol, symbol)
+                enhanced_trade_history.append(enhanced_trade)
+
+            trade_history_file = os.path.join(output_dir, "backtest_trade_history.json")
+            with open(trade_history_file, 'w', encoding='utf-8') as f:
+                json.dump(enhanced_trade_history, f, ensure_ascii=False, indent=2)
+            print(f"详细交易记录已保存至: {trade_history_file}")
+
+            # 生成Markdown报告
+            try:
+                from src.backtest.backtest_report_generator import generate_backtest_markdown
+                markdown_file = os.path.join(output_dir, "backtest_result.md")
+                generate_backtest_markdown(backtest_results, markdown_file)
+                print(f"Markdown报告已保存至: {markdown_file}")
+            except Exception as e:
+                print(f"⚠️ Markdown报告生成失败: {e}")
+
+            # 生成K线图
+            try:
+                from src.backtest.backtest_chart_generator import generate_backtest_charts
+                print("\n正在生成K线图...")
+                historical_data = backtest_results.get('historical_data', {})
+                if historical_data:
+                    chart_files = generate_backtest_charts(backtest_results, historical_data, output_dir)
+                    if chart_files:
+                        print(f"✅ K线图生成完成，共 {len(chart_files)} 个文件")
+                        print(f"K线图保存在: {os.path.join(output_dir, 'charts')}")
+                    else:
+                        print("⚠️ 没有生成K线图")
+                else:
+                    print("⚠️ 没有历史数据，跳过K线图生成")
+            except Exception as e:
+                print(f"⚠️ K线图生成失败: {e}")
+                import traceback
+                traceback.print_exc()
+
+        print("\n回测模式执行完成")
         return
 
     # ========== 根据模式确定股票列表来源 ==========

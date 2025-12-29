@@ -67,15 +67,21 @@ class AdvancedBacktestEngine:
         self.stop_loss_rate = analysis_risk.get('stop_loss_rate', -0.08)
         self.take_profit_rate = analysis_risk.get('take_profit_rate', 0.15)
         self.max_holding_days = analysis_risk.get('max_holding_days', 45)
-        
+
+        # 是否启用强制退出规则（止损止盈、超期持有）
+        self.enable_forced_exit = analysis_risk.get('enable_forced_exit', True)
+
         # 回测状态
         self.positions = {}  # 当前持仓 {symbol: position_info}
         self.trade_history = []  # 交易历史
         self.daily_returns = []  # 每日收益率
         self.portfolio_values = []  # 每日组合价值
-        
+
         logger.info(f"回测引擎初始化完成 - 初始资金: {self.initial_capital:.0f}元, 最大仓位: {self.max_position_size:.1%}")
-        logger.info(f"风险管理 - 止损: {self.stop_loss_rate:.1%}, 止盈: {self.take_profit_rate:.1%}, 最大持有: {self.max_holding_days}天")
+        if self.enable_forced_exit:
+            logger.info(f"风险管理 - 止损: {self.stop_loss_rate:.1%}, 止盈: {self.take_profit_rate:.1%}, 最大持有: {self.max_holding_days}天")
+        else:
+            logger.info(f"风险管理 - 完全按策略信号执行，不启用强制止损止盈")
         
     def run_strategy_backtest(self, recommendations: List[Dict], 
                             market_data: Dict[str, pd.DataFrame],
@@ -162,12 +168,14 @@ class AdvancedBacktestEngine:
         
         # 2. 更新现有持仓
         self._update_positions(current_date, market_data)
-        
-        # 3. 检查止损止盈
-        self._check_stop_conditions(current_date, market_data)
-        
-        # 4. 检查超期持仓
-        self._check_max_holding_period(current_date, market_data)
+
+        # 3. 检查止损止盈（仅在启用强制退出时）
+        if self.enable_forced_exit:
+            self._check_stop_conditions(current_date, market_data)
+
+        # 4. 检查超期持仓（仅在启用强制退出时）
+        if self.enable_forced_exit:
+            self._check_max_holding_period(current_date, market_data)
         
         # 5. 计算当日组合价值
         portfolio_value = self._calculate_portfolio_value(current_date, market_data)

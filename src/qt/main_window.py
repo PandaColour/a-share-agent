@@ -10,6 +10,7 @@ from PyQt6.QtGui import QAction, QFont
 
 from src.qt.analysis_widget import AnalysisWidget
 from src.qt.holdings_widget import HoldingsWidget
+from src.qt.backtest_widget import BacktestWidget
 
 
 class MainWindow(QMainWindow):
@@ -40,13 +41,15 @@ class MainWindow(QMainWindow):
         # === 右侧工作区 ===
         self.stacked_widget = QStackedWidget()
 
-        # 创建两个页面
+        # 创建三个页面
         self.analysis_widget = AnalysisWidget()
         self.holdings_widget = HoldingsWidget()
+        self.backtest_widget = BacktestWidget()
 
         # 添加到堆叠窗口
         self.stacked_widget.addWidget(self.analysis_widget)  # index 0
         self.stacked_widget.addWidget(self.holdings_widget)  # index 1
+        self.stacked_widget.addWidget(self.backtest_widget)  # index 2
 
         main_layout.addWidget(self.stacked_widget)
 
@@ -131,6 +134,13 @@ class MainWindow(QMainWindow):
         self.holdings_btn.clicked.connect(lambda: self.switch_page(1))
         layout.addWidget(self.holdings_btn)
 
+        # 历史回测按钮
+        self.backtest_btn = QPushButton("📈 历史回测")
+        self.backtest_btn.setCheckable(True)
+        self.backtest_btn.setStyleSheet(button_style)
+        self.backtest_btn.clicked.connect(lambda: self.switch_page(2))
+        layout.addWidget(self.backtest_btn)
+
         # 添加弹性空间
         layout.addStretch()
 
@@ -177,6 +187,12 @@ class MainWindow(QMainWindow):
         holdings_action.triggered.connect(lambda: self.switch_page(1))
         view_menu.addAction(holdings_action)
 
+        # 切换到回测
+        backtest_action = QAction("历史回测(&B)", self)
+        backtest_action.setShortcut("Ctrl+3")
+        backtest_action.triggered.connect(lambda: self.switch_page(2))
+        view_menu.addAction(backtest_action)
+
         view_menu.addSeparator()
 
         # 刷新
@@ -198,12 +214,13 @@ class MainWindow(QMainWindow):
         # 更新按钮状态
         self.analysis_btn.setChecked(index == 0)
         self.holdings_btn.setChecked(index == 1)
+        self.backtest_btn.setChecked(index == 2)
 
         # 切换页面
         self.stacked_widget.setCurrentIndex(index)
 
         # 更新状态栏
-        page_names = ["股票分析", "持股跟踪"]
+        page_names = ["股票分析", "持股跟踪", "历史回测"]
         self.statusBar.showMessage(f"当前页面: {page_names[index]}")
 
     def refresh_current(self):
@@ -230,11 +247,13 @@ class MainWindow(QMainWindow):
             "<ul>"
             "<li>📊 股票分析 - 智能选股和分析 (Ctrl+1)</li>"
             "<li>💼 持股跟踪 - 实时监控持仓 (Ctrl+2)</li>"
+            "<li>📈 历史回测 - 策略回测验证 (Ctrl+3)</li>"
             "</ul>"
             "<p>快捷键:</p>"
             "<ul>"
             "<li>Ctrl+1: 切换到股票分析</li>"
             "<li>Ctrl+2: 切换到持股跟踪</li>"
+            "<li>Ctrl+3: 切换到历史回测</li>"
             "<li>F5: 刷新当前页</li>"
             "<li>Ctrl+Q: 退出程序</li>"
             "</ul>"
@@ -243,23 +262,40 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event):
         """关闭事件"""
-        # 检查是否有正在运行的分析
-        if (hasattr(self.analysis_widget, 'analysis_thread') and
-            self.analysis_widget.analysis_thread and
-            self.analysis_widget.analysis_thread.isRunning()):
+        # 检查是否有正在运行的分析或回测
+        analysis_running = (hasattr(self.analysis_widget, 'analysis_thread') and
+                          self.analysis_widget.analysis_thread and
+                          self.analysis_widget.analysis_thread.isRunning())
+
+        backtest_running = (hasattr(self.backtest_widget, 'backtest_thread') and
+                          self.backtest_widget.backtest_thread and
+                          self.backtest_widget.backtest_thread.isRunning())
+
+        if analysis_running or backtest_running:
+            running_tasks = []
+            if analysis_running:
+                running_tasks.append("分析")
+            if backtest_running:
+                running_tasks.append("回测")
 
             reply = QMessageBox.question(
                 self,
                 "确认退出",
-                "分析正在运行中，确定要退出吗？",
+                f"{'、'.join(running_tasks)}正在运行中，确定要退出吗？",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.No
             )
 
             if reply == QMessageBox.StandardButton.Yes:
-                # 停止分析线程
-                self.analysis_widget.analysis_thread.stop()
-                self.analysis_widget.analysis_thread.wait()
+                # 停止所有运行中的线程
+                if analysis_running:
+                    self.analysis_widget.analysis_thread.stop()
+                    self.analysis_widget.analysis_thread.wait()
+
+                if backtest_running:
+                    self.backtest_widget.backtest_thread.stop()
+                    self.backtest_widget.backtest_thread.wait()
+
                 event.accept()
             else:
                 event.ignore()

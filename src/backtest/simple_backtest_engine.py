@@ -226,7 +226,22 @@ class SimpleBacktestEngine:
         for i, (date, analysis) in enumerate(stock_timeline):
             action = analysis.get("操作建议", "持有")
             price_str = analysis.get("当前价格", "0元")
-            price = float(price_str.replace('元', ''))
+
+            # 处理 N/A 值和无效价格
+            if price_str == "N/A" or not price_str:
+                logger.debug(f"  ⚠️ {date}: 价格数据无效 ({price_str})，跳过")
+                continue
+
+            try:
+                price = float(price_str.replace('元', ''))
+            except ValueError:
+                logger.debug(f"  ⚠️ {date}: 无法解析价格 '{price_str}'，跳过")
+                continue
+
+            # 价格为0或负数，跳过
+            if price <= 0:
+                logger.debug(f"  ⚠️ {date}: 价格无效 ({price})，跳过")
+                continue
 
             # 买入信号
             if not holding and action == "买入":

@@ -381,7 +381,8 @@
       "max_holding_days": 7,
       "trailing_stop": 0.02,
       "breakout_entry": true,
-      "description": "动量优化：7天目标，8%止盈，5%止损，2%移动止损，允许突破买入"
+      "enable_forced_exit": false,
+      "description": "动量优化：7天目标，8%止盈，5%止损，2%移动止损，允许突破买入。enable_forced_exit=false表示回测时完全按策略信号执行，不强制止损止盈"
     },
 
     "sector_rotation": {
