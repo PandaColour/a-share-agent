@@ -59,7 +59,8 @@
       "Bash(hold_mode_test.log)",
       "Bash(del /f \"D:\\github\\a-share-agent\\src\\qt\\trades_widget.py\")",
       "Bash(cd:*)",
-      "Bash(.venv/Scripts/python.exe:*)"
+      "Bash(.venv/Scripts/python.exe:*)",
+      "Bash(del:*)"
     ],
     "deny": [],
     "ask": []

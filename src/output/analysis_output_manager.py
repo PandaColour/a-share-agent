@@ -101,7 +101,7 @@ class AnalysisOutputManager:
         return result
 
     def _format_analyst_details(self, analyses: List[Dict]) -> Dict:
-        """格式化分析师详情"""
+        """格式化分析师详情 - 简化版本,只包含AI因子分析"""
         analyst_details = {}
 
         # 准备分析师输入信息(所有分析师共享相同的输入)
@@ -109,26 +109,15 @@ class AnalysisOutputManager:
         if analyses:
             analyst_inputs = analyses[0].get("analyst_inputs", {})
 
-        # 格式化各个分析师的结果
+        # 格式化AI因子分析师的结果
         for analysis in analyses:
             analyst_type = analysis.get("analyst_type", "")
 
-            if analyst_type == "技术面分析":
-                analyst_details["技术面分析师"] = {
-                    "输入信息": analyst_inputs.copy(),
-                    "输出结果": {
-                        "推荐操作": analysis.get("recommendation", "持有"),
-                        "信心度": f"{analysis.get('confidence', 0.5):.2%}",
-                        "推理过程": analysis.get("reasoning", []),
-                        "技术指标": analysis.get("technical_indicators", {}),
-                        "趋势分析": analysis.get("trend_analysis", "N/A")
-                    }
-                }
-            elif analyst_type == "AI因子分析":
+            if analyst_type == "AI因子分析":
                 analyst_details["AI因子分析师"] = {
                     "输入信息": analyst_inputs.copy(),
                     "输出结果": {
-                        "推荐操作": analysis.get("recommendation", "N/A"),
+                        "推荐操作": analysis.get("recommendation", "持有"),
                         "信心度": f"{analysis.get('confidence', 0.5):.2%}",
                         "推理过程": analysis.get("reasoning", []),
                         "因子详情": analysis.get("factor_details", {}),
@@ -375,44 +364,41 @@ class AnalysisOutputManager:
 
             print(f"\n本次分析结果将保存到: {session_dir}")
 
-            # 1. 保存简化版本到CSV（包含三个主要分析师的策略和信心度，使用排序后的结果）
+            # 1. 保存简化版本到CSV（只包含AI因子分析师，使用排序后的结果）
             csv_results = []
             for result in sorted_results:
                 # 复制除分析师详情外的所有字段
                 csv_result = {k: v for k, v in result.items() if k != "分析师详情"}
 
-                # 从分析师详情中提取主要分析师的策略和信心度
-                analyst_details = result.get("分析师详情", {})
+                # 处理决策理由中的nan值
+                reason = csv_result.get("决策理由", "")
+                if isinstance(reason, str):
+                    # 替换 "nan" 文本为更友好的显示
+                    reason = reason.replace(": nan", ": 无数据")
+                    reason = reason.replace("nan", "无数据")
+                    csv_result["决策理由"] = reason
 
-                # 技术面分析师
-                technical = analyst_details.get("技术面分析师", {})
-                if technical:
-                    technical_output = technical.get("输出结果", {})
-                    csv_result["技术面_策略"] = technical_output.get("推荐操作", "N/A")
-                    csv_result["技术面_信心度"] = technical_output.get("信心度", "N/A")
-                else:
-                    csv_result["技术面_策略"] = "N/A"
-                    csv_result["技术面_信心度"] = "N/A"
+                # 从分析师详情中提取AI因子分析师的策略和信心度
+                analyst_details = result.get("分析师详情", {})
 
                 # AI因子分析师
                 ai_factor = analyst_details.get("AI因子分析师", {})
                 if ai_factor:
                     ai_output = ai_factor.get("输出结果", {})
-                    csv_result["AI_策略"] = ai_output.get("推荐操作", "N/A")
-                    csv_result["AI_信心度"] = ai_output.get("信心度", "N/A")
+                    csv_result["AI因子_策略"] = ai_output.get("推荐操作", "持有")
+                    csv_result["AI因子_信心度"] = ai_output.get("信心度", "50%")
                 else:
-                    csv_result["AI_策略"] = "N/A"
-                    csv_result["AI_信心度"] = "N/A"
+                    csv_result["AI因子_策略"] = "持有"
+                    csv_result["AI因子_信心度"] = "50%"
 
                 csv_results.append(csv_result)
 
             df = pd.DataFrame(csv_results)
 
-            # 定义输出列的顺序（去掉分析时间）
+            # 定义输出列的顺序（移除技术面分析师列）
             column_order = [
                 "股票代码", "股票名称", "操作建议", "信心度",
-                "技术面_策略", "技术面_信心度",
-                "AI_策略", "AI_信心度",
+                "AI因子_策略", "AI因子_信心度",
                 "风险等级", "当前价格", "当日最高", "当日最低", "当日涨跌",
                 "连续涨跌日", "连续涨跌幅度", "决策理由"
             ]
@@ -476,7 +462,7 @@ class AnalysisOutputManager:
 
     def generate_analyst_summary_report(self, analyst_details: List[Dict], output_dir: Path, timestamp: str):
         """
-        生成分析师总结报告
+        生成分析师总结报告 - 简化版本，只包含AI因子分析师
 
         Args:
             analyst_details: 分析师详情列表
@@ -485,42 +471,40 @@ class AnalysisOutputManager:
         """
         try:
             summary = {
-                "报告标题": "多智能体分析师详细报告",
+                "报告标题": "AI因子分析师详细报告",
                 "生成时间": timestamp,
                 "分析股票数量": len(analyst_details),
                 "分析师统计": {}
             }
 
-            # 统计各分析师的推荐情况
-            analyst_types = ["技术面分析师", "AI因子分析师", "多轮辩论分析师"]
+            # 只统计AI因子分析师
+            analyst_type = "AI因子分析师"
+            recommendations = {}
+            confidences = []
 
-            for analyst_type in analyst_types:
-                recommendations = {}
-                confidences = []
+            for detail in analyst_details:
+                analyst_info = detail["分析师详情"].get(analyst_type)
+                if analyst_info:
+                    output_result = analyst_info.get("输出结果", {})
+                    rec = output_result.get("推荐操作", "持有")
+                    conf_str = output_result.get("信心度", "50.00%")
 
-                for detail in analyst_details:
-                    analyst_info = detail["分析师详情"].get(analyst_type)
-                    if analyst_info:
-                        output_result = analyst_info.get("输出结果", {})
-                        rec = output_result.get("推荐操作", "N/A")
-                        conf_str = output_result.get("信心度", "50.00%")
+                    # 统计推荐
+                    recommendations[rec] = recommendations.get(rec, 0) + 1
 
-                        # 统计推荐
-                        recommendations[rec] = recommendations.get(rec, 0) + 1
+                    # 提取信心度数值
+                    try:
+                        conf_value = float(conf_str.replace("%", "")) / 100
+                        confidences.append(conf_value)
+                    except:
+                        confidences.append(0.5)
 
-                        # 提取信心度数值
-                        try:
-                            conf_value = float(conf_str.replace("%", "")) / 100
-                            confidences.append(conf_value)
-                        except:
-                            confidences.append(0.5)
-
-                summary["分析师统计"][analyst_type] = {
-                    "推荐分布": recommendations,
-                    "平均信心度": f"{np.mean(confidences):.2%}" if confidences else "N/A",
-                    "信心度范围": f"{np.min(confidences):.2%} - {np.max(confidences):.2%}" if confidences else "N/A",
-                    "参与分析数": len(confidences)
-                }
+            summary["分析师统计"][analyst_type] = {
+                "推荐分布": recommendations,
+                "平均信心度": f"{np.mean(confidences):.2%}" if confidences else "50.00%",
+                "信心度范围": f"{np.min(confidences):.2%} - {np.max(confidences):.2%}" if confidences else "0.00% - 100.00%",
+                "参与分析数": len(confidences)
+            }
 
             # 保存总结报告
             summary_filename = output_dir / "analyst_summary_report.json"
@@ -607,16 +591,15 @@ class AnalysisOutputManager:
 
             readme_content += f"""
 ### 详细分析文件
-- `analyst_details.json` - 👥 两个智能分析师的详细分析过程
-- `analyst_summary_report.json` - 📊 分析师表现统计报告
+- `analyst_details.json` - 🤖 AI因子分析师的详细分析过程
+- `analyst_summary_report.json` - 📊 AI因子分析师表现统计报告
 - `README.md` - 📄 本分析会话说明文档（当前文件）
 
 ## 🤖 智能分析师说明
 
-本次分析使用了两个核心AI智能分析师：
+本次分析使用 AI因子分析师：
 
-1. **📈 技术面分析师** - 技术指标、图表形态、趋势分析
-2. **🤖 AI因子分析师** - 量化因子、模式识别、智能评分
+**🤖 AI因子分析师** - 量化因子、模式识别、智能评分、多维度因子分析
 
 ## 🔄 排序说明
 

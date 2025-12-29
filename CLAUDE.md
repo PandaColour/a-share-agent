@@ -26,10 +26,8 @@
 
 ### 核心模块
 
-**`src/agents/`** - 多智能体协作系统
-- `technical_analyst.py` - 技术面分析师（均线、RSI、MACD）含AI因子集成
-- `advanced_decision_engine.py` - 高级决策引擎
-- `portfolio_manager.py` - 投资组合管理
+**`src/agents/`** - 简化的分析决策系统
+- `portfolio_manager.py` - 投资组合管理（基于AI因子分析）
 - `risk_manager.py` - 风险管理
 
 **`src/factors/`** - AI因子系统（新功能）
@@ -77,7 +75,7 @@ python main.py
 # 系统将自动执行：
 # 1. 使用自动生成因子初始化AI因子系统
 # 2. 运行动态股票选择（配置+龙虎榜+社交媒体）
-# 3. 执行双维度分析（技术面+AI因子）
+# 3. 执行AI因子分析
 # 4. 输出综合分析结果
 ```
 
@@ -165,20 +163,22 @@ grep -r "TODO\|FIXME\|XXX" src/ || echo "未发现待处理任务"
 ### 导入结构
 ```python
 # 始终使用相对导入从src模块导入
-from src.agents.fundamental_analyst import FundamentalAnalyst
+from src.agents.risk_manager import RiskManager
+from src.agents.portfolio_manager import PortfolioManager
 from src.data.multi_source_data_provider import MultiSourceDataProvider
-from src.factors import AutoFactorSelector, AutoStrategyGenerator
+from src.factors import AutoFactorSelector, AutoStrategyGenerator, FactorManager
 ```
 
 ### 错误处理模式
 ```python
-# 标准错误处理与优雅降级
+# AI因子分析错误处理
 try:
-    # AI分析
-    ai_result = ai_analyzer.analyze(data)
+    # AI因子分析
+    ai_result = factor_manager.calculate_all_factors(symbol, data)
 except Exception as e:
-    logger.warning(f"AI分析失败: {e}, 回退到传统分析")
-    ai_result = traditional_analyzer.analyze(data)
+    logger.error(f"AI因子分析失败: {e}")
+    # 返回分析失败决策
+    return create_failure_decision(str(e))
 
 # 数据源故障转移模式
 def get_data_with_fallback(symbol, sources):

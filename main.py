@@ -103,7 +103,6 @@ warnings.filterwarnings('ignore')
 sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
 
 try:
-    from agents.technical_analyst import TechnicalAnalyst
     from agents.risk_manager import RiskManager
     from agents.portfolio_manager import PortfolioManager
     from data.data_provider import AShareDataProvider
@@ -133,7 +132,6 @@ class AShareTradingAgentsSystem:
         
         # 主线程组件
         self.data_provider = AShareDataProvider()
-        self.technical_analyst = TechnicalAnalyst()
         self.risk_manager = RiskManager()
         # 初始化投资组合管理器
         self.portfolio_manager = PortfolioManager()
@@ -187,7 +185,6 @@ class AShareTradingAgentsSystem:
             # 为每个线程创建独立的组件实例
             self._thread_local.components = {
                 'data_provider': AShareDataProvider(),
-                'technical_analyst': TechnicalAnalyst(),
                 'risk_manager': RiskManager(),
                 'portfolio_manager': PortfolioManager()
             }
@@ -212,12 +209,10 @@ class AShareTradingAgentsSystem:
         if use_thread_safe:
             components = self._get_thread_components()
             data_provider = components['data_provider']
-            technical_analyst = components['technical_analyst']
             risk_manager = components['risk_manager']
             portfolio_manager = components['portfolio_manager']
         else:
             data_provider = self.data_provider
-            technical_analyst = self.technical_analyst
             risk_manager = self.risk_manager
             portfolio_manager = self.portfolio_manager
 
@@ -295,7 +290,7 @@ class AShareTradingAgentsSystem:
                     daily_change_percent=price_info.get("daily_change_percent", 0.0)
                 )
         
-        # 4. 多智能体分析
+        # 4. AI因子分析
         analyses = []
         analysis_failures = []
 
@@ -310,14 +305,7 @@ class AShareTradingAgentsSystem:
             "analysis_timestamp": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         }
 
-        # 技术面分析
-        technical_analysis = technical_analyst.analyze(symbol, data, info, indicators)
-        if technical_analysis.get("recommendation") == "无法分析":
-            analysis_failures.append("技术面分析失败")
-        technical_analysis["analyst_inputs"] = analyst_inputs.copy()
-        analyses.append(technical_analysis)
-
-        # AI因子分析（如果启用）
+        # AI因子分析
         ai_factor_analysis = None
         if self.ai_factor_enabled and self.factor_manager:
             try:
@@ -330,13 +318,13 @@ class AShareTradingAgentsSystem:
                 self.logger.error(f"AI因子分析失败 {symbol}: {e}")
                 analysis_failures.append("AI因子分析失败")
 
-        # 检查是否有分析失败
-        if len(analysis_failures) >= 2:  # 如果2个或以上分析失败
-            self.logger.warning(f"多个分析模块失败 {symbol}: {', '.join(analysis_failures)}")
+        # 检查AI因子分析是否失败
+        if len(analysis_failures) > 0 or len(analyses) == 0:
+            self.logger.warning(f"AI因子分析失败 {symbol}: {', '.join(analysis_failures) if analysis_failures else '无分析结果'}")
             return TradingDecision(
                 action="分析失败",
                 confidence=0.0,
-                reason=f"多个分析模块失败: {', '.join(analysis_failures)}。建议检查AI模型配置、网络连接或数据源",
+                reason=f"AI因子分析失败: {', '.join(analysis_failures) if analysis_failures else '无分析结果'}。建议检查AI模型配置、网络连接或数据源",
                 risk_level="未知",
                 timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             )
@@ -539,11 +527,10 @@ class AShareTradingAgentsSystem:
             
             # 获取缓存数据分析的轻量级组件（避免重复初始化数据源）
             components = self._get_cached_analysis_components()
-            technical_analyst = components['technical_analyst']
             risk_manager = components['risk_manager']
             portfolio_manager = components['portfolio_manager']
 
-            # 多智能体分析
+            # AI因子分析
             analyses = []
 
             # 准备分析师输入信息
@@ -557,12 +544,7 @@ class AShareTradingAgentsSystem:
                 "analysis_timestamp": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             }
 
-            # 技术面分析
-            technical_analysis = technical_analyst.analyze(symbol, data, info, indicators)
-            technical_analysis["analyst_inputs"] = analyst_inputs.copy()
-            analyses.append(technical_analysis)
-
-            # AI因子分析（如果启用）
+            # AI因子分析
             if self.ai_factor_enabled and self.factor_manager:
                 try:
                     ai_factor_analysis = self._ai_factor_analysis(symbol, data, indicators)
@@ -995,31 +977,34 @@ class AShareTradingAgentsSystem:
             
             # 计算所有AI因子
             factors = self.factor_manager.calculate_all_factors(symbol, symbol_data)
-            
+
             if not factors:
                 return None
-            
+
             # 分析因子结果并给出投资建议
             factor_scores = []
             factor_details = {}
-            
+
             for factor_name, factor_value in factors.items():
                 score = factor_value.value
-                factor_scores.append(score)
-                
+
+                # 过滤 NaN 值，只添加有效分数
+                if not np.isnan(score) and np.isfinite(score):
+                    factor_scores.append(score)
+
                 # 获取因子描述（从因子管理器中获取）
                 factor_description = ''
                 if self.factor_manager and factor_name in self.factor_manager.factors:
                     factor_description = self.factor_manager.factors[factor_name].description
-                
+
                 factor_details[factor_name] = {
-                    'value': score,
+                    'value': score if not np.isnan(score) else None,
                     'timestamp': factor_value.timestamp.strftime('%Y-%m-%d %H:%M:%S'),
                     'description': factor_description
                 }
-            
-            # 计算综合因子评分
-            if factor_scores:
+
+            # 计算综合因子评分（只使用有效因子）
+            if factor_scores and len(factor_scores) > 0:
                 avg_score = np.mean(factor_scores)
                 std_score = np.std(factor_scores) if len(factor_scores) > 1 else 0
                 
@@ -1036,16 +1021,19 @@ class AShareTradingAgentsSystem:
                 else:
                     recommendation = "卖出"
                     confidence = min(0.8, 0.4 + abs(avg_score) * 0.4)
-                
+
                 reasoning = [
                     f"AI因子综合评分: {avg_score:.4f}",
                     f"因子评分标准差: {std_score:.4f}",
-                    f"参与计算的因子数量: {len(factor_scores)}"
+                    f"有效因子数量: {len(factor_scores)}/{len(factors)}"
                 ]
-                
-                # 添加主要因子的贡献说明
-                sorted_factors = sorted(factor_details.items(), 
-                                      key=lambda x: abs(x[1]['value']), reverse=True)
+
+                # 添加主要因子的贡献说明（只包含有效因子）
+                sorted_factors = sorted(
+                    [(name, info) for name, info in factor_details.items() if info['value'] is not None],
+                    key=lambda x: abs(x[1]['value']),
+                    reverse=True
+                )
                 
                 for i, (factor_name, factor_info) in enumerate(sorted_factors[:3]):
                     contribution = "正面" if factor_info['value'] > 0 else "负面"
@@ -1064,9 +1052,29 @@ class AShareTradingAgentsSystem:
                     },
                     "timestamp": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                 }
-            
-            return None
-            
+
+            # 如果没有有效因子，返回降级建议
+            else:
+                self.logger.warning(f"股票 {symbol} 所有AI因子计算结果无效，返回保守建议")
+                return {
+                    "analyst_type": "AI因子分析",
+                    "recommendation": "持有",
+                    "confidence": 0.3,
+                    "reasoning": [
+                        "AI因子综合评分: 数据不足",
+                        "因子评分标准差: 数据不足",
+                        f"有效因子数量: 0/{len(factors)}",
+                        "建议: 数据不足，保守持有观望"
+                    ],
+                    "factor_details": factor_details,
+                    "factor_summary": {
+                        "avg_score": None,
+                        "std_score": None,
+                        "factor_count": 0
+                    },
+                    "timestamp": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                }
+
         except Exception as e:
             self.logger.error(f"AI因子分析计算失败 {symbol}: {e}")
             return None

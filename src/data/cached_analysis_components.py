@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-缓存数据分析组件
-专门用于第二阶段多线程分析的轻量级组件集合，不包含数据提供者初始化
+缓存数据分析组件 - 简化版本
+专门用于第二阶段多线程分析的轻量级组件集合，只包含风险管理和投资组合管理
 """
 
 import logging
@@ -13,7 +13,7 @@ class CachedAnalysisComponents:
     """
     用于缓存数据分析的轻量级组件集合
 
-    这个类专门为多线程分析阶段设计，只创建分析相关的组件，
+    这个类专门为多线程分析阶段设计，只创建必要的分析组件，
     不初始化任何数据提供者或外部连接，避免重复初始化和资源浪费。
     """
 
@@ -29,34 +29,25 @@ class CachedAnalysisComponents:
         return self.components
 
     def _init_analysis_components(self):
-        """初始化分析组件（不包含数据提供者）"""
+        """初始化分析组件（只包含风险管理和投资组合管理）"""
         try:
-            # 导入分析师组件
-            from src.agents.fundamental_analyst import FundamentalAnalyst
-            from src.agents.technical_analyst import TechnicalAnalyst
-            from src.agents.sentiment_analyst import SentimentAnalyst
+            # 导入必要的组件
             from src.agents.risk_manager import RiskManager
             from src.agents.portfolio_manager import PortfolioManager
 
             # 创建轻量级组件实例
             self.components = {
-                'fundamental_analyst': FundamentalAnalyst(),
-                'technical_analyst': TechnicalAnalyst(),
-                'sentiment_analyst': SentimentAnalyst(),
                 'risk_manager': RiskManager(),
                 'portfolio_manager': PortfolioManager()
             }
 
             self._initialized = True
-            logger.debug("缓存数据分析组件初始化完成（无数据提供者）")
+            logger.debug("缓存数据分析组件初始化完成（无数据提供者和传统分析师）")
 
         except Exception as e:
             logger.error(f"缓存数据分析组件初始化失败: {e}")
             # 使用空组件避免后续错误
             self.components = {
-                'fundamental_analyst': None,
-                'technical_analyst': None,
-                'sentiment_analyst': None,
                 'risk_manager': None,
                 'portfolio_manager': None
             }
