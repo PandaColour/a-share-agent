@@ -671,10 +671,10 @@ class AShareTradingAgentsSystem:
 
 
     def _collect_data_batch(self, stock_list: List[Tuple[str, str]]) -> Dict[str, Dict]:
-        """批量收集股票数据和新闻数据（单线程，避免并发问题）"""
+        """批量收集股票数据(单线程,避免并发问题)"""
         data_cache = {}
 
-        print(f"第1阶段: 批量收集 {len(stock_list)} 只股票的数据和新闻...")
+        print(f"第1阶段: 批量收集 {len(stock_list)} 只股票的数据...")
 
         for i, (symbol, name) in enumerate(stock_list, 1):
             try:
@@ -683,82 +683,37 @@ class AShareTradingAgentsSystem:
                 # 获取股票数据
                 data, info, indicators, price_info = self.data_provider.get_stock_data(symbol)
 
-                # 获取新闻数据（集成到数据收集阶段）
-                news_data = []
-                company_name = info.get('longName', '') or info.get('shortName', '') or name
-
-                if (hasattr(self.sentiment_analyst, 'news_fetcher') and
-                    self.sentiment_analyst.news_fetcher is not None and
-                    self.sentiment_analyst.use_real_news):
-                    try:
-                        print(f"    正在获取新闻: {name}")
-                        news_data = self.sentiment_analyst.news_fetcher.fetch_stock_news(symbol, company_name)
-                        print(f"    获取到 {len(news_data)} 条新闻")
-                    except Exception as e:
-                        print(f"    新闻获取失败: {e}")
-                        news_data = []
-                else:
-                    if hasattr(self.sentiment_analyst, 'use_real_news') and self.sentiment_analyst.use_real_news:
-                        print(f"    新闻获取器未配置，跳过 {name} 的新闻获取")
-
-                # 【新增】获取 Playwright 网页数据（如果启用）
-                web_data = {'news': [], 'discussions': []}
-                if self.sentiment_analyst.enable_web_scraping:
-                    try:
-                        import asyncio
-                        from src.data.web_scraper import scrape_news_for_sentiment
-                        print(f"    正在抓取网页数据: {name}")
-                        web_data = asyncio.run(scrape_news_for_sentiment(symbol))
-                        web_news_count = len(web_data.get('news', []))
-                        web_discussion_count = len(web_data.get('discussions', []))
-                        print(f"    抓取到 {web_news_count} 条网页新闻, {web_discussion_count} 条讨论")
-                    except Exception as e:
-                        print(f"    网页数据抓取失败: {e}")
-                        web_data = {'news': [], 'discussions': []}
-
                 if data is not None and not data.empty:
-                    total_news = len(news_data) + len(web_data.get('news', []))
-                    total_discussions = len(web_data.get('discussions', []))
                     data_cache[symbol] = {
                         'success': True,
                         'data': data,
                         'info': info,
                         'indicators': indicators,
                         'price_info': price_info,
-                        'news_data': news_data,  # 传统新闻数据
-                        'web_data': web_data,    # 【新增】Playwright 网页数据
                         'name': name
                     }
-                    print(f"    {name} 数据收集成功（新闻:{total_news}条, 讨论:{total_discussions}条）")
+                    print(f"    {name} 数据收集成功")
                 else:
                     data_cache[symbol] = {
                         'success': False,
                         'error': '数据为空或获取失败',
-                        'news_data': news_data,  # 即使股价数据失败也保留新闻
-                        'web_data': web_data,    # 【新增】即使失败也保留网页数据
                         'name': name
                     }
                     print(f"    {name} 数据收集失败")
 
                 # 添加小延迟避免请求过快
-                time.sleep(0.2)  # 增加延迟以适应新闻请求
+                time.sleep(0.2)
 
             except Exception as e:
                 print(f"    {name} 数据收集异常: {e}")
                 data_cache[symbol] = {
                     'success': False,
                     'error': str(e),
-                    'news_data': [],
                     'name': name
                 }
 
         successful_count = sum(1 for v in data_cache.values() if v.get('success'))
-        total_news_count = sum(len(v.get('news_data', [])) for v in data_cache.values())
-        total_web_news = sum(len(v.get('web_data', {}).get('news', [])) for v in data_cache.values())
-        total_web_discussions = sum(len(v.get('web_data', {}).get('discussions', [])) for v in data_cache.values())
         print(f"数据收集完成: {successful_count}/{len(stock_list)} 只股票成功")
-        print(f"传统新闻: {total_news_count} 条")
-        print(f"网页新闻: {total_web_news} 条, 讨论: {total_web_discussions} 条")
 
         return data_cache
 

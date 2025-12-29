@@ -4,16 +4,22 @@
   "last_updated": "2025-11-05",
   "hold_stocks": [
     {
-      "symbol": "000505.SZ",
-      "name": "京粮控股",
-      "purchase_date": "2025-11-27",
-      "cost": 8.234
+      "symbol": "002319.SH",
+      "name": "乐通股份",
+      "purchase_date": "2025-12-18",
+      "cost": 11.16
     },
     {
       "symbol": "603122.SH",
       "name": "合富中国",
       "purchase_date": "2025-12-02",
       "cost": 25.56
+    },
+    {
+      "symbol": "000547.SZ",
+      "name": "航天发展",
+      "purchase_date": "2025-12-11",
+      "cost": 21.493
     }
   ],
   "config": {
