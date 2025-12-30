@@ -1372,10 +1372,13 @@ def main():
                     hold_config = json.load(f)
                     hold_stocks = hold_config.get('hold_stocks', [])
 
-                # 转换为 (symbol, name) 元组列表
-                stock_list = [(stock['symbol'], stock['name']) for stock in hold_stocks]
-                print(f"✅ 加载 {len(stock_list)} 只持仓股票")
-                main_logger.info(f"📊 持仓模式加载{len(stock_list)}只股票")
+                # 转换为 (symbol, name) 元组列表，只包含 buy_flag=True 的股票
+                stock_list = [(stock['symbol'], stock['name']) for stock in hold_stocks if stock.get('buy_flag', True)]
+                total_hold = len(hold_stocks)
+                actual_bought = len(stock_list)
+                watch_only = total_hold - actual_bought
+                print(f"✅ 加载 {actual_bought} 只实际持仓股票 (观察中: {watch_only}只)")
+                main_logger.info(f"📊 持仓模式加载{actual_bought}只实际持仓股票, {watch_only}只观察股票被过滤")
             else:
                 print(f"❌ 未找到持仓配置文件: {hold_config_path}")
                 main_logger.error(f"未找到持仓配置文件: {hold_config_path}")
@@ -1449,7 +1452,8 @@ def main():
                         if os.path.exists(hold_config_path):
                             with open(hold_config_path, 'r', encoding='utf-8') as f:
                                 hold_config = json.load(f)
-                                hold_stock_symbols = [stock['symbol'] for stock in hold_config.get('hold_stocks', [])]
+                                hold_stock_symbols = [stock['symbol'] for stock in hold_config.get('hold_stocks', []) if stock.get('buy_flag', True)]
+                                main_logger.info(f"📊 过滤器例外股票: {len(hold_stock_symbols)}只实际持仓")
                     except Exception as e:
                         main_logger.warning(f"读取持仓配置失败: {e}")
 

@@ -141,10 +141,10 @@ class HoldingsWidget(QWidget):
         holdings_layout = QVBoxLayout()
 
         self.holdings_table = QTableWidget()
-        self.holdings_table.setColumnCount(11)
+        self.holdings_table.setColumnCount(10)
         self.holdings_table.setHorizontalHeaderLabels([
             "股票代码", "股票名称", "买入日期", "持股天数", "成本价", "当前价",
-            "盈亏", "止损价格", "盈利目标", "日均盈利", "风险提示"
+            "盈亏", "日均盈利", "风险提示", "操作"
         ])
 
         # 设置表格样式
@@ -165,19 +165,21 @@ class HoldingsWidget(QWidget):
             }
         """)
 
-        # 设置列宽
+        # 设置列宽 - 允许用户手动调整
         header = self.holdings_table.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(6, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(7, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(8, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(9, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(10, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)  # 所有列都可以手动调整
+
+        # 设置初始列宽
+        self.holdings_table.setColumnWidth(0, 100)  # 股票代码
+        self.holdings_table.setColumnWidth(1, 100)  # 股票名称
+        self.holdings_table.setColumnWidth(2, 100)  # 买入日期
+        self.holdings_table.setColumnWidth(3, 80)   # 持股天数
+        self.holdings_table.setColumnWidth(4, 80)   # 成本价
+        self.holdings_table.setColumnWidth(5, 80)   # 当前价
+        self.holdings_table.setColumnWidth(6, 120)  # 盈亏
+        self.holdings_table.setColumnWidth(7, 90)   # 日均盈利
+        self.holdings_table.setColumnWidth(8, 200)  # 风险提示
+        self.holdings_table.setColumnWidth(9, 80)   # 操作
 
         # 禁止编辑
         self.holdings_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
@@ -309,8 +311,6 @@ class HoldingsWidget(QWidget):
             profit = stock.get('profit', 0.0)
             profit_percent = stock.get('profit_percent', 0.0)
             current_price = stock.get('current_price', cost)
-            stop_loss_price = stock.get('stop_loss_price', cost * 0.9)
-            profit_target = stock.get('profit_target', cost * 1.05)
             avg_daily_profit = stock.get('avg_daily_profit', 0.0)
             risk_warning = stock.get('risk_warning', '')
 
@@ -332,18 +332,6 @@ class HoldingsWidget(QWidget):
                 profit_item.setForeground(QColor(76, 175, 80))  # 绿色
             self.holdings_table.setItem(row, 6, profit_item)
 
-            # 止损价格（成本价-10%）
-            stop_loss_item = QTableWidgetItem(f"¥{stop_loss_price:.2f}")
-            stop_loss_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-            stop_loss_item.setForeground(QColor(255, 152, 0))  # 橙色警告
-            self.holdings_table.setItem(row, 7, stop_loss_item)
-
-            # 盈利目标（成本价+5%）
-            target_item = QTableWidgetItem(f"¥{profit_target:.2f}")
-            target_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-            target_item.setForeground(QColor(156, 39, 176))  # 紫色目标
-            self.holdings_table.setItem(row, 8, target_item)
-
             # 平均日盈利
             daily_profit_item = QTableWidgetItem(f"¥{avg_daily_profit:+.2f}")
             daily_profit_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
@@ -351,7 +339,7 @@ class HoldingsWidget(QWidget):
                 daily_profit_item.setForeground(QColor(244, 67, 54))  # 红色
             elif avg_daily_profit < 0:
                 daily_profit_item.setForeground(QColor(76, 175, 80))  # 绿色
-            self.holdings_table.setItem(row, 9, daily_profit_item)
+            self.holdings_table.setItem(row, 7, daily_profit_item)
 
             # 风险提示
             risk_item = QTableWidgetItem(risk_warning)
@@ -362,7 +350,25 @@ class HoldingsWidget(QWidget):
                 risk_item.setForeground(QColor(76, 175, 80))  # 绿色成功
             elif '[错误]' in risk_warning:
                 risk_item.setForeground(QColor(244, 67, 54))  # 红色错误
-            self.holdings_table.setItem(row, 10, risk_item)
+            self.holdings_table.setItem(row, 8, risk_item)
+
+            # 操作按钮
+            buy_flag = stock.get('buy_flag', True)
+            operation_btn = QPushButton("卖出" if buy_flag else "买入")
+            operation_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: %s;
+                    color: white;
+                    border-radius: 3px;
+                    padding: 5px 10px;
+                    font-size: 11px;
+                }
+                QPushButton:hover {
+                    background-color: %s;
+                }
+            """ % (("#f44336", "#d32f2f") if buy_flag else ("#4caf50", "#388e3c")))
+            operation_btn.clicked.connect(lambda checked, s=stock: self.handle_trade_action(s))
+            self.holdings_table.setCellWidget(row, 9, operation_btn)
 
             # 累计总盈亏
             total_profit += profit
@@ -389,3 +395,208 @@ class HoldingsWidget(QWidget):
         QMessageBox.warning(self, "错误", error_msg)
         self.status_label.setText("刷新失败")
         self.status_label.setStyleSheet("color: #f44336; padding: 5px;")
+
+    def handle_trade_action(self, stock):
+        """处理买入/卖出操作"""
+        symbol = stock.get('symbol', '')
+        name = stock.get('name', '')
+        buy_flag = stock.get('buy_flag', True)
+
+        # 确认对话框
+        action_text = "卖出" if buy_flag else "买入"
+        confirm = QMessageBox.question(
+            self,
+            f"{action_text}确认",
+            f"确定要{action_text} {name}({symbol}) 吗?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
+
+        try:
+            # 找到当前股票在表格中的行号
+            row = -1
+            for i in range(self.holdings_table.rowCount()):
+                if self.holdings_table.item(i, 0).text() == symbol:
+                    row = i
+                    break
+
+            if row == -1:
+                raise ValueError(f"未找到股票 {symbol} 在表格中的位置")
+
+            # 更新 hold_stock.json
+            if buy_flag:
+                # 卖出：设置 buy_flag = false
+                self.update_hold_stock_json(symbol, {'buy_flag': False})
+                # 更新stock对象
+                stock['buy_flag'] = False
+                success_msg = f"已标记 {name} 为卖出状态"
+            else:
+                # 买入：设置 buy_flag = true，更新日期和成本
+                current_price = stock.get('current_price', 0.0)
+                today = datetime.now().strftime('%Y-%m-%d')
+                updates = {
+                    'buy_flag': True,
+                    'purchase_date': today,
+                    'cost': current_price
+                }
+                self.update_hold_stock_json(symbol, updates)
+                # 更新stock对象
+                stock.update(updates)
+                success_msg = f"已标记 {name} 为买入状态\n买入日期: {today}\n买入价格: ¥{current_price:.2f}"
+
+            # 立即更新当前行的按钮状态
+            self.update_row_button(row, stock)
+
+            # 如果是买入操作，需要重新计算持仓指标并更新显示
+            if not buy_flag:  # 刚买入（原来是false，现在是true）
+                # 重新计算指标
+                cost = stock.get('cost', 0.0)
+                current_price = stock.get('current_price', cost)
+                purchase_date_str = stock.get('purchase_date', '')
+
+                if purchase_date_str:
+                    try:
+                        purchase_date = datetime.strptime(purchase_date_str, '%Y-%m-%d')
+                    except ValueError:
+                        purchase_date = datetime.now()
+                else:
+                    purchase_date = datetime.now()
+
+                # 使用统一的方法计算所有持仓指标
+                metrics = calculate_position_metrics(
+                    cost_price=cost,
+                    current_price=current_price,
+                    purchase_date=purchase_date
+                )
+
+                # 更新stock数据
+                display_metrics = {k: v for k, v in metrics.items() if k not in ['purchase_date', 'current_date']}
+                stock.update(display_metrics)
+
+                # 更新表格中的数据显示
+                self.update_row_data(row, stock)
+
+            QMessageBox.information(self, "成功", success_msg)
+
+        except Exception as e:
+            QMessageBox.critical(self, "错误", f"操作失败: {str(e)}")
+
+    def update_row_button(self, row, stock):
+        """更新指定行的操作按钮"""
+        buy_flag = stock.get('buy_flag', True)
+        operation_btn = QPushButton("卖出" if buy_flag else "买入")
+        operation_btn.setStyleSheet("""
+            QPushButton {
+                background-color: %s;
+                color: white;
+                border-radius: 3px;
+                padding: 5px 10px;
+                font-size: 11px;
+            }
+            QPushButton:hover {
+                background-color: %s;
+            }
+        """ % (("#f44336", "#d32f2f") if buy_flag else ("#4caf50", "#388e3c")))
+        operation_btn.clicked.connect(lambda checked, s=stock: self.handle_trade_action(s))
+        self.holdings_table.setCellWidget(row, 9, operation_btn)
+
+    def update_row_data(self, row, stock):
+        """更新指定行的数据显示"""
+        # 买入日期
+        date_item = QTableWidgetItem(stock.get('purchase_date', ''))
+        date_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.holdings_table.setItem(row, 2, date_item)
+
+        # 持股天数
+        holding_days = stock.get('holding_days', 0)
+        days_item = QTableWidgetItem(f"{holding_days}天")
+        days_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.holdings_table.setItem(row, 3, days_item)
+
+        # 成本价
+        cost = stock.get('cost', 0.0)
+        cost_item = QTableWidgetItem(f"¥{cost:.2f}")
+        cost_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.holdings_table.setItem(row, 4, cost_item)
+
+        # 获取指标
+        profit = stock.get('profit', 0.0)
+        profit_percent = stock.get('profit_percent', 0.0)
+        current_price = stock.get('current_price', cost)
+        avg_daily_profit = stock.get('avg_daily_profit', 0.0)
+        risk_warning = stock.get('risk_warning', '')
+
+        # 当前价
+        price_item = QTableWidgetItem(f"¥{current_price:.2f}")
+        price_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        if current_price > cost:
+            price_item.setForeground(QColor(244, 67, 54))  # 红色
+        elif current_price < cost:
+            price_item.setForeground(QColor(76, 175, 80))  # 绿色
+        self.holdings_table.setItem(row, 5, price_item)
+
+        # 盈亏
+        profit_item = QTableWidgetItem(f"{profit:+.2f} ({profit_percent:+.2f}%)")
+        profit_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        if profit > 0:
+            profit_item.setForeground(QColor(244, 67, 54))  # 红色
+        elif profit < 0:
+            profit_item.setForeground(QColor(76, 175, 80))  # 绿色
+        self.holdings_table.setItem(row, 6, profit_item)
+
+        # 平均日盈利
+        daily_profit_item = QTableWidgetItem(f"¥{avg_daily_profit:+.2f}")
+        daily_profit_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        if avg_daily_profit > 0:
+            daily_profit_item.setForeground(QColor(244, 67, 54))  # 红色
+        elif avg_daily_profit < 0:
+            daily_profit_item.setForeground(QColor(76, 175, 80))  # 绿色
+        self.holdings_table.setItem(row, 7, daily_profit_item)
+
+        # 风险提示
+        risk_item = QTableWidgetItem(risk_warning)
+        risk_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+        if '[警告]' in risk_warning:
+            risk_item.setForeground(QColor(255, 87, 34))  # 深橙色警告
+        elif '[目标]' in risk_warning:
+            risk_item.setForeground(QColor(76, 175, 80))  # 绿色成功
+        elif '[错误]' in risk_warning:
+            risk_item.setForeground(QColor(244, 67, 54))  # 红色错误
+        self.holdings_table.setItem(row, 8, risk_item)
+
+    def update_hold_stock_json(self, symbol, updates):
+        """更新 hold_stock.json 文件中指定股票的字段"""
+        try:
+            config_path = os.path.join("config", "hold_stock.json")
+
+            # 读取配置文件
+            with open(config_path, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+
+            # 查找并更新指定股票
+            hold_stocks = config.get('hold_stocks', [])
+            updated = False
+
+            for stock in hold_stocks:
+                if stock.get('symbol') == symbol:
+                    stock.update(updates)
+                    updated = True
+                    break
+
+            if not updated:
+                raise ValueError(f"未找到股票 {symbol}")
+
+            # 更新 last_updated 时间戳
+            config['last_updated'] = datetime.now().strftime('%Y-%m-%d')
+
+            # 写回配置文件
+            with open(config_path, 'w', encoding='utf-8') as f:
+                json.dump(config, f, ensure_ascii=False, indent=2)
+
+            print(f"已更新 {symbol} 的配置: {updates}")
+
+        except Exception as e:
+            print(f"更新配置文件失败: {e}")
+            raise

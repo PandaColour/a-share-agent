@@ -63,7 +63,8 @@
       "Bash(del:*)",
       "Bash(dir:*)",
       "Bash(.venvScriptspython.exe testtest_signal_filter.py)",
-      "Bash(PYTHONIOENCODING=utf-8 .venv/Scripts/python.exe:*)"
+      "Bash(PYTHONIOENCODING=utf-8 .venv/Scripts/python.exe:*)",
+      "Bash(PYTHONIOENCODING=utf-8 python:*)"
     ],
     "deny": [],
     "ask": []
