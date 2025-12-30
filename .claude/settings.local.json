@@ -60,7 +60,9 @@
       "Bash(del /f \"D:\\github\\a-share-agent\\src\\qt\\trades_widget.py\")",
       "Bash(cd:*)",
       "Bash(.venv/Scripts/python.exe:*)",
-      "Bash(del:*)"
+      "Bash(del:*)",
+      "Bash(dir:*)",
+      "Bash(.venvScriptspython.exe testtest_signal_filter.py)"
     ],
     "deny": [],
     "ask": []

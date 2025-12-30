@@ -127,7 +127,37 @@
         "description": "日志配置"
       }
     },
-    
+
+    "trading_signal_filter": {
+      "enabled": false,
+      "version": "1.0.0",
+      "description": "交易信号过滤器 - 已禁用(过滤太严格导致无交易)",
+
+      "buy_filter": {
+        "max_recent_gain_20d": 0.50,
+        "min_pullback_from_high": 0.15,
+        "price_position_threshold": 0.80,
+        "description": "买入过滤:避免在短期高位买入。max_recent_gain_20d=50%表示如果近20日涨幅超过50%则不买入;price_position_threshold=80%表示如果当前价格位于20日区间的80%以上则等待回调"
+      },
+
+      "sell_filter": {
+        "min_holding_days": 15,
+        "trend_reversal_threshold": -0.20,
+        "stop_loss_in_uptrend": -0.25,
+        "stop_loss_normal": -0.15,
+        "description": "卖出过滤:避免趋势中过早止损。min_holding_days=15天表示最小持有期;在上涨趋势中使用-25%的宽松止损线,在震荡市使用-15%的普通止损线"
+      },
+
+      "filters_applied": {
+        "price_position_filter": "检查当前价格是否位于20日区间高位",
+        "recent_gain_filter": "检查近期涨幅是否过大",
+        "pullback_filter": "快速拉升后要求充分回调",
+        "min_holding_filter": "最小持有期保护",
+        "trend_pullback_filter": "上涨趋势中的正常回调保护",
+        "stop_loss_filter": "根据趋势状态调整止损线"
+      }
+    },
+
     "data_sources": {
       "primary_source": "tushare",
       "fallback_sources": ["akshare","yfinance"],

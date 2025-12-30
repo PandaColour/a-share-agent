@@ -330,11 +330,20 @@ class AShareTradingAgentsSystem:
             )
         
         # 3. 风险评估
-        risk_assessment = risk_manager.assess_risk(symbol, data, indicators, analyses)
-        
-        # 4. 最终决策
+        risk_assessment = risk_manager.assess_risk(
+            data=data,
+            indicators=indicators,
+            symbol=symbol,
+            analyses=analyses
+        )
+
+        # 4. 最终决策 (应用信号过滤)
         self.logger.info(f"🔍 开始最终决策，分析师数量: {len(analyses)}")
-        decision = portfolio_manager.make_decision(symbol, analyses, risk_assessment, price_info)
+        decision = portfolio_manager.make_decision(
+            symbol, analyses, risk_assessment, price_info,
+            data=data,  # 【新增】传入历史数据用于信号过滤
+            position_info=None  # 正常预测无持仓信息
+        )
         self.logger.info(f"🔍 最终决策完成: {symbol}, action={decision.action}")
         self.logger.info(f"🔍 决策对象中是否包含多轮辩论结果: {hasattr(decision, 'multi_round_debate_result') and decision.multi_round_debate_result is not None}")
         
@@ -556,12 +565,21 @@ class AShareTradingAgentsSystem:
                     self.logger.error(f"AI因子分析失败 {symbol}: {e}")
             
             # 风险评估
-            risk_assessment = risk_manager.assess_risk(symbol, data, indicators, analyses)
-            
-            # 最终决策
+            risk_assessment = risk_manager.assess_risk(
+                data=data,
+                indicators=indicators,
+                symbol=symbol,
+                analyses=analyses
+            )
+
+            # 最终决策 (应用信号过滤)
             analysis_status["status"] = "making_decision"
             self.logger.info(f"🔍 [缓存分析] 开始最终决策: {symbol}, 分析师数量: {len(analyses)}")
-            decision = portfolio_manager.make_decision(symbol, analyses, risk_assessment, price_info)
+            decision = portfolio_manager.make_decision(
+                symbol, analyses, risk_assessment, price_info,
+                data=data,  # 【新增】传入历史数据用于信号过滤
+                position_info=None  # 正常预测无持仓信息
+            )
             analysis_status["multi_round_debate_checked"] = True
             execution_time = time.time() - start_time
             self.logger.info(f"🔍 [缓存分析] 最终决策完成: {symbol}, 用时: {execution_time:.2f}秒")
@@ -975,7 +993,15 @@ class AShareTradingAgentsSystem:
                 'volume': data[['Volume']].copy()  # 成交量数据
             }
             
-            # 计算所有AI因子
+            # 【新方法】使用加权因子信号（自动IC评估）
+            # 这个方法会：
+            # 1. 计算所有因子
+            # 2. 自动记录因子值（用于IC计算）
+            # 3. 应用IC评估后的权重
+            # 4. 每50次分析或每7天自动触发IC评估和权重调整
+            weighted_signal = self.factor_manager.calculate_weighted_signal(symbol, symbol_data)
+
+            # 同时获取详细因子值（用于显示）
             factors = self.factor_manager.calculate_all_factors(symbol, symbol_data)
 
             if not factors:
@@ -992,20 +1018,31 @@ class AShareTradingAgentsSystem:
                 if not np.isnan(score) and np.isfinite(score):
                     factor_scores.append(score)
 
-                # 获取因子描述（从因子管理器中获取）
+                # 获取因子描述和权重信息（从因子管理器中获取）
                 factor_description = ''
+                factor_weight = 1.0
+                is_disabled = False
+
                 if self.factor_manager and factor_name in self.factor_manager.factors:
                     factor_description = self.factor_manager.factors[factor_name].description
+
+                    # 获取IC评估后的权重
+                    if self.factor_manager.enable_auto_evaluation:
+                        factor_weight = self.factor_manager.factor_weights.get(factor_name, 1.0)
+                        is_disabled = factor_name in self.factor_manager.disabled_factors
 
                 factor_details[factor_name] = {
                     'value': score if not np.isnan(score) else None,
                     'timestamp': factor_value.timestamp.strftime('%Y-%m-%d %H:%M:%S'),
-                    'description': factor_description
+                    'description': factor_description,
+                    'weight': factor_weight,  # IC评估后的权重
+                    'disabled': is_disabled    # 是否被禁用
                 }
 
-            # 计算综合因子评分（只使用有效因子）
+            # 【改进】使用加权信号而非简单平均
             if factor_scores and len(factor_scores) > 0:
-                avg_score = np.mean(factor_scores)
+                # 使用IC评估后的加权信号
+                avg_score = weighted_signal
                 std_score = np.std(factor_scores) if len(factor_scores) > 1 else 0
                 
                 # 基于因子评分给出建议
@@ -1023,21 +1060,30 @@ class AShareTradingAgentsSystem:
                     confidence = min(0.8, 0.4 + abs(avg_score) * 0.4)
 
                 reasoning = [
-                    f"AI因子综合评分: {avg_score:.4f}",
+                    f"AI因子加权评分: {avg_score:.4f} (已应用IC评估权重)",
                     f"因子评分标准差: {std_score:.4f}",
                     f"有效因子数量: {len(factor_scores)}/{len(factors)}"
                 ]
 
-                # 添加主要因子的贡献说明（只包含有效因子）
+                # 【新增】显示IC评估状态
+                if self.factor_manager.enable_auto_evaluation:
+                    reasoning.append(f"已分析次数: {self.factor_manager.analysis_count} 次")
+                    if self.factor_manager.disabled_factors:
+                        reasoning.append(f"已禁用因子: {len(self.factor_manager.disabled_factors)} 个")
+
+                # 添加主要因子的贡献说明（只包含有效且启用的因子）
                 sorted_factors = sorted(
-                    [(name, info) for name, info in factor_details.items() if info['value'] is not None],
-                    key=lambda x: abs(x[1]['value']),
+                    [(name, info) for name, info in factor_details.items()
+                     if info['value'] is not None and not info.get('disabled', False)],
+                    key=lambda x: abs(x[1]['value']) * x[1].get('weight', 1.0),  # 按加权贡献排序
                     reverse=True
                 )
-                
+
                 for i, (factor_name, factor_info) in enumerate(sorted_factors[:3]):
                     contribution = "正面" if factor_info['value'] > 0 else "负面"
-                    reasoning.append(f"{factor_name}: {factor_info['value']:.4f} ({contribution}贡献)")
+                    weight = factor_info.get('weight', 1.0)
+                    weight_str = f", 权重={weight:.2f}" if self.factor_manager.enable_auto_evaluation else ""
+                    reasoning.append(f"{factor_name}: {factor_info['value']:.4f} ({contribution}贡献{weight_str})")
                 
                 return {
                     "analyst_type": "AI因子分析",

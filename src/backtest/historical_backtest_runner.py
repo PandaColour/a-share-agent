@@ -42,6 +42,9 @@ class HistoricalBacktestRunner:
         # 股票名称映射 {symbol: name}
         self.symbol_to_name = {}
 
+        # 【新增】因子数据记录（用于IC评估）
+        self.factor_records = []  # [{date, symbol, factor_values, next_day_return}, ...]
+
         logger.info("历史回测运行器初始化完成")
 
     def run_historical_backtest(self,
@@ -133,6 +136,9 @@ class HistoricalBacktestRunner:
 
             # 添加历史数据（用于生成K线图）
             results['historical_data'] = historical_data
+
+            # 【新增】自动导入因子数据到 FactorDataCollector（用于IC评估）
+            self._import_factor_data_to_collector()
 
             logger.info(f"回测完成！总收益率: {results.get('total_return', 0):.2%}")
 
@@ -312,6 +318,11 @@ class HistoricalBacktestRunner:
                 if not analysis_result:
                     continue
 
+                # 【新增】记录因子值和计算次日收益率
+                self._record_factor_data(
+                    current_date, symbol, analysis_result, full_data
+                )
+
                 # 运行风险评估
                 risk_assessment = self._run_risk_assessment(data_up_to_date)
 
@@ -333,7 +344,9 @@ class HistoricalBacktestRunner:
                     symbol,
                     [analysis_result],
                     risk_assessment,
-                    price_info
+                    price_info,
+                    data=data_up_to_date,  # 【新增】传入历史数据用于信号过滤
+                    position_info=None  # 【TODO】暂无持仓信息,卖出过滤暂不可用
                 )
 
                 # 只记录买入和卖出信号（持有信号不生成交易）
@@ -409,3 +422,108 @@ class HistoricalBacktestRunner:
                 "risk_level": "中等",
                 "risk_factors": []
             }
+
+    def _record_factor_data(self,
+                           current_date: pd.Timestamp,
+                           symbol: str,
+                           analysis_result: Dict,
+                           full_data: pd.DataFrame):
+        """
+        记录因子数据和计算次日收益率（用于IC评估）
+
+        Args:
+            current_date: 当前日期
+            symbol: 股票代码
+            analysis_result: AI因子分析结果
+            full_data: 完整历史数据（包含未来数据）
+        """
+        try:
+            date_str = current_date.strftime("%Y-%m-%d")
+
+            # 提取因子值
+            factor_details = analysis_result.get('factor_details', {})
+            if not factor_details:
+                return
+
+            # 转换为简单的 {factor_name: value} 格式
+            factor_values = {}
+            for factor_name, factor_info in factor_details.items():
+                value = factor_info.get('value')
+                if value is not None and not pd.isna(value):
+                    factor_values[factor_name] = float(value)
+
+            if not factor_values:
+                return
+
+            # 计算次日收益率
+            next_day_return = None
+            try:
+                # 找到当前日期在数据中的位置
+                current_idx = full_data.index.get_loc(current_date)
+
+                # 检查是否有次日数据
+                if current_idx + 1 < len(full_data):
+                    current_close = full_data.iloc[current_idx]['Close']
+                    next_close = full_data.iloc[current_idx + 1]['Close']
+                    next_day_return = (next_close - current_close) / current_close
+
+            except Exception as e:
+                logger.debug(f"计算次日收益率失败 {symbol} {date_str}: {e}")
+
+            # 记录到列表
+            self.factor_records.append({
+                'date': date_str,
+                'symbol': symbol,
+                'factor_values': factor_values,
+                'next_day_return': next_day_return
+            })
+
+        except Exception as e:
+            logger.debug(f"记录因子数据失败 {symbol} {current_date}: {e}")
+
+    def _import_factor_data_to_collector(self):
+        """
+        将回测过程中收集的因子数据导入到 FactorDataCollector
+        用于后续的IC评估和因子优化
+        """
+        if not self.factor_records:
+            logger.warning("没有因子数据可导入")
+            return
+
+        try:
+            # 检查系统是否启用了AI因子和自动评估
+            if not self.system.ai_factor_enabled or not self.system.factor_manager:
+                logger.info("AI因子系统未启用，跳过因子数据导入")
+                return
+
+            if not self.system.factor_manager.enable_auto_evaluation:
+                logger.info("IC自动评估未启用，跳过因子数据导入")
+                return
+
+            logger.info(f"开始导入回测因子数据: {len(self.factor_records)} 条记录")
+
+            # 导入数据
+            imported_count = self.system.factor_manager.data_collector.batch_import_from_backtest(
+                self.factor_records
+            )
+
+            logger.info(f"✓ 回测因子数据导入完成: {imported_count} 条记录")
+
+            # 显示数据摘要
+            summary = self.system.factor_manager.data_collector.get_summary()
+            logger.info(f"📊 IC评估数据状态:")
+            logger.info(f"   - 数据天数: {summary['num_dates']} 天")
+            logger.info(f"   - 因子数量: {summary['num_factors']} 个")
+            logger.info(f"   - 日期范围: {summary['date_range']['start']} 至 {summary['date_range']['end']}")
+
+            # 检查是否可以开始IC评估
+            if summary['num_dates'] >= 20:
+                logger.info(f"✓ 数据已充足（>= 20天），可以进行IC评估")
+                logger.info(f"💡 提示: 下次运行 main.py 时将自动触发IC评估")
+            else:
+                logger.info(f"⚠️ 数据不足（{summary['num_dates']}/20天），需要更多数据")
+
+        except Exception as e:
+            logger.error(f"导入因子数据失败: {e}")
+            import traceback
+            traceback.print_exc()

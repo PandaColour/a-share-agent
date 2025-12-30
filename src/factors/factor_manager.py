@@ -67,18 +67,51 @@ class BaseFactor(ABC):
         return True
 
 class FactorManager:
-    """因子管理器"""
-    
-    def __init__(self, cache_dir: str = "factor_cache"):
+    """因子管理器（集成IC评估和自动优化）"""
+
+    def __init__(self, cache_dir: str = "factor_cache", enable_auto_evaluation: bool = True):
         self.factors = {}  # 注册的因子
         self.cache_dir = cache_dir
         self.factor_values = {}  # 因子值缓存
         self.factor_history = {}  # 因子历史数据
         self.lock = threading.Lock()
-        
+
         # 确保缓存目录存在
         os.makedirs(cache_dir, exist_ok=True)
-        
+
+        # 【新增】IC评估和自动优化
+        self.enable_auto_evaluation = enable_auto_evaluation
+        self.factor_weights = {}  # 因子权重 {factor_name: weight}
+        self.disabled_factors = set()  # 已禁用的因子
+
+        # 【新增】集成IC评估组件
+        if enable_auto_evaluation:
+            try:
+                from src.factors.factor_ic_evaluator import FactorICEvaluator
+                from src.factors.factor_data_collector import FactorDataCollector
+
+                self.ic_evaluator = FactorICEvaluator(
+                    cache_dir=os.path.join(cache_dir, "ic_evaluation")
+                )
+                self.data_collector = FactorDataCollector(
+                    cache_dir=os.path.join(cache_dir, "factor_history")
+                )
+
+                # 尝试加载已有数据
+                self.data_collector.load_from_disk()
+
+                # 加载因子权重配置
+                self._load_factor_weights()
+
+                logger.info("✓ IC评估系统已启用（自动优化）")
+            except ImportError as e:
+                logger.warning(f"IC评估系统不可用: {e}")
+                self.enable_auto_evaluation = False
+
+        # 统计计数器
+        self.analysis_count = 0  # 分析次数
+        self.last_evaluation_date = None  # 上次评估日期
+
         logger.info(f"因子管理器初始化，缓存目录: {cache_dir}")
     
     def register_factor(self, factor: BaseFactor):
@@ -270,6 +303,307 @@ class FactorManager:
             'symbols_count': len(symbols),
             'factors_count': len(required_factors)
         }
+
+    # ==================== 自动IC评估和优化相关方法 ====================
+
+    def _load_factor_weights(self):
+        """加载因子权重配置"""
+        weight_file = os.path.join(self.cache_dir, "factor_weights.json")
+
+        if os.path.exists(weight_file):
+            try:
+                with open(weight_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    self.factor_weights = data.get('weights', {})
+                    self.disabled_factors = set(data.get('disabled', []))
+                    logger.info(f"✓ 加载因子权重: {len(self.factor_weights)}个因子")
+            except Exception as e:
+                logger.error(f"加载因子权重失败: {e}")
+                self._initialize_default_weights()
+        else:
+            self._initialize_default_weights()
+
+    def _initialize_default_weights(self):
+        """初始化默认权重（所有因子权重相等）"""
+        for factor_name in self.factors.keys():
+            self.factor_weights[factor_name] = 1.0
+        logger.info("使用默认因子权重（均等）")
+
+    def _save_factor_weights(self):
+        """保存因子权重配置"""
+        weight_file = os.path.join(self.cache_dir, "factor_weights.json")
+
+        data = {
+            'weights': self.factor_weights,
+            'disabled': list(self.disabled_factors),
+            'last_update': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        }
+
+        with open(weight_file, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+
+    def record_analysis_result(self, symbol: str, factor_values: Dict[str, FactorValue],
+                              next_day_return: float = None):
+        """
+        记录分析结果（自动调用，用于IC计算）
+
+        Args:
+            symbol: 股票代码
+            factor_values: 因子值字典
+            next_day_return: 次日收益率（可选，后续补充）
+        """
+        if not self.enable_auto_evaluation:
+            return
+
+        # 记录因子值
+        today = datetime.now().strftime('%Y-%m-%d')
+
+        factor_dict = {
+            name: fv.value
+            for name, fv in factor_values.items()
+        }
+
+        self.data_collector.record_factor_values(today, symbol, factor_dict)
+
+        # 记录收益率（如果有）
+        if next_day_return is not None:
+            self.data_collector.record_returns(today, symbol, next_day_return)
+
+        # 增加分析计数
+        self.analysis_count += 1
+
+        # 定期触发自动评估
+        if self.analysis_count % 50 == 0:  # 每50次分析
+            self._check_and_auto_evaluate()
+
+    def _check_and_auto_evaluate(self):
+        """检查并执行自动评估"""
+        # 检查数据是否足够
+        summary = self.data_collector.get_summary()
+
+        if summary['num_dates'] < 20:
+            logger.debug(f"数据不足20天({summary['num_dates']}天)，跳过自动评估")
+            return
+
+        # 检查是否需要评估（距离上次评估>7天）
+        today = datetime.now().date()
+
+        if self.last_evaluation_date:
+            days_since_last = (today - self.last_evaluation_date).days
+            if days_since_last < 7:
+                logger.debug(f"距离上次评估{days_since_last}天，跳过")
+                return
+
+        # 执行自动评估
+        logger.info("\n" + "="*60)
+        logger.info("🤖 触发自动因子评估")
+        logger.info("="*60)
+
+        self._auto_evaluate_and_optimize()
+
+        # 更新评估日期
+        self.last_evaluation_date = today
+
+        # 保存数据
+        self.data_collector.save_to_disk()
+
+    def _auto_evaluate_and_optimize(self):
+        """自动评估并优化因子"""
+        # 1. 计算IC
+        self._calculate_ic_for_all_factors()
+
+        # 2. 评估因子
+        factor_names = list(self.factors.keys())
+        evaluation_results = {}
+
+        for factor_name in factor_names:
+            result = self.ic_evaluator.evaluate_factor(factor_name, window=40)
+            evaluation_results[factor_name] = result
+
+        # 3. 自动调整权重和淘汰因子
+        self._auto_adjust_weights(evaluation_results)
+
+        # 4. 打印结果摘要
+        self._print_evaluation_summary(evaluation_results)
+
+    def _calculate_ic_for_all_factors(self):
+        """为所有因子计算IC"""
+        dates = self.data_collector.get_available_dates()
+
+        if len(dates) < 10:
+            return
+
+        calculated_count = 0
+
+        for date in dates:
+            returns = self.data_collector.get_returns_by_date(date)
+
+            if not returns:
+                continue
+
+            for factor_name in self.factors.keys():
+                factor_values = self.data_collector.get_factor_values_by_date(factor_name, date)
+
+                if not factor_values:
+                    continue
+
+                # 计算IC
+                ic = self.ic_evaluator.calculate_daily_ic(factor_values, returns, date)
+
+                # 更新IC历史
+                self.ic_evaluator.update_ic_history(factor_name, date, ic)
+
+            calculated_count += 1
+
+        logger.info(f"✓ 计算IC完成: {calculated_count}天")
+
+    def _auto_adjust_weights(self, evaluation_results: Dict):
+        """自动调整权重"""
+        adjustments = []
+
+        for factor_name, result in evaluation_results.items():
+            if 'rating' not in result:
+                continue
+
+            rating = result['rating']
+            recommendation = result['recommendation']
+
+            old_weight = self.factor_weights.get(factor_name, 1.0)
+            new_weight = old_weight
+
+            # 根据评级调整权重
+            if recommendation == 'eliminate' or recommendation == 'eliminate_immediately':
+                # 淘汰
+                self.disabled_factors.add(factor_name)
+                new_weight = 0.0
+                adjustments.append(f"  ❌ {factor_name}: 淘汰（{result['reason']}）")
+
+            elif recommendation == 'downweight':
+                # 降权
+                new_weight = old_weight * 0.7
+                adjustments.append(f"  ⬇️ {factor_name}: {old_weight:.2f} → {new_weight:.2f}")
+
+            elif recommendation == 'upweight':
+                # 提权
+                new_weight = min(old_weight * 1.3, 2.0)  # 最大权重2.0
+                adjustments.append(f"  ⬆️ {factor_name}: {old_weight:.2f} → {new_weight:.2f}")
+
+            elif recommendation == 'keep':
+                # 保持
+                adjustments.append(f"  ✓ {factor_name}: 保持 {old_weight:.2f}")
+
+            self.factor_weights[factor_name] = new_weight
+
+        # 保存权重
+        self._save_factor_weights()
+
+        # 打印调整信息
+        if adjustments:
+            logger.info("\n📊 因子权重调整:")
+            for adj in adjustments:
+                logger.info(adj)
+
+    def _print_evaluation_summary(self, results: Dict):
+        """打印评估摘要"""
+        ratings = {'A+': 0, 'A': 0, 'B': 0, 'C': 0, 'D': 0, 'F': 0}
+
+        for result in results.values():
+            if 'rating' in result:
+                rating = result['rating']
+                if rating in ratings:
+                    ratings[rating] += 1
+
+        logger.info("\n📊 因子评级分布:")
+        logger.info(f"  ⭐⭐⭐⭐⭐ A+: {ratings['A+']}个")
+        logger.info(f"  ⭐⭐⭐⭐   A:  {ratings['A']}个")
+        logger.info(f"  ⭐⭐⭐     B:  {ratings['B']}个")
+        logger.info(f"  ⭐⭐       C:  {ratings['C']}个")
+        logger.info(f"  ⭐         D:  {ratings['D']}个")
+        logger.info(f"  ❌         F:  {ratings['F']}个")
+
+    def calculate_weighted_signal(self, symbol: str, data: Dict[str, pd.DataFrame]) -> float:
+        """
+        计算加权因子信号（考虑IC评估的权重）
+
+        Args:
+            symbol: 股票代码
+            data: 数据字典
+
+        Returns:
+            加权信号值 (-1到1之间)
+        """
+        # 计算所有因子
+        factor_values = self.calculate_all_factors(symbol, data)
+
+        if not factor_values:
+            return 0.0
+
+        # 【自动记录】记录因子值（用于后续IC计算）
+        if self.enable_auto_evaluation:
+            self.record_analysis_result(symbol, factor_values)
+
+        # 加权计算
+        weighted_sum = 0.0
+        total_weight = 0.0
+
+        for factor_name, factor_value in factor_values.items():
+            # 跳过已禁用的因子
+            if factor_name in self.disabled_factors:
+                logger.debug(f"跳过已禁用因子: {factor_name}")
+                continue
+
+            # 获取权重
+            weight = self.factor_weights.get(factor_name, 1.0)
+
+            weighted_sum += factor_value.value * weight
+            total_weight += weight
+
+        # 归一化
+        if total_weight > 0:
+            final_signal = weighted_sum / total_weight
+        else:
+            final_signal = 0.0
+
+        return final_signal
+
+    def get_factor_health_summary(self) -> Dict:
+        """
+        获取因子健康状况摘要（供GUI显示）
+
+        Returns:
+            健康状况字典
+        """
+        if not self.enable_auto_evaluation:
+            return {'status': 'disabled'}
+
+        summary = {
+            'enabled': True,
+            'total_factors': len(self.factors),
+            'disabled_factors': len(self.disabled_factors),
+            'analysis_count': self.analysis_count,
+            'data_days': self.data_collector.get_summary()['num_dates'],
+            'last_evaluation': self.last_evaluation_date.strftime('%Y-%m-%d') if self.last_evaluation_date else 'Never',
+            'factors': {}
+        }
+
+        # 获取每个因子的评级（如果有）
+        for factor_name in self.factors.keys():
+            stats = self.ic_evaluator.get_factor_stats(factor_name)
+
+            if stats and 'rating' in stats:
+                summary['factors'][factor_name] = {
+                    'rating': stats['rating'],
+                    'weight': self.factor_weights.get(factor_name, 1.0),
+                    'disabled': factor_name in self.disabled_factors
+                }
+            else:
+                summary['factors'][factor_name] = {
+                    'rating': 'N/A',
+                    'weight': self.factor_weights.get(factor_name, 1.0),
+                    'disabled': factor_name in self.disabled_factors
+                }
+
+        return summary
 
 
 # 全局因子管理器实例
