@@ -116,6 +116,10 @@ def _generate_mplfinance_chart(symbol: str, stock_name: str, data, trades: List[
     sell_dates = []
     sell_prices = []
 
+    # 准备被跳过的买点标记
+    missed_buy_dates = []
+    missed_buy_prices = []
+
     for trade in trades:
         trade_date = pd.to_datetime(trade.get('date', ''))
         trade_price = trade.get('price', 0)
@@ -127,18 +131,36 @@ def _generate_mplfinance_chart(symbol: str, stock_name: str, data, trades: List[
             sell_dates.append(trade_date)
             sell_prices.append(trade_price)
 
+            # 提取持仓期间的重复买点
+            missed_signals = trade.get('missed_buy_signals', [])
+            for missed in missed_signals:
+                missed_date = pd.to_datetime(missed['date'])
+                missed_price = missed['price']
+                missed_buy_dates.append(missed_date)
+                missed_buy_prices.append(missed_price)
+
     # 创建买卖点Series
     buy_series = pd.Series(index=buy_dates, data=buy_prices)
     sell_series = pd.Series(index=sell_dates, data=sell_prices)
+    missed_buy_series = pd.Series(index=missed_buy_dates, data=missed_buy_prices)
 
     # 准备附加图层
     apds = []
     if not buy_series.empty:
-        apds.append(mpf.make_addplot(buy_series, type='scatter', markersize=100,
-                                     marker='^', color='green'))
+        # 真实买点：绿色实心向上三角形
+        apds.append(mpf.make_addplot(buy_series, type='scatter', markersize=120,
+                                     marker='^', color='green', label='真实买点'))
+    if not missed_buy_series.empty:
+        # 被跳过买点：橙色空心向上三角形
+        apds.append(mpf.make_addplot(missed_buy_series, type='scatter', markersize=100,
+                                     marker='^', color='orange', alpha=0.6,
+                                     markerfacecolor='none', markeredgewidth=2,
+                                     label='被跳过买点'))
     if not sell_series.empty:
-        apds.append(mpf.make_addplot(sell_series, type='scatter', markersize=100,
-                                     marker='v', color='red'))
+        # 真实卖点：红色实心向下三角形
+        apds.append(mpf.make_addplot(sell_series, type='scatter', markersize=120,
+                                     marker='v', color='red', label='卖出'))
+
 
     # 图表样式
     mc = mpf.make_marketcolors(up='red', down='green', edge='inherit',
@@ -172,23 +194,51 @@ def _generate_matplotlib_chart(symbol: str, stock_name: str, data, trades: List[
     # 绘制收盘价折线图（简化版K线）
     ax1.plot(data.index, data['Close'], label='收盘价', linewidth=1.5, color='blue')
 
+    # 准备被跳过的买点数据
+    missed_buy_dates = []
+    missed_buy_prices = []
+
     # 标注买卖点
     for trade in trades:
         trade_date = pd.to_datetime(trade.get('date', ''))
         trade_price = trade.get('price', 0)
 
         if trade.get('action') == '买入':
+            # 真实买点：绿色实心向上三角形
             ax1.scatter(trade_date, trade_price, marker='^', color='green',
-                       s=200, zorder=5, label='买入' if '买入' not in [t.get_label() for t in ax1.get_children()] else '')
+                       s=250, zorder=5, edgecolors='darkgreen', linewidth=1.5,
+                       label='真实买点' if '真实买点' not in [t.get_label() for t in ax1.get_children()] else '')
             ax1.annotate('买', xy=(trade_date, trade_price),
-                        xytext=(0, 10), textcoords='offset points',
-                        ha='center', fontsize=9, color='green', weight='bold')
+                        xytext=(0, 12), textcoords='offset points',
+                        ha='center', fontsize=10, color='green', weight='bold')
+
         elif trade.get('action') == '卖出':
+            # 真实卖点：红色实心向下三角形
             ax1.scatter(trade_date, trade_price, marker='v', color='red',
-                       s=200, zorder=5, label='卖出' if '卖出' not in [t.get_label() for t in ax1.get_children()] else '')
+                       s=250, zorder=5, edgecolors='darkred', linewidth=1.5,
+                       label='卖出' if '卖出' not in [t.get_label() for t in ax1.get_children()] else '')
             ax1.annotate('卖', xy=(trade_date, trade_price),
-                        xytext=(0, -15), textcoords='offset points',
-                        ha='center', fontsize=9, color='red', weight='bold')
+                        xytext=(0, -18), textcoords='offset points',
+                        ha='center', fontsize=10, color='red', weight='bold')
+
+            # 收集持仓期间的重复买点
+            missed_signals = trade.get('missed_buy_signals', [])
+            for missed in missed_signals:
+                missed_date = pd.to_datetime(missed['date'])
+                missed_price = missed['price']
+                missed_buy_dates.append(missed_date)
+                missed_buy_prices.append(missed_price)
+
+    # 标注被跳过的买点（橙色空心三角形）
+    if missed_buy_dates:
+        ax1.scatter(missed_buy_dates, missed_buy_prices, marker='^',
+                   facecolors='none', edgecolors='orange', s=200, linewidth=2.5,
+                   zorder=4, alpha=0.8, label='被跳过买点')
+        for missed_date, missed_price in zip(missed_buy_dates, missed_buy_prices):
+            ax1.annotate('跳', xy=(missed_date, missed_price),
+                        xytext=(0, 12), textcoords='offset points',
+                        ha='center', fontsize=8, color='orange', weight='bold', alpha=0.7)
+
 
     # 设置标题和标签
     ax1.set_title(f"{stock_name}({symbol}) 回测交易K线图", fontsize=14, weight='bold')

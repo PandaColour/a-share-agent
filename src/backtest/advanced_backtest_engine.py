@@ -234,7 +234,19 @@ class AdvancedBacktestEngine:
         """执行买入信号"""
         # 检查是否已有持仓
         if symbol in self.positions:
-            logger.debug(f"{symbol} 已有持仓，跳过买入")
+            # 记录持仓期间出现的重复买点
+            if 'missed_buy_signals' not in self.positions[symbol]:
+                self.positions[symbol]['missed_buy_signals'] = []
+
+            self.positions[symbol]['missed_buy_signals'].append({
+                'date': date.strftime('%Y-%m-%d'),
+                'price': price,
+                'confidence': confidence,
+                'days_since_entry': (date - self.positions[symbol]['entry_date']).days
+            })
+
+            logger.info(f"⚠️ {symbol} 持仓期间出现重复买点 - 价格:{price:.2f}, 信心度:{confidence:.2%}, "
+                       f"持仓天数:{(date - self.positions[symbol]['entry_date']).days}天")
             return
         
         # 计算仓位大小 (基于信心度调整)
@@ -319,7 +331,7 @@ class AdvancedBacktestEngine:
         profit = net_proceeds - entry_cost
         return_rate = profit / entry_cost
         
-        # 记录交易
+        # 记录交易（包含持仓期间的重复买点信息）
         trade = {
             'date': date.strftime('%Y-%m-%d'),
             'symbol': symbol,
@@ -331,7 +343,8 @@ class AdvancedBacktestEngine:
             'profit': profit,
             'return_rate': return_rate,
             'holding_days': (date - position['entry_date']).days,
-            'reason': reason
+            'reason': reason,
+            'missed_buy_signals': position.get('missed_buy_signals', [])  # 记录持仓期间的重复买点
         }
         self.trade_history.append(trade)
         

@@ -27,9 +27,9 @@
     {
       "symbol": "002361.SZ",
       "name": "神剑股份",
-      "purchase_date": "2025-12-30",
-      "cost": 13.04,
-      "buy_flag": false
+      "purchase_date": "2025-12-31",
+      "cost": 13.21,
+      "buy_flag": true
     },
     {
       "symbol": "002413.SZ",
@@ -41,8 +41,8 @@
     {
       "symbol": "002471.SZ",
       "name": "中超控股",
-      "purchase_date": "2025-12-30",
-      "cost": 0.0,
+      "purchase_date": "2025-12-31",
+      "cost": 7.016,
       "buy_flag": false
     },
     {
@@ -63,6 +63,13 @@
       "symbol": "002156.SZ",
       "name": "通富微电",
       "purchase_date": "2025-12-30",
+      "cost": 0.0,
+      "buy_flag": false
+    },
+    {
+      "symbol": "001208.SZ",
+      "name": "华菱线缆",
+      "purchase_date": "2025-12-31",
       "cost": 0.0,
       "buy_flag": false
     }

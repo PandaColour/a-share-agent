@@ -1,0 +1,34 @@
+{
+  "multi_timeframe_rsi": {
+    "weights": {
+      "daily": 0.5,
+      "5min_long": 0.3,
+      "5min_short": 0.2
+    },
+    "expected_ic": 0.0,
+    "expected_ir": 0.0,
+    "method": "default",
+    "last_update": "2025-12-31T00:00:00"
+  },
+  "multi_timeframe_macd": {
+    "weights": {
+      "daily": 0.6,
+      "5min": 0.4
+    },
+    "expected_ic": 0.0,
+    "expected_ir": 0.0,
+    "method": "default",
+    "last_update": "2025-12-31T00:00:00"
+  },
+  "test_factor_persistence": {
+    "weights": {
+      "daily": 0.6,
+      "5min_long": 0.25,
+      "5min_short": 0.15
+    },
+    "expected_ic": 0.04,
+    "expected_ir": 2.0,
+    "method": "ic_ir",
+    "last_update": "2025-12-31T10:50:47.117840"
+  }
+}

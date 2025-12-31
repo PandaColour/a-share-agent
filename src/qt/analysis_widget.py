@@ -71,12 +71,17 @@ class AnalysisWidget(QWidget):
     def __init__(self):
         super().__init__()
         self.analysis_thread = None
+        self.backtest_thread = None  # 回测线程
         self.scheduled_time = None  # 预定的执行时间
         self.timer = QTimer()
         self.timer.timeout.connect(self.check_scheduled_time)
         self.stock_validator = StockValidator()  # 股票验证器
         self.current_valid_stock = None  # 当前校验通过的股票信息
+        self.is_scheduled_task = False  # 标记是否是定时任务触发的分析
         self.init_ui()
+
+        # 程序启动时自动开启定时任务
+        self.auto_start_schedule()
 
     def init_ui(self):
         """初始化UI"""
@@ -250,6 +255,31 @@ class AnalysisWidget(QWidget):
         self.schedule_btn.clicked.connect(self.toggle_schedule)
         time_layout.addWidget(self.schedule_btn)
 
+        # 立即执行按钮
+        self.execute_now_btn = QPushButton("立即执行")
+        self.execute_now_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #FF5722;
+                color: white;
+                border-radius: 3px;
+                padding: 5px 15px;
+                font-size: 12px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #E64A19;
+            }
+            QPushButton:pressed {
+                background-color: #D84315;
+            }
+            QPushButton:disabled {
+                background-color: #cccccc;
+                color: #666666;
+            }
+        """)
+        self.execute_now_btn.clicked.connect(self.execute_now)
+        time_layout.addWidget(self.execute_now_btn)
+
         scheduled_layout.addLayout(time_layout)
 
         # 状态显示
@@ -295,6 +325,7 @@ class AnalysisWidget(QWidget):
         self.hold_btn.setEnabled(False)
         self.both_btn.setEnabled(False)
         self.stop_btn.setEnabled(True)
+        self.execute_now_btn.setEnabled(False)  # 禁用立即执行按钮
 
         # 清空输出
         self.output_text.clear()
@@ -338,6 +369,7 @@ class AnalysisWidget(QWidget):
         self.hold_btn.setEnabled(True)
         self.both_btn.setEnabled(True)
         self.stop_btn.setEnabled(False)
+        self.execute_now_btn.setEnabled(True)  # 启用立即执行按钮
 
         # 更新状态
         end_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -346,9 +378,24 @@ class AnalysisWidget(QWidget):
         if success:
             self.status_label.setText(f"完成: {message}")
             self.status_label.setStyleSheet("color: #4CAF50; padding: 5px;")
+
+            # 如果是定时任务触发的分析，且成功完成，则执行回测
+            if self.is_scheduled_task:
+                self.append_output(f"\n[定时任务] 全分析成功完成，准备执行3个月回测...")
+                self.start_backtest()
+                # 重置标志位
+                self.is_scheduled_task = False
+
+                # 恢复定时状态标签
+                self.restore_schedule_status()
         else:
             self.status_label.setText(f"失败: {message}")
             self.status_label.setStyleSheet("color: #f44336; padding: 5px;")
+            # 如果定时任务失败，也重置标志位
+            if self.is_scheduled_task:
+                self.is_scheduled_task = False
+                # 恢复定时状态标签
+                self.restore_schedule_status()
 
     def toggle_schedule(self):
         """启动/停止定时任务"""
@@ -429,8 +476,160 @@ class AnalysisWidget(QWidget):
         # 清空定时时间
         self.scheduled_time = None
 
+        # 设置定时任务标志位
+        self.is_scheduled_task = True
+
         # 执行 both 模式分析
         self.append_output(f"\n[定时任务] {time_str} 开始执行全分析...")
         self.start_analysis('both')
 
-    
+    def execute_now(self):
+        """立即执行定时任务（全分析+回测）"""
+        # 检查是否有分析正在运行
+        if self.analysis_thread and self.analysis_thread.isRunning():
+            QMessageBox.warning(self, "提示", "当前有分析任务正在运行，请稍后再试")
+            return
+
+        # 设置定时任务标志位（这样分析完成后会自动执行回测）
+        self.is_scheduled_task = True
+
+        # 输出提示
+        current_time = datetime.now().strftime("%H:%M:%S")
+        self.append_output(f"\n[立即执行] {current_time} 手动触发定时任务（全分析+回测）")
+        self.schedule_status_label.setText(f"🚀 立即执行中...")
+        self.schedule_status_label.setStyleSheet("color: #FF5722; padding: 5px; font-size: 11px;")
+
+        # 执行全分析
+        self.start_analysis('both')
+
+    def restore_schedule_status(self):
+        """恢复定时状态标签"""
+        if self.timer.isActive() and self.scheduled_time:
+            # 定时器正在运行，显示定时状态
+            time_str = self.scheduled_time.toString("HH:mm:ss")
+            self.schedule_status_label.setText(f"⏰ 定时已启动，将在 {time_str} 执行全分析")
+            self.schedule_status_label.setStyleSheet("color: #9C27B0; padding: 5px; font-size: 11px;")
+        else:
+            # 定时器未运行，显示未启动状态
+            self.schedule_status_label.setText("定时未启动")
+            self.schedule_status_label.setStyleSheet("color: #666666; padding: 5px; font-size: 11px;")
+
+    def auto_start_schedule(self):
+        """程序启动时自动开启定时任务"""
+        # 获取当前设置的时间
+        hour = self.hour_spin.value()
+        minute = self.minute_spin.value()
+        second = self.second_spin.value()
+
+        # 设置定时时间
+        self.scheduled_time = QTime(hour, minute, second)
+
+        # 禁用时间输入
+        self.hour_spin.setEnabled(False)
+        self.minute_spin.setEnabled(False)
+        self.second_spin.setEnabled(False)
+
+        # 启动定时器
+        self.timer.start(1000)
+
+        # 更新按钮状态
+        self.schedule_btn.setChecked(True)
+        self.schedule_btn.setText("停止定时")
+
+        # 更新状态标签
+        time_str = self.scheduled_time.toString("HH:mm:ss")
+        self.schedule_status_label.setText(f"⏰ 定时已启动，将在 {time_str} 执行全分析")
+        self.schedule_status_label.setStyleSheet("color: #9C27B0; padding: 5px; font-size: 11px;")
+
+        # 输出日志
+        self.append_output(f"[自动启动] 定时任务已自动启动，将在 {time_str} 执行全分析")
+
+    def start_backtest(self):
+        """启动3个月回测"""
+        from datetime import datetime, timedelta
+
+        # 计算日期范围
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=90)  # 3个月约90天
+
+        # 格式化日期
+        start_date_str = start_date.strftime("%Y-%m-%d")
+        end_date_str = end_date.strftime("%Y-%m-%d")
+
+        # 输出提示
+        self.append_output(f"\n{'='*60}")
+        self.append_output(f"[回测任务] 开始执行3个月回测")
+        self.append_output(f"[回测任务] 时间范围: {start_date_str} 至 {end_date_str}")
+        self.append_output(f"{'='*60}\n")
+
+        # 获取main.py路径
+        main_py = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'main.py')
+
+        # 构建回测命令
+        cmd = [
+            sys.executable,
+            main_py,
+            '--mode', 'backtest',
+            '--start-date', start_date_str,
+            '--end-date', end_date_str
+        ]
+
+        # 创建回测线程
+        self.backtest_thread = BacktestThread(cmd)
+        self.backtest_thread.output_signal.connect(self.append_output)
+        self.backtest_thread.finished_signal.connect(self.backtest_finished)
+        self.backtest_thread.start()
+
+    def backtest_finished(self, success, message):
+        """回测完成"""
+        if success:
+            self.append_output(f"\n[回测任务] 回测成功完成")
+            self.append_output(f"{'='*60}\n")
+        else:
+            self.append_output(f"\n[回测任务] 回测失败: {message}")
+            self.append_output(f"{'='*60}\n")
+
+
+class BacktestThread(QThread):
+    """回测线程"""
+    output_signal = pyqtSignal(str)
+    finished_signal = pyqtSignal(bool, str)
+
+    def __init__(self, cmd):
+        super().__init__()
+        self.cmd = cmd
+        self.process = None
+
+    def run(self):
+        """执行回测"""
+        try:
+            # 执行回测命令
+            self.process = subprocess.Popen(
+                self.cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                encoding='utf-8',
+                bufsize=1,
+                universal_newlines=True
+            )
+
+            # 实时读取输出
+            for line in self.process.stdout:
+                self.output_signal.emit(line.rstrip())
+
+            # 等待进程完成
+            return_code = self.process.wait()
+
+            if return_code == 0:
+                self.finished_signal.emit(True, "回测完成")
+            else:
+                self.finished_signal.emit(False, f"回测失败，返回码: {return_code}")
+
+        except Exception as e:
+            self.finished_signal.emit(False, f"回测出错: {str(e)}")
+
+    def stop(self):
+        """停止回测"""
+        if self.process:
+            self.process.terminate()

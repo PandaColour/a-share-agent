@@ -144,7 +144,7 @@ class AShareTradingAgentsSystem:
         self.ai_factor_enabled = False
         self.factor_manager = None
         try:
-            from factors import initialize_factors, get_factor_manager, get_auto_factor_summary
+            from src.factors import initialize_factors, get_factor_manager, get_auto_factor_summary
             initialize_factors(enable_auto_generation=True)  # 启用自动因子生成
             self.factor_manager = get_factor_manager()
             self.ai_factor_enabled = True
