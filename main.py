@@ -128,8 +128,7 @@ class AShareTradingAgentsSystem:
         self.config = config_manager or get_config()
         self.config_manager = self.config  # 兼容性别名
         self.max_workers = self.config.get_max_workers()
-        self.debate_rounds = self.config.get_debate_rounds()
-        
+
         # 主线程组件
         self.data_provider = AShareDataProvider()
         self.risk_manager = RiskManager()

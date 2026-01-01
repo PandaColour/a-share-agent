@@ -132,6 +132,16 @@ python test_backtest_multisource.py
 - **CSV导出**: 生成详细的持仓分析报表
 - **数据复用**: 支持复用选股分析结果，避免重复AI调用
 
+### 📱 小红书文案生成系统 ⭐ 最新特性!
+- **自动化生成**: 定时任务完成后自动生成小红书风格投资分析文案
+- **三部分结构**:
+  - **持仓实况**: 从holdings_analysis.csv提取持仓数据，结合analysis_summary.csv分析结果
+  - **投资机会**: 从analysis_summary.csv筛选买入推荐（排除已持仓股票）
+  - **风险提示**: 列出卖出预警股票（排除已处理的持仓）
+- **AI驱动**: 优先使用Claude SDK生成专业文案，支持模板降级
+- **易于编辑**: Prompt模板存储在config/xiaohongshu_prompt.md，可随时修改
+- **双格式输出**: 同时生成.md和.txt格式，方便编辑和复制
+
 ### 🔥 双重时间框架技术分析系统 ⭐ 最新特性!
 - **🔥 main.py自动集成**: 技术分析师现已升级为双重时间框架分析
 - **长短期融合**: 1年日线数据识别主要趋势 + 最近3日5分钟数据精确时机
@@ -207,6 +217,7 @@ src/
 │   ├── ollama_client.py          # Ollama本地模型客户端
 │   ├── custom_http_client.py     # 自定义HTTP API客户端
 │   ├── ml_prediction_client.py   # 机器学习预测模型客户端
+│   ├── claude_sdk_client.py      # 🆕 Claude SDK客户端（小红书文案生成）
 │   ├── mock_client.py            # 模拟AI客户端(测试用)
 │   └── factory.py                # AI模型工厂类
 ├── agents/                   # 智能体协作系统 (四维度分析师 + 多轮辩论)
@@ -243,6 +254,8 @@ src/
 ├── process/                  # 🔄 业务流程模块
 │   ├── hold_stock_process.py     # 💼 持仓分析流程
 │   └── hold_stock_analyzer.py    # 持仓股票分析器
+├── content/                  # 📱 内容生成模块
+│   └── xiaohongshu_generator.py  # 🆕 小红书文案生成器
 ├── output/                   # 📤 输出管理模块
 │   └── analysis_output_manager.py # 分析结果格式化与保存
 ├── qt/                       # 🖥️ 图形界面模块 (PyQt6)
@@ -464,6 +477,8 @@ outputs/
     ├── backtest_results.json         # 📈 回测结果（3个月）
     ├── backtest_trade_history.json   # 📋 交易记录详情
     ├── backtest_result.md            # 📄 回测Markdown报告
+    ├── xiaohongshu_content.md        # 🆕 小红书文案（Markdown格式）
+    ├── xiaohongshu_content.txt       # 🆕 小红书文案（文本格式）
     └── charts/                        # 📊 K线图文件夹
         ├── chart_SYMBOL1.png
         └── chart_SYMBOL2.png
@@ -589,7 +604,71 @@ du -sh logs/
 
 ## ✨ 最新更新
 
-### 🎯 v4.7.0 - GUI增强与持仓系统优化 (2026-01-01) 🔥 LATEST!
+### 🎯 v4.8.0 - 小红书文案生成系统 (2026-01-01) 🔥 LATEST!
+
+#### 📱 小红书智能文案生成
+- **✅ Claude SDK集成**: 新增Anthropic Claude SDK客户端支持
+  - 🤖 **专业模型**: 使用claude-3-5-sonnet-20241022生成高质量文案
+  - 🔧 **模块化设计**: 遵循现有AI模型架构，易于维护和扩展
+  - 🛡️ **优雅降级**: SDK不可用时自动切换到其他AI模型或模板生成
+
+- **✅ 自动化内容生成**: 定时任务完成后自动生成小红书风格文案
+  - 📊 **三部分结构**:
+    1. **持仓实况** 💼: 从holdings_analysis.csv提取持仓数据，结合AI分析建议
+    2. **投资机会** ⭐: 筛选买入推荐（智能排除已持仓股票）
+    3. **风险提示** ⚠️: 列出卖出预警（排除已处理持仓）
+  - 🎯 **智能数据整合**: 自动合并holdings_analysis.csv和analysis_summary.csv数据
+  - 🔄 **去重逻辑**: 确保三部分内容无重复，逻辑清晰
+
+- **✅ Prompt工程体系**:
+  - 📝 **Markdown模板**: config/xiaohongshu_prompt.md存储完整prompt
+  - 🔧 **易于定制**: 无需修改代码，直接编辑Markdown文件即可调整风格
+  - 📚 **详细指导**: 包含风格要求、内容结构、示例格式等完整说明
+  - ⚠️ **合规保障**: 内置免责声明和风险提示要求
+
+- **✅ 双格式输出**:
+  - 📄 **Markdown格式**: xiaohongshu_content.md，支持格式化编辑
+  - 📋 **纯文本格式**: xiaohongshu_content.txt，方便直接复制粘贴
+  - 📁 **统一管理**: 与分析结果保存在同一outputs/时间戳目录
+
+- **✅ GUI集成增强**:
+  - 🖥️ **无缝集成**: 定时任务自动触发：全分析 → 回测 → 小红书文案生成
+  - 📊 **实时反馈**: GUI界面实时显示文案生成进度和结果
+  - ✅ **智能判断**: 仅在scheduled_output_dir存在时生成（定时任务或立即执行）
+  - 🔄 **错误处理**: 文案生成失败不影响核心分析和回测流程
+
+#### 🔧 配置系统增强
+- **✅ Claude SDK配置**: unified_config.json新增claude_sonnet模型配置
+  - 🔑 **API密钥管理**: 支持配置Anthropic API密钥
+  - ⚙️ **参数可调**: max_tokens、temperature等参数可自定义
+  - 🎯 **模型选择**: 支持配置不同的Claude模型版本
+
+#### 📁 系统架构优化
+- **✅ 新增content模块**: src/content/用于存放内容生成相关功能
+  - 📱 xiaohongshu_generator.py: 小红书文案生成器
+  - 🔮 **未来扩展**: 可添加其他平台内容生成器（如微博、知乎等）
+
+#### 🎯 使用体验提升
+- **工作流程**:
+  ```
+  1. 设置定时任务或点击"立即执行"
+  2. 系统自动执行: 全分析(选股+持仓)
+  3. 系统自动执行: 3个月回测
+  4. 系统自动执行: 小红书文案生成  🆕
+  5. 所有结果保存到统一目录
+  ```
+
+- **输出结果**:
+  ```
+  outputs/20260101_153000/
+  ├── analysis_summary.csv       # 选股分析
+  ├── holdings_analysis.csv      # 持仓分析
+  ├── backtest_results.json      # 回测结果
+  ├── xiaohongshu_content.md     # 🆕 小红书文案
+  └── xiaohongshu_content.txt    # 🆕 小红书文案（纯文本）
+  ```
+
+### 🎯 v4.7.0 - GUI增强与持仓系统优化 (2026-01-01)
 
 #### 🖥️ PyQt6图形界面系统
 - **✅ 完整GUI应用**: 基于PyQt6的专业图形界面，支持多标签页管理

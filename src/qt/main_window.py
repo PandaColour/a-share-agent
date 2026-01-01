@@ -11,6 +11,7 @@ from PyQt6.QtGui import QAction, QFont
 from src.qt.analysis_widget import AnalysisWidget
 from src.qt.holdings_widget import HoldingsWidget
 from src.qt.backtest_widget import BacktestWidget
+from src.qt.media_widget import MediaWidget
 
 
 class MainWindow(QMainWindow):
@@ -41,15 +42,17 @@ class MainWindow(QMainWindow):
         # === 右侧工作区 ===
         self.stacked_widget = QStackedWidget()
 
-        # 创建三个页面
+        # 创建四个页面
         self.analysis_widget = AnalysisWidget()
         self.holdings_widget = HoldingsWidget()
         self.backtest_widget = BacktestWidget()
+        self.media_widget = MediaWidget()
 
         # 添加到堆叠窗口
         self.stacked_widget.addWidget(self.analysis_widget)  # index 0
         self.stacked_widget.addWidget(self.holdings_widget)  # index 1
         self.stacked_widget.addWidget(self.backtest_widget)  # index 2
+        self.stacked_widget.addWidget(self.media_widget)     # index 3
 
         main_layout.addWidget(self.stacked_widget)
 
@@ -141,6 +144,13 @@ class MainWindow(QMainWindow):
         self.backtest_btn.clicked.connect(lambda: self.switch_page(2))
         layout.addWidget(self.backtest_btn)
 
+        # 自媒体内容按钮
+        self.media_btn = QPushButton("📱 自媒体")
+        self.media_btn.setCheckable(True)
+        self.media_btn.setStyleSheet(button_style)
+        self.media_btn.clicked.connect(lambda: self.switch_page(3))
+        layout.addWidget(self.media_btn)
+
         # 添加弹性空间
         layout.addStretch()
 
@@ -193,6 +203,12 @@ class MainWindow(QMainWindow):
         backtest_action.triggered.connect(lambda: self.switch_page(2))
         view_menu.addAction(backtest_action)
 
+        # 切换到自媒体
+        media_action = QAction("自媒体内容(&M)", self)
+        media_action.setShortcut("Ctrl+4")
+        media_action.triggered.connect(lambda: self.switch_page(3))
+        view_menu.addAction(media_action)
+
         view_menu.addSeparator()
 
         # 刷新
@@ -215,12 +231,13 @@ class MainWindow(QMainWindow):
         self.analysis_btn.setChecked(index == 0)
         self.holdings_btn.setChecked(index == 1)
         self.backtest_btn.setChecked(index == 2)
+        self.media_btn.setChecked(index == 3)
 
         # 切换页面
         self.stacked_widget.setCurrentIndex(index)
 
         # 更新状态栏
-        page_names = ["股票分析", "持股跟踪", "历史回测"]
+        page_names = ["股票分析", "持股跟踪", "历史回测", "自媒体内容"]
         self.statusBar.showMessage(f"当前页面: {page_names[index]}")
 
     def refresh_current(self):
@@ -248,12 +265,14 @@ class MainWindow(QMainWindow):
             "<li>📊 股票分析 - 智能选股和分析 (Ctrl+1)</li>"
             "<li>💼 持股跟踪 - 实时监控持仓 (Ctrl+2)</li>"
             "<li>📈 历史回测 - 策略回测验证 (Ctrl+3)</li>"
+            "<li>📱 自媒体内容 - 小红书文案生成 (Ctrl+4)</li>"
             "</ul>"
             "<p>快捷键:</p>"
             "<ul>"
             "<li>Ctrl+1: 切换到股票分析</li>"
             "<li>Ctrl+2: 切换到持股跟踪</li>"
             "<li>Ctrl+3: 切换到历史回测</li>"
+            "<li>Ctrl+4: 切换到自媒体内容</li>"
             "<li>F5: 刷新当前页</li>"
             "<li>Ctrl+Q: 退出程序</li>"
             "</ul>"

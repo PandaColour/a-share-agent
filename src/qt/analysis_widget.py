@@ -5,6 +5,7 @@
 import os
 import sys
 import subprocess
+import logging
 from datetime import datetime
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout,
                              QPushButton, QTextEdit, QGroupBox, QLabel, QSpinBox, QMessageBox, QLineEdit)
@@ -12,6 +13,11 @@ from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer, QTime
 from PyQt6.QtGui import QFont
 
 from src.qt.stock_validator import StockValidator
+from src.content.xiaohongshu_generator import XiaohongshuContentGenerator
+from src.ai_models.factory import AIModelFactory
+from config.config_manager import get_config
+
+logger = logging.getLogger(__name__)
 
 
 class AnalysisThread(QThread):
@@ -616,12 +622,68 @@ class AnalysisWidget(QWidget):
         if success:
             self.append_output(f"\n[回测任务] 回测成功完成")
             self.append_output(f"{'='*60}\n")
+
+            # 如果有统一的输出目录，生成小红书文案
+            if self.scheduled_output_dir:
+                self.append_output(f"\n[小红书文案] 开始生成小红书文案...")
+                self.generate_xiaohongshu_content()
         else:
             self.append_output(f"\n[回测任务] 回测失败: {message}")
             self.append_output(f"{'='*60}\n")
 
         # 清理定时任务的输出目录引用
         self.scheduled_output_dir = None
+
+    def generate_xiaohongshu_content(self):
+        """生成小红书文案"""
+        try:
+            # 加载配置
+            config = get_config()
+
+            # 初始化AI客户端（尝试使用Claude SDK）
+            ai_client = None
+            try:
+                ai_models_config = config.get('system_settings', {}).get('ai_models', {})
+                models = ai_models_config.get('models', {})
+
+                # 优先使用 claude_sonnet，如果没有则使用默认模型
+                model_name = 'claude_sonnet'
+                if model_name not in models:
+                    # 回退到默认模型
+                    model_name = ai_models_config.get('default_model', 'deepseek-v3.2-exp')
+                    self.append_output(f"[小红书文案] Claude SDK未配置，使用默认模型: {model_name}")
+                else:
+                    self.append_output(f"[小红书文案] 使用Claude SDK生成文案")
+
+                ai_client = AIModelFactory.create_model(model_name, models)
+            except Exception as e:
+                logger.warning(f"AI客户端初始化失败: {e}，将使用模板生成")
+                self.append_output(f"[小红书文案] AI客户端初始化失败，将使用模板生成")
+
+            # 初始化小红书文案生成器
+            generator = XiaohongshuContentGenerator(ai_client=ai_client)
+
+            # 生成文案
+            content = generator.generate_content(
+                output_dir=self.scheduled_output_dir,
+                holdings_csv="holdings_analysis.csv",
+                analysis_csv="analysis_summary.csv"
+            )
+
+            if content:
+                self.append_output(f"[小红书文案] ✅ 文案生成成功")
+                self.append_output(f"[小红书文案] 文件保存位置:")
+                self.append_output(f"  - {os.path.join(self.scheduled_output_dir, 'xiaohongshu_content.md')}")
+                self.append_output(f"  - {os.path.join(self.scheduled_output_dir, 'xiaohongshu_content.txt')}")
+                self.append_output(f"{'='*60}\n")
+            else:
+                self.append_output(f"[小红书文案] ⚠️ 文案生成失败")
+                self.append_output(f"{'='*60}\n")
+
+        except Exception as e:
+            logger.error(f"生成小红书文案失败: {e}")
+            self.append_output(f"[小红书文案] ❌ 生成失败: {str(e)}")
+            self.append_output(f"{'='*60}\n")
 
 
 class BacktestThread(QThread):

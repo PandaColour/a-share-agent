@@ -9,125 +9,6 @@
       "enable_learning": true
     },
 
-    "debate_settings": {
-      "enable_debate": true,
-      "enable_multi_round_debate": true,
-      "debate_rounds": 2,
-      "force_opposing_views": true,
-      "min_confidence_threshold": 0.5,
-      "description": "多轮辩论系统配置 - enable_debate控制是否启用辩论，false时回归传统统计决策。短期优化：降低阈值到50%以捕捉更多短期机会"
-    },
-
-    "buy_point_optimization": {
-      "enabled": true,
-      "version": "2.0.0",
-      "description": "买点优化配置v2 - 更严格的买点判断，避免下降途中抄底",
-
-      "signal_weights": {
-        "right_side": 0.75,
-        "left_side": 0.25,
-        "description": "右侧交易（确认信号）权重75%，左侧交易（预测信号）权重25% - 提高右侧权重"
-      },
-
-      "trend_confirmation": {
-        "enabled": true,
-        "min_gain_threshold": 0.025,
-        "volume_multiplier": 1.5,
-        "consecutive_up_days": 3,
-        "ma_breakthrough_required": false,
-        "description": "趋势确认参数 - 最小涨幅2.5%，成交量放大1.5倍，连续上涨3天（更严格）"
-      },
-
-      "signal_types": {
-        "right_side_signals": {
-          "breakthrough": 0.3,
-          "volume_surge": 0.25,
-          "ma_alignment": 0.2,
-          "momentum_confirm": 0.25,
-          "description": "右侧交易信号权重配置"
-        },
-        "left_side_signals": {
-          "oversold": 0.15,
-          "support_level": 0.15,
-          "undervalued": 0.1,
-          "contrarian": 0.1,
-          "description": "左侧交易信号权重配置（降低超卖权重）"
-        }
-      },
-
-      "position_sizing": {
-        "base_position": 0.1,
-        "max_position": 0.25,
-        "min_position": 0.05,
-        "right_side_bonus": 1.3,
-        "trend_multiplier": {
-          "confirmed_uptrend": 1.4,
-          "early_uptrend": 1.1,
-          "consolidation": 0.8,
-          "weak_downtrend": 0.5,
-          "strong_downtrend": 0.3
-        },
-        "quality_multiplier": {
-          "excellent": 1.2,
-          "good": 1.1,
-          "general": 1.0,
-          "poor": 0.8
-        },
-        "description": "动态仓位管理配置"
-      },
-
-      "trend_status_multipliers": {
-        "confirmed_uptrend": 1.5,
-        "early_uptrend": 1.2,
-        "consolidation": 1.0,
-        "weak_downtrend": 0.7,
-        "strong_downtrend": 0.5,
-        "description": "趋势状态对应的分数乘数"
-      },
-
-      "wait_time_warning": {
-        "long_wait_threshold": 7.0,
-        "short_wait_threshold": 3.0,
-        "description": "等待时间预警阈值（天）"
-      },
-
-      "decision_engine": {
-        "right_side_bonus_weights": {
-          "trend_confirmed": 0.2,
-          "right_side_signals": 0.15,
-          "signal_quality": 0.1,
-          "description": "决策引擎右侧交易奖励权重"
-        },
-        "max_right_side_bonus": 0.3,
-        "description": "最大右侧交易加成30%"
-      },
-
-      "performance_estimation": {
-        "base_return": 0.05,
-        "strength_adjustment_max": 0.1,
-        "trend_adjustments": {
-          "confirmed_uptrend": 0.05,
-          "early_uptrend": 0.03,
-          "consolidation": 0.0,
-          "weak_downtrend": -0.02,
-          "strong_downtrend": -0.05
-        },
-        "description": "预期表现估算参数"
-      },
-
-      "fallback_settings": {
-        "enable_fallback": true,
-        "fallback_confidence": 0.3,
-        "description": "降级设置 - 优化功能异常时的处理"
-      },
-
-      "logging": {
-        "enable_debug": false,
-        "log_optimization_details": true,
-        "description": "日志配置"
-      }
-    },
-
     "multi_timeframe_factors": {
       "enabled": true,
       "description": "多时间框架因子配置 - 结合日线和5分钟粒度的MACD/RSI因子",
@@ -327,6 +208,17 @@
           "description": "模拟模型，用于测试",
           "type": "mock",
           "config": {}
+        },
+        "claude_sonnet": {
+          "name": "Claude Sonnet 4.5",
+          "description": "Anthropic Claude Sonnet 4.5 - 用于小红书文案生成",
+          "type": "claude_sdk",
+          "config": {
+            "api_key": "YOUR_ANTHROPIC_API_KEY_HERE",
+            "model": "claude-3-5-sonnet-20241022",
+            "max_tokens": 2000,
+            "temperature": 0.7
+          }
         }
       }
     },
