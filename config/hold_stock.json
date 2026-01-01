@@ -1,7 +1,7 @@
 {
   "description": "持仓股票配置文件",
   "version": "1.1",
-  "last_updated": "2025-12-30",
+  "last_updated": "2025-12-31",
   "hold_stocks": [
     {
       "symbol": "002319.SH",
@@ -43,34 +43,34 @@
       "name": "中超控股",
       "purchase_date": "2025-12-31",
       "cost": 7.016,
-      "buy_flag": false
+      "buy_flag": true
     },
     {
       "symbol": "600118.SZ",
       "name": "中国卫星",
-      "purchase_date": "2025-12-30",
-      "cost": 0.0,
+      "purchase_date": "2025-12-31",
+      "cost": 94.95,
       "buy_flag": false
     },
     {
       "symbol": "600151.SZ",
       "name": "航天机电",
-      "purchase_date": "2025-12-30",
-      "cost": 0.0,
+      "purchase_date": "2025-12-31",
+      "cost": 17.55,
       "buy_flag": false
     },
     {
       "symbol": "002156.SZ",
       "name": "通富微电",
-      "purchase_date": "2025-12-30",
-      "cost": 0.0,
+      "purchase_date": "2025-12-31",
+      "cost": 37.7,
       "buy_flag": false
     },
     {
       "symbol": "001208.SZ",
       "name": "华菱线缆",
       "purchase_date": "2025-12-31",
-      "cost": 0.0,
+      "cost": 24.04,
       "buy_flag": false
     }
   ],

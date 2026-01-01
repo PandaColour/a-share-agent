@@ -1165,6 +1165,8 @@ def main():
     parser.add_argument('--mode', type=str, default='select',
                        choices=['select', 'hold', 'both', 'backtest'],
                        help='运行模式: select=选股分析, hold=持仓分析, both=两者都执行, backtest=历史回测')
+    parser.add_argument('--output-dir', type=str, default=None,
+                       help='输出目录路径，如果不指定则自动生成')
     parser.add_argument('--start-date', type=str, default=None,
                        help='回测开始日期 (YYYY-MM-DD)')
     parser.add_argument('--end-date', type=str, default=None,
@@ -1179,14 +1181,22 @@ def main():
     main_logger.info("🚀 ================ A股量化交易系统启动 ================")
     main_logger.info(f"📋 运行模式: {args.mode}")
 
-    # 根据模式设置输出目录（回测使用独立目录）
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    if args.mode == 'backtest':
-        output_dir = os.path.join("backtest_results", timestamp)
+    # 根据模式设置输出目录
+    if args.output_dir:
+        # 使用指定的输出目录（定时器传递的路径）
+        output_dir = args.output_dir
+        main_logger.info(f"📁 使用指定的输出目录: {output_dir}")
     else:
-        output_dir = os.path.join("outputs", timestamp)
+        # 自动生成输出目录（回测使用独立目录）
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        if args.mode == 'backtest':
+            output_dir = os.path.join("backtest_results", timestamp)
+        else:
+            output_dir = os.path.join("outputs", timestamp)
+        main_logger.info(f"📁 自动生成输出目录: {output_dir}")
+
     os.makedirs(output_dir, exist_ok=True)
-    main_logger.info(f"📁 输出目录: {output_dir}")
+    main_logger.info(f"📁 最终输出目录: {output_dir}")
 
     print("启动基于TradingAgents的A股量化交易系统")
     print(f"运行模式: {args.mode}")

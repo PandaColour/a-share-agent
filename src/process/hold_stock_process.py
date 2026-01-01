@@ -44,15 +44,23 @@ class HoldStockProcess:
         加载持仓股票数据
 
         Returns:
-            持仓股票列表
+            持仓股票列表（仅包含 buy_flag 为 true 的股票）
         """
         try:
             from src.stock.stock_selection_manager import StockSelectionManager
             stock_manager = StockSelectionManager(self.config)
             hold_config = stock_manager._load_hold_stock_config()
 
-            hold_stocks = hold_config.get('hold_stocks', [])
-            self.logger.info(f"加载持仓股票: {len(hold_stocks)} 只")
+            all_hold_stocks = hold_config.get('hold_stocks', [])
+
+            # 过滤掉 buy_flag 为 false 的股票
+            hold_stocks = [stock for stock in all_hold_stocks if stock.get('buy_flag', True)]
+
+            filtered_count = len(all_hold_stocks) - len(hold_stocks)
+            if filtered_count > 0:
+                self.logger.info(f"过滤掉 buy_flag=false 的股票: {filtered_count} 只")
+
+            self.logger.info(f"加载持仓股票: {len(hold_stocks)} 只 (总共 {len(all_hold_stocks)} 只)")
 
             return hold_stocks
 

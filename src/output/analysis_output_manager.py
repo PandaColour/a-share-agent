@@ -331,7 +331,7 @@ class AnalysisOutputManager:
         Args:
             results: 分析结果列表
             output_dir: 输出目录，默认为 "outputs"
-            holdings_summary: 持仓分析概览（可选），如果提供则在README中包含
+            holdings_summary: 持仓分析概览（可选）
         """
         try:
             # 对结果进行排序
@@ -444,15 +444,8 @@ class AnalysisOutputManager:
                 json.dump(csv_results, f, ensure_ascii=False, indent=2)
             print(f"兼容格式JSON: {legacy_json_filename}")
 
-            # 5. 创建本次分析的说明文件（使用排序后的结果，包含持仓概览）
-            readme_content = self.generate_session_readme(sorted_results, timestamp, holdings_summary)
-            readme_filename = session_dir / "README.md"
-            with open(readme_filename, 'w', encoding='utf-8') as f:
-                f.write(readme_content)
-            print(f"分析说明文档: {readme_filename}")
-
             print(f"\n本次分析完成，所有结果已保存到: {session_dir}")
-            print(f"文件夹包含: 排序后CSV汇总、排序后详细JSON、分析师详情、兼容格式、说明文档")
+            print(f"文件夹包含: 排序后CSV汇总、排序后详细JSON、分析师详情、兼容格式")
             print(f"所有文件已按操作建议分组排序，便于查看")
 
         except Exception as e:
@@ -514,130 +507,3 @@ class AnalysisOutputManager:
 
         except Exception as e:
             print(f"生成分析师总结报告失败: {e}")
-
-    def generate_session_readme(self, results: List[Dict], timestamp: str, holdings_summary: Dict = None) -> str:
-        """
-        生成本次分析会话的README文档
-
-        Args:
-            results: 分析结果列表
-            timestamp: 时间戳
-            holdings_summary: 持仓分析概览（可选）
-
-        Returns:
-            README内容字符串
-        """
-        try:
-            # 统计信息
-            total_stocks = len(results)
-            successful_analyses = sum(1 for r in results if r["操作建议"] not in ["错误", "跳过"])
-            action_counts = {}
-            for result in results:
-                action = result["操作建议"]
-                if action not in ["错误", "跳过"]:
-                    action_counts[action] = action_counts.get(action, 0) + 1
-
-            # 生成README内容
-            readme_content = f"""# 股票分析报告 - {timestamp}
-
-## 📊 分析概览
-
-- **分析时间**: {datetime.now().strftime('%Y年%m月%d日 %H:%M:%S')}
-- **分析股票数量**: {total_stocks} 只
-- **成功分析**: {successful_analyses} 只
-- **分析系统**: A股TradingAgents多智能体系统
-
-"""
-
-            # 如果有持仓分析，添加持仓概览
-            if holdings_summary:
-                profit_symbol = "+" if holdings_summary.get('总收益', 0) >= 0 else ""
-                readme_content += f"""### 💼 持仓概览
-
-- **持仓数量**: {holdings_summary.get('持仓数量', 0)} 只
-- **总成本**: ¥{holdings_summary.get('总成本', 0):.2f}
-- **总市值**: ¥{holdings_summary.get('总市值', 0):.2f}
-- **总收益**: {profit_symbol}¥{holdings_summary.get('总收益', 0):.2f} ({profit_symbol}{holdings_summary.get('总收益率', 0):.2f}%)
-- **盈亏分布**: {holdings_summary.get('盈利股票数', 0)}盈 / {holdings_summary.get('亏损股票数', 0)}亏 / {holdings_summary.get('持平股票数', 0)}平
-- **需要操作**: {holdings_summary.get('需要操作股票数', 0)} 只
-
-"""
-
-            readme_content += f"""## 🎯 操作建议分布
-
-"""
-
-            if action_counts:
-                for action, count in sorted(action_counts.items(), key=lambda x: x[1], reverse=True):
-                    percentage = (count / successful_analyses) * 100 if successful_analyses > 0 else 0
-                    readme_content += f"- **{action}**: {count} 只股票 ({percentage:.1f}%)\n"
-
-            readme_content += f"""
-
-## 📁 文件说明
-
-### 主要结果文件（已排序）
-- `analysis_summary.csv` - 📊 Excel可打开的汇总结果表格（按操作建议分组排序）
-- `analysis_detailed.json` - 📋 包含分析师详情的完整JSON数据（已排序）
-- `analysis_legacy.json` - 🔄 兼容旧版本格式的JSON数据（已排序）
-"""
-
-            # 如果有持仓分析，添加持仓文件说明
-            if holdings_summary:
-                readme_content += f"""
-### 持仓分析文件
-- `holdings_analysis.csv` - 💼 持仓股票详细分析表格
-"""
-
-            readme_content += f"""
-### 详细分析文件
-- `analyst_details.json` - 🤖 AI因子分析师的详细分析过程
-- `analyst_summary_report.json` - 📊 AI因子分析师表现统计报告
-- `README.md` - 📄 本分析会话说明文档（当前文件）
-
-## 🤖 智能分析师说明
-
-本次分析使用 AI因子分析师：
-
-**🤖 AI因子分析师** - 量化因子、模式识别、智能评分、多维度因子分析
-
-## 🔄 排序说明
-
-本次输出的结果已按以下规则进行排序：
-
-1. **操作建议优先级**: 买入 → 卖出 → 持有 → 跳过 → 错误
-2. **组内信心度排序**: 在每个操作建议组内，按信心度从高到低排序
-3. **组内价格排序**: 在信心度相同的情况下，按当前价格从高到低排序
-
-这种排序方式可以帮助您：
-- 优先查看高信心的买入推荐
-- 快速识别最具投资价值的股票
-- 便于对比同类别股票的表现
-
-## 💡 使用建议
-
-1. **快速查看**: 打开 `analysis_summary.csv` 查看排序后的所有股票操作建议
-2. **详细分析**: 查看 `analysis_detailed.json` 了解具体分析理由
-3. **分析师视角**: 查看 `analyst_details.json` 了解每个分析师的详细观点
-4. **Excel分析**: 将CSV文件导入Excel进行进一步的数据分析和筛选
-"""
-
-            # 如果有持仓分析，添加持仓使用建议
-            if holdings_summary:
-                readme_content += f"""5. **持仓监控**: 打开 `holdings_analysis.csv` 查看持仓股票的收益和操作建议
-"""
-
-            readme_content += f"""
-## ⚠️ 免责声明
-
-本分析结果仅供参考，不构成投资建议。投资有风险，决策需谨慎。
-
----
-
-*本报告由A股TradingAgents智能交易系统自动生成*
-"""
-
-            return readme_content
-
-        except Exception as e:
-            return f"# 分析报告生成失败\n\n错误信息: {str(e)}"

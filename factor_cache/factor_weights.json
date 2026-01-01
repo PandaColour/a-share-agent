@@ -1,6 +1,6 @@
 {
   "weights": {
-    "pattern_recognition": 1.0,
+    "pattern_recognition": 1.3,
     "volume_pattern": 2.0,
     "price_prediction_14d": 0.0,
     "return_prediction_14d": 2.0
@@ -8,5 +8,5 @@
   "disabled": [
     "price_prediction_14d"
   ],
-  "last_update": "2025-12-31 12:43:35"
+  "last_update": "2026-01-01 15:21:06"
 }

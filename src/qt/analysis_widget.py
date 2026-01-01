@@ -19,9 +19,10 @@ class AnalysisThread(QThread):
     output_signal = pyqtSignal(str)  # 输出信号
     finished_signal = pyqtSignal(bool, str)  # 完成信号(成功与否, 消息)
 
-    def __init__(self, mode):
+    def __init__(self, mode, output_dir=None):
         super().__init__()
         self.mode = mode
+        self.output_dir = output_dir  # 可选的输出目录
         self.process = None
 
     def run(self):
@@ -32,6 +33,10 @@ class AnalysisThread(QThread):
 
             # 构建命令
             cmd = [sys.executable, main_py, '--mode', self.mode]
+
+            # 如果指定了输出目录，添加到命令行参数
+            if self.output_dir:
+                cmd.extend(['--output-dir', self.output_dir])
 
             # 执行命令并实时获取输出
             self.process = subprocess.Popen(
@@ -78,6 +83,7 @@ class AnalysisWidget(QWidget):
         self.stock_validator = StockValidator()  # 股票验证器
         self.current_valid_stock = None  # 当前校验通过的股票信息
         self.is_scheduled_task = False  # 标记是否是定时任务触发的分析
+        self.scheduled_output_dir = None  # 定时任务的统一输出目录
         self.init_ui()
 
         # 程序启动时自动开启定时任务
@@ -318,8 +324,13 @@ class AnalysisWidget(QWidget):
 
         self.setLayout(layout)
 
-    def start_analysis(self, mode):
-        """启动分析"""
+    def start_analysis(self, mode, output_dir=None):
+        """启动分析
+
+        Args:
+            mode: 分析模式 (select/hold/both)
+            output_dir: 可选的输出目录，如果提供则使用该目录
+        """
         # 禁用按钮
         self.select_btn.setEnabled(False)
         self.hold_btn.setEnabled(False)
@@ -335,8 +346,8 @@ class AnalysisWidget(QWidget):
         self.status_label.setText(f"正在执行{mode_name}分析...")
         self.status_label.setStyleSheet("color: #FF9800; padding: 5px;")
 
-        # 创建并启动线程
-        self.analysis_thread = AnalysisThread(mode)
+        # 创建并启动线程（传递输出目录）
+        self.analysis_thread = AnalysisThread(mode, output_dir)
         self.analysis_thread.output_signal.connect(self.append_output)
         self.analysis_thread.finished_signal.connect(self.analysis_finished)
         self.analysis_thread.start()
@@ -345,6 +356,8 @@ class AnalysisWidget(QWidget):
         start_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self.append_output(f"=" * 60)
         self.append_output(f"开始{mode_name}分析 - {start_time}")
+        if output_dir:
+            self.append_output(f"输出目录: {output_dir}")
         self.append_output(f"=" * 60)
 
     def stop_analysis(self):
@@ -479,9 +492,15 @@ class AnalysisWidget(QWidget):
         # 设置定时任务标志位
         self.is_scheduled_task = True
 
-        # 执行 both 模式分析
+        # 生成统一的输出目录（复用 main.py 的路径生成逻辑）
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.scheduled_output_dir = os.path.join("outputs", timestamp)
+        os.makedirs(self.scheduled_output_dir, exist_ok=True)
+
+        # 执行 both 模式分析（传递输出目录）
         self.append_output(f"\n[定时任务] {time_str} 开始执行全分析...")
-        self.start_analysis('both')
+        self.append_output(f"[定时任务] 统一输出目录: {self.scheduled_output_dir}")
+        self.start_analysis('both', output_dir=self.scheduled_output_dir)
 
     def execute_now(self):
         """立即执行定时任务（全分析+回测）"""
@@ -493,14 +512,20 @@ class AnalysisWidget(QWidget):
         # 设置定时任务标志位（这样分析完成后会自动执行回测）
         self.is_scheduled_task = True
 
+        # 生成统一的输出目录（复用 main.py 的路径生成逻辑）
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.scheduled_output_dir = os.path.join("outputs", timestamp)
+        os.makedirs(self.scheduled_output_dir, exist_ok=True)
+
         # 输出提示
         current_time = datetime.now().strftime("%H:%M:%S")
         self.append_output(f"\n[立即执行] {current_time} 手动触发定时任务（全分析+回测）")
+        self.append_output(f"[立即执行] 统一输出目录: {self.scheduled_output_dir}")
         self.schedule_status_label.setText(f"🚀 立即执行中...")
         self.schedule_status_label.setStyleSheet("color: #FF5722; padding: 5px; font-size: 11px;")
 
-        # 执行全分析
-        self.start_analysis('both')
+        # 执行全分析（传递输出目录）
+        self.start_analysis('both', output_dir=self.scheduled_output_dir)
 
     def restore_schedule_status(self):
         """恢复定时状态标签"""
@@ -545,7 +570,7 @@ class AnalysisWidget(QWidget):
         self.append_output(f"[自动启动] 定时任务已自动启动，将在 {time_str} 执行全分析")
 
     def start_backtest(self):
-        """启动3个月回测"""
+        """启动3个月回测（使用定时任务的统一输出目录）"""
         from datetime import datetime, timedelta
 
         # 计算日期范围
@@ -560,6 +585,8 @@ class AnalysisWidget(QWidget):
         self.append_output(f"\n{'='*60}")
         self.append_output(f"[回测任务] 开始执行3个月回测")
         self.append_output(f"[回测任务] 时间范围: {start_date_str} 至 {end_date_str}")
+        if self.scheduled_output_dir:
+            self.append_output(f"[回测任务] 输出目录: {self.scheduled_output_dir}")
         self.append_output(f"{'='*60}\n")
 
         # 获取main.py路径
@@ -573,6 +600,10 @@ class AnalysisWidget(QWidget):
             '--start-date', start_date_str,
             '--end-date', end_date_str
         ]
+
+        # 如果有统一的输出目录，传递给回测（复用预测的输出目录）
+        if self.scheduled_output_dir:
+            cmd.extend(['--output-dir', self.scheduled_output_dir])
 
         # 创建回测线程
         self.backtest_thread = BacktestThread(cmd)
@@ -588,6 +619,9 @@ class AnalysisWidget(QWidget):
         else:
             self.append_output(f"\n[回测任务] 回测失败: {message}")
             self.append_output(f"{'='*60}\n")
+
+        # 清理定时任务的输出目录引用
+        self.scheduled_output_dir = None
 
 
 class BacktestThread(QThread):
