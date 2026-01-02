@@ -1,12 +1,14 @@
 {
   "weights": {
-    "pattern_recognition": 1.6900000000000002,
+    "pattern_recognition": 2.0,
     "volume_pattern": 2.0,
     "price_prediction_14d": 0.0,
-    "return_prediction_14d": 2.0
+    "return_prediction_14d": 2.0,
+    "vp_corr_22d": 0.0
   },
   "disabled": [
-    "price_prediction_14d"
+    "price_prediction_14d",
+    "vp_corr_22d"
   ],
-  "last_update": "2026-01-01 16:24:04"
+  "last_update": "2026-01-02 08:34:20"
 }
