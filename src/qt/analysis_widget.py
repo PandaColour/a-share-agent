@@ -90,6 +90,7 @@ class AnalysisWidget(QWidget):
         self.current_valid_stock = None  # 当前校验通过的股票信息
         self.is_scheduled_task = False  # 标记是否是定时任务触发的分析
         self.scheduled_output_dir = None  # 定时任务的统一输出目录
+        self.last_execution_date = None  # 记录上次执行日期，防止同一天重复执行
         self.init_ui()
 
         # 程序启动时自动开启定时任务
@@ -437,14 +438,15 @@ class AnalysisWidget(QWidget):
             # 更新状态
             self.schedule_btn.setText("停止定时")
             time_str = self.scheduled_time.toString("HH:mm:ss")
-            self.schedule_status_label.setText(f"⏰ 定时已启动，将在 {time_str} 执行全分析")
+            self.schedule_status_label.setText(f"⏰ 定时已启动，每天 {time_str} 自动执行全分析")
             self.schedule_status_label.setStyleSheet("color: #9C27B0; padding: 5px; font-size: 11px;")
 
-            self.append_output(f"\n[定时任务] 设置在 {time_str} 执行全分析")
+            self.append_output(f"\n[定时任务] 已设置每天 {time_str} 自动执行全分析")
         else:
             # 停止定时
             self.timer.stop()
             self.scheduled_time = None
+            self.last_execution_date = None  # 清空执行记录
 
             # 启用时间输入
             self.hour_spin.setEnabled(True)
@@ -464,36 +466,41 @@ class AnalysisWidget(QWidget):
             return
 
         current_time = QTime.currentTime()
+        current_date = datetime.now().date()
 
         # 检查时分秒是否匹配（精确到秒）
         if (current_time.hour() == self.scheduled_time.hour() and
             current_time.minute() == self.scheduled_time.minute() and
             current_time.second() == self.scheduled_time.second()):
 
+            # 检查今天是否已经执行过（防止重复执行）
+            if self.last_execution_date == current_date:
+                return  # 今天已执行过，跳过
+
+            # 记录执行日期
+            self.last_execution_date = current_date
+
             # 到达定时时间，执行分析
             self.execute_scheduled_analysis()
 
     def execute_scheduled_analysis(self):
-        """执行定时分析"""
-        # 停止定时器，避免重复执行
-        self.timer.stop()
+        """执行定时分析（每天定时执行）"""
+        # ❌ 不再停止定时器，让它继续运行以支持每天重复执行
+        # self.timer.stop()  # 这行代码导致了只能执行一次的问题
 
-        # 重置按钮状态
-        self.schedule_btn.setChecked(False)
-        self.schedule_btn.setText("启动定时")
+        # ❌ 不再重置按钮状态，保持定时任务激活
+        # self.schedule_btn.setChecked(False)
+        # self.schedule_btn.setText("启动定时")
+        # self.hour_spin.setEnabled(True)
+        # self.minute_spin.setEnabled(True)
+        # self.second_spin.setEnabled(True)
+        # self.scheduled_time = None
 
-        # 启用时间输入
-        self.hour_spin.setEnabled(True)
-        self.minute_spin.setEnabled(True)
-        self.second_spin.setEnabled(True)
-
-        # 更新状态
+        # 更新状态（显示最近一次执行时间，但保持定时器运行）
         time_str = self.scheduled_time.toString("HH:mm:ss")
-        self.schedule_status_label.setText(f"✅ 定时任务已执行 ({time_str})")
+        current_date = datetime.now().strftime("%Y-%m-%d")
+        self.schedule_status_label.setText(f"✅ 上次执行: {current_date} {time_str}，明天继续")
         self.schedule_status_label.setStyleSheet("color: #4CAF50; padding: 5px; font-size: 11px;")
-
-        # 清空定时时间
-        self.scheduled_time = None
 
         # 设置定时任务标志位
         self.is_scheduled_task = True
@@ -504,8 +511,9 @@ class AnalysisWidget(QWidget):
         os.makedirs(self.scheduled_output_dir, exist_ok=True)
 
         # 执行 both 模式分析（传递输出目录）
-        self.append_output(f"\n[定时任务] {time_str} 开始执行全分析...")
+        self.append_output(f"\n[定时任务] {current_date} {time_str} 开始执行全分析...")
         self.append_output(f"[定时任务] 统一输出目录: {self.scheduled_output_dir}")
+        self.append_output(f"[定时任务] 明天 {time_str} 将再次自动执行")
         self.start_analysis('both', output_dir=self.scheduled_output_dir)
 
     def execute_now(self):
@@ -538,8 +546,15 @@ class AnalysisWidget(QWidget):
         if self.timer.isActive() and self.scheduled_time:
             # 定时器正在运行，显示定时状态
             time_str = self.scheduled_time.toString("HH:mm:ss")
-            self.schedule_status_label.setText(f"⏰ 定时已启动，将在 {time_str} 执行全分析")
-            self.schedule_status_label.setStyleSheet("color: #9C27B0; padding: 5px; font-size: 11px;")
+            if self.last_execution_date:
+                # 已执行过，显示上次执行时间
+                last_date = self.last_execution_date.strftime("%Y-%m-%d")
+                self.schedule_status_label.setText(f"✅ 上次执行: {last_date} {time_str}，明天继续")
+                self.schedule_status_label.setStyleSheet("color: #4CAF50; padding: 5px; font-size: 11px;")
+            else:
+                # 未执行过，显示等待状态
+                self.schedule_status_label.setText(f"⏰ 定时已启动，每天 {time_str} 自动执行全分析")
+                self.schedule_status_label.setStyleSheet("color: #9C27B0; padding: 5px; font-size: 11px;")
         else:
             # 定时器未运行，显示未启动状态
             self.schedule_status_label.setText("定时未启动")
@@ -569,11 +584,11 @@ class AnalysisWidget(QWidget):
 
         # 更新状态标签
         time_str = self.scheduled_time.toString("HH:mm:ss")
-        self.schedule_status_label.setText(f"⏰ 定时已启动，将在 {time_str} 执行全分析")
+        self.schedule_status_label.setText(f"⏰ 定时已启动，每天 {time_str} 自动执行全分析")
         self.schedule_status_label.setStyleSheet("color: #9C27B0; padding: 5px; font-size: 11px;")
 
         # 输出日志
-        self.append_output(f"[自动启动] 定时任务已自动启动，将在 {time_str} 执行全分析")
+        self.append_output(f"[自动启动] 定时任务已自动启动，每天 {time_str} 自动执行全分析")
 
     def start_backtest(self):
         """启动3个月回测（使用定时任务的统一输出目录）"""
