@@ -254,11 +254,10 @@
   
   "stock_selection": {
     "mode": "momentum_focused",
-    "config_count": 3,
-    "longhu_count": 15,
-    "social_count": 20,
-    "potential_count": 25,
-    "momentum_count": 20,
+    "longhu_count": 10,
+    "social_count": 10,
+    "potential_count": 10,
+    "momentum_count": 10,
     "max_total_stocks": 50,
     "enable_longhu": true,
     "enable_social": true,

@@ -4,11 +4,12 @@
     "volume_pattern": 2.0,
     "price_prediction_14d": 0.0,
     "return_prediction_14d": 2.0,
-    "vp_corr_22d": 0.0
+    "vp_corr_22d": 0.0,
+    "volatility_72d": 1.0
   },
   "disabled": [
-    "price_prediction_14d",
-    "vp_corr_22d"
+    "vp_corr_22d",
+    "price_prediction_14d"
   ],
-  "last_update": "2026-01-05 09:11:56"
+  "last_update": "2026-01-06 08:36:03"
 }

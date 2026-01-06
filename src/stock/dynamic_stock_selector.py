@@ -149,27 +149,32 @@ class DynamicStockSelector:
             }
     
     def _get_config_stocks(self, count: int) -> List[StockCandidate]:
-        """获取配置文件中的固定股票"""
+        """
+        获取配置文件中的所有持仓股票
+
+        注意：count 参数保留用于向后兼容，但实际上会返回所有 hold_stock.json 中的股票。
+        这样确保所有持仓股票都参与分析，buy_flag 只影响持仓分析结果。
+        """
         try:
             from src.stock import get_all_stocks
             all_config_stocks = get_all_stocks()
-            
-            # 随机选择指定数量的股票，增加多样性
-            selected = random.sample(all_config_stocks, min(count, len(all_config_stocks)))
-            
+
+            # 返回所有配置股票，不进行随机采样
+            # 这样确保所有 hold_stock.json 中的股票都能被分析
             candidates = []
-            for symbol, name in selected:
+            for symbol, name in all_config_stocks:
                 candidate = StockCandidate(
                     symbol=symbol,
                     name=name,
                     source=StockSource.CONFIG,
                     score=70.0,  # 配置股票给固定高分
-                    reason="核心股票池配置"
+                    reason="持仓股票池"
                 )
                 candidates.append(candidate)
-            
+
+            logger.info(f"加载所有持仓股票: {len(candidates)} 只（忽略 config_count 配置）")
             return candidates
-            
+
         except Exception as e:
             logger.error(f"获取配置股票失败: {e}")
             return []
