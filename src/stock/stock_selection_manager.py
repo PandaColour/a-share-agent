@@ -740,3 +740,90 @@ class StockSelectionManager:
                 "skipped_count": 0,
                 "skipped_stocks": []
             }
+
+    def get_stocks_with_filter(self, data_provider=None, force_refresh: bool = False) -> Tuple[List[Tuple[str, str]], Dict]:
+        """
+        获取股票列表并应用过滤器（统一的选股和过滤逻辑）
+
+        这个方法集成了：
+        1. 使用StockSelectionManager的选股+缓存机制
+        2. 应用PreviousDayChangeFilter前日涨幅过滤（如果启用）
+        3. 支持当日缓存复用
+
+        Args:
+            data_provider: 数据提供者实例（用于过滤器）
+            force_refresh: 是否强制刷新，忽略缓存
+
+        Returns:
+            (股票列表, 元数据信息)
+        """
+        try:
+            # 步骤1: 获取基础选股结果（自动处理缓存）
+            stock_list, metadata = self.get_selected_stocks(force_refresh=force_refresh)
+
+            if not stock_list:
+                logger.warning("未获取到任何股票")
+                return stock_list, metadata
+
+            logger.info(f"获取到{len(stock_list)}只股票，开始应用过滤器...")
+
+            # 步骤2: 应用前日涨幅过滤（如果启用且有数据提供者）
+            filter_config = {}
+            if self.config_manager:
+                filter_config = self.config_manager.get('analysis_settings.filters.previous_day_change', {})
+
+            if filter_config.get('enabled', False) and data_provider:
+                try:
+                    from src.filters.previous_day_filter import PreviousDayChangeFilter
+
+                    # 构建持仓股票列表（作为过滤器例外）
+                    hold_stock_symbols = []
+                    try:
+                        hold_config = self._load_hold_stock_config()
+                        hold_stock_symbols = [stock['symbol'] for stock in hold_config.get('hold_stocks', [])
+                                            if stock.get('buy_flag', True)]
+                        logger.info(f"过滤器例外股票（持仓）: {len(hold_stock_symbols)}只")
+                    except Exception as e:
+                        logger.warning(f"读取持仓配置失败: {e}")
+
+                    # 应用过滤器
+                    original_count = len(stock_list)
+                    max_increase = filter_config.get('max_increase_percent', 9.0)
+                    logger.info(f"应用前日涨幅过滤（阈值: {max_increase}%）...")
+
+                    prev_day_filter = PreviousDayChangeFilter(self.config_manager, data_provider, hold_stock_symbols)
+                    stock_list = prev_day_filter.filter_stocks(stock_list)
+
+                    filtered_count = original_count - len(stock_list)
+                    logger.info(f"过滤完成: 原{original_count}只 → 保留{len(stock_list)}只，过滤{filtered_count}只")
+
+                    # 更新元数据记录过滤信息
+                    metadata['filtering_applied'] = True
+                    metadata['original_count'] = original_count
+                    metadata['filtered_count'] = filtered_count
+                    metadata['filter_threshold'] = max_increase
+
+                except Exception as filter_error:
+                    logger.warning(f"前日涨幅过滤失败: {filter_error}，继续使用未过滤的列表")
+                    metadata['filter_error'] = str(filter_error)
+            else:
+                if not filter_config.get('enabled', False):
+                    logger.debug("前日涨幅过滤已禁用")
+                if not data_provider:
+                    logger.debug("无数据提供者，跳过前日涨幅过滤")
+                metadata['filtering_applied'] = False
+
+            logger.info(f"最终选股结果: {len(stock_list)}只股票")
+            return stock_list, metadata
+
+        except Exception as e:
+            logger.error(f"获取并过滤股票列表失败: {e}")
+            import traceback
+            traceback.print_exc()
+            # 返回空列表和错误信息
+            return [], {
+                'selection_method': 'error',
+                'total_selected': 0,
+                'error': str(e),
+                'selection_time': datetime.now().isoformat()
+            }

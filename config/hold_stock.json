@@ -34,9 +34,9 @@
     {
       "symbol": "002413.SZ",
       "name": "雷科防务",
-      "purchase_date": "2025-12-30",
-      "cost": 0.0,
-      "buy_flag": false
+      "purchase_date": "2026-01-08",
+      "cost": 17.41,
+      "buy_flag": true
     },
     {
       "symbol": "002471.SZ",
@@ -44,13 +44,6 @@
       "purchase_date": "2025-12-31",
       "cost": 7.016,
       "buy_flag": true
-    },
-    {
-      "symbol": "600118.SZ",
-      "name": "中国卫星",
-      "purchase_date": "2025-12-31",
-      "cost": 94.95,
-      "buy_flag": false
     },
     {
       "symbol": "600151.SZ",
@@ -69,9 +62,9 @@
     {
       "symbol": "001208.SZ",
       "name": "华菱线缆",
-      "purchase_date": "2025-12-31",
-      "cost": 24.04,
-      "buy_flag": false
+      "purchase_date": "2026-01-07",
+      "cost": 22,
+      "buy_flag": true
     }
   ],
   "config": {

@@ -8,8 +8,8 @@
     "volatility_72d": 1.0
   },
   "disabled": [
-    "vp_corr_22d",
-    "price_prediction_14d"
+    "price_prediction_14d",
+    "vp_corr_22d"
   ],
-  "last_update": "2026-01-06 08:36:03"
+  "last_update": "2026-01-08 11:01:31"
 }

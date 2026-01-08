@@ -152,7 +152,7 @@ class HistoricalBacktestRunner:
 
     def _get_stock_pool(self) -> List[str]:
         """
-        获取股票池（复用现有选股系统）
+        获取股票池（复用现有选股系统，使用统一的选股+过滤逻辑）
 
         Returns:
             股票代码列表
@@ -164,10 +164,13 @@ class HistoricalBacktestRunner:
             # 创建选股管理器实例
             stock_selection_manager = StockSelectionManager(self.system.config_manager)
 
-            # 调用选股系统，自动处理缓存
-            # 如果 config/dynamic_stock.json 是今天的，就用缓存
-            # 如果不是今天的，会自动重新选股
-            stock_tuples, metadata = stock_selection_manager.get_selected_stocks()
+            # 【重要】使用带过滤器的选股方法，确保与预测系统使用相同逻辑
+            # 这样回测和预测会使用完全相同的股票列表
+            # 参数：不传递data_provider则不应用前日涨幅过滤（回测不需要）
+            stock_tuples, metadata = stock_selection_manager.get_stocks_with_filter(
+                data_provider=None,  # 回测不需要前日涨幅过滤
+                force_refresh=False  # 使用当日缓存
+            )
 
             # 提取股票代码和名称
             symbols = []
@@ -178,6 +181,11 @@ class HistoricalBacktestRunner:
             logger.info(f"从选股系统获取股票池: {len(symbols)} 只")
             logger.info(f"选股方法: {metadata.get('selection_method', 'unknown')}")
             logger.info(f"选股时间: {metadata.get('selection_time', 'unknown')}")
+
+            # 如果启用了过滤，记录过滤信息
+            if metadata.get('filtering_applied', False):
+                logger.info(f"已应用过滤器: 原{metadata.get('original_count', 0)}只 → "
+                          f"保留{len(symbols)}只，过滤{metadata.get('filtered_count', 0)}只")
 
             return symbols
 

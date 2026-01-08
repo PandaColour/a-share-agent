@@ -1410,13 +1410,17 @@ def main():
 
         try:
             from src.stock.stock_selection_manager import StockSelectionManager
-            print("正在使用股票选择管理器...")
+            print("正在使用股票选择管理器（统一选股+过滤）...")
 
             # 初始化股票选择管理器
             stock_manager = StockSelectionManager(config)
 
-            # 获取选股结果和元数据
-            stock_list, metadata = stock_manager.get_selected_stocks()
+            # 【重要】使用统一的选股和过滤方法
+            # 这样确保预测和回测使用完全相同的选股逻辑和结果
+            stock_list, metadata = stock_manager.get_stocks_with_filter(
+                data_provider=system.data_provider,  # 传递数据提供者以应用前日涨幅过滤
+                force_refresh=False  # 使用当日缓存，避免重复选股
+            )
 
             stock_selection_time = time.time() - stock_selection_start
             main_logger.info(f"✅ 股票选择完成，耗时: {stock_selection_time:.2f}秒")
@@ -1438,43 +1442,19 @@ def main():
                         source_info.append(f"{source}={count}")
                 main_logger.info(f"📊 股票来源分布: {', '.join(source_info)}")
 
+            # 显示过滤信息（如果有）
+            if metadata.get('filtering_applied', False):
+                original_count = metadata.get('original_count', 0)
+                filtered_count = metadata.get('filtered_count', 0)
+                filter_threshold = metadata.get('filter_threshold', 0)
+                print(f"前日涨幅过滤: 原{original_count}只 → 保留{len(stock_list)}只，过滤{filtered_count}只（阈值>{filter_threshold}%）")
+                main_logger.info(f"📊 前日涨幅过滤: 原{original_count}只 → 保留{len(stock_list)}只，过滤{filtered_count}只")
+
             # both 模式：持仓股票已经包含在 stock_list 中
             if args.mode == 'both':
                 print(f"📊 注意: 持仓股票已自动包含在选股列表中")
                 main_logger.info("📊 both模式：持仓股票已包含在选股列表中")
 
-            # 前日涨幅过滤
-            filter_config = config.get('analysis_settings.filters.previous_day_change', {})
-            if filter_config.get('enabled', False):
-                try:
-                    from src.filters.previous_day_filter import PreviousDayChangeFilter
-
-                    original_count = len(stock_list)
-                    print(f"\n正在过滤前日大涨股票（阈值: {filter_config.get('max_increase_percent', 9.0)}%）...")
-                    main_logger.info(f"🔍 启动前日涨幅过滤器")
-
-                    # 构建持仓股票列表（用于过滤器例外处理）
-                    hold_stock_symbols = []
-                    try:
-                        import json
-                        hold_config_path = os.path.join("config", "hold_stock.json")
-                        if os.path.exists(hold_config_path):
-                            with open(hold_config_path, 'r', encoding='utf-8') as f:
-                                hold_config = json.load(f)
-                                hold_stock_symbols = [stock['symbol'] for stock in hold_config.get('hold_stocks', []) if stock.get('buy_flag', True)]
-                                main_logger.info(f"📊 过滤器例外股票: {len(hold_stock_symbols)}只实际持仓")
-                    except Exception as e:
-                        main_logger.warning(f"读取持仓配置失败: {e}")
-
-                    prev_day_filter = PreviousDayChangeFilter(config, system.data_provider, hold_stock_symbols)
-                    stock_list = prev_day_filter.filter_stocks(stock_list)
-
-                    filtered_count = original_count - len(stock_list)
-                    print(f"过滤完成: 保留 {len(stock_list)} 只，过滤 {filtered_count} 只")
-                    main_logger.info(f"✅ 过滤完成: 保留{len(stock_list)}只，过滤{filtered_count}只")
-                except Exception as filter_error:
-                    print(f"⚠️ 前日涨幅过滤失败: {filter_error}，跳过过滤")
-                    main_logger.warning(f"前日涨幅过滤失败: {filter_error}")
         except Exception as e:
             print(f"动态股票选择失败: {e}")
             print("使用传统配置文件股票列表...")
