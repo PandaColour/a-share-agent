@@ -383,7 +383,7 @@ class MultiSourceDataProvider:
         logger.error(f"所有数据源都无法获取 {normalized_symbol} 的分钟级数据")
         return pd.DataFrame()
 
-    def get_complete_stock_data(self, symbol: str, start_date: str = None, end_date: str = None, period: str = "1y", include_intraday: bool = True) -> Tuple[pd.DataFrame, Dict, Dict, Dict]:
+    def get_complete_stock_data(self, symbol: str, start_date: str = None, end_date: str = None, period: str = "1y", include_intraday: bool = True) -> Tuple[pd.DataFrame, Dict, Dict, Dict, pd.DataFrame]:
         """
         获取完整的股票数据（支持双重时间框架）
 
@@ -395,15 +395,16 @@ class MultiSourceDataProvider:
             include_intraday: 是否包含5分钟数据
 
         Returns:
-            Tuple[daily_data, info, indicators, price_info]
+            Tuple[daily_data, info, indicators, price_info, intraday_data]
             indicators现在包含daily_*和intraday_*指标
+            intraday_data: 5分钟K线数据（如果获取失败则为空DataFrame）
         """
         try:
             # 获取日线数据
             daily_data = self.get_stock_data(symbol, start_date, end_date, period)
 
             if daily_data.empty:
-                return pd.DataFrame(), {}, {}, {}
+                return pd.DataFrame(), {}, {}, {}, pd.DataFrame()
 
             # 获取股票信息
             info = self.get_stock_info(symbol)
@@ -416,9 +417,9 @@ class MultiSourceDataProvider:
                     if not intraday_data.empty:
                         logger.debug(f"✅ 获取到{symbol}的5分钟数据: {len(intraday_data)}条记录")
                     else:
-                        logger.warning(f"⚠️ 未能获取{symbol}的5分钟数据，将只使用日线数据")
+                        logger.debug(f"未能获取{symbol}的5分钟数据，将只使用日线数据")
                 except Exception as e:
-                    logger.warning(f"⚠️ 获取{symbol}的5分钟数据失败: {e}，将只使用日线数据")
+                    logger.debug(f"获取{symbol}的5分钟数据失败: {e}，将只使用日线数据")
 
             # 计算双重时间框架技术指标
             indicators = self.calculate_dual_timeframe_indicators(daily_data, intraday_data, info)
@@ -426,11 +427,12 @@ class MultiSourceDataProvider:
             # 获取价格信息（优先使用实时数据）
             price_info = self._get_realtime_price_info(daily_data, intraday_data)
 
-            return daily_data, info, indicators, price_info
+            # 【改进】返回5分钟数据，供因子计算使用
+            return daily_data, info, indicators, price_info, intraday_data
 
         except Exception as e:
             logger.error(f"获取完整股票数据失败 {symbol}: {e}")
-            return pd.DataFrame(), {}, {}, {}
+            return pd.DataFrame(), {}, {}, {}, pd.DataFrame()
     
     def get_current_price_info(self, data: pd.DataFrame) -> Dict:
         """获取当前价格信息（复用原有逻辑）"""

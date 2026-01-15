@@ -4,7 +4,7 @@
     "description": "A股TradingAgents统一配置文件",
     
     "execution": {
-      "max_workers": 2,
+      "max_workers": 5,
       "analysis_timeout": 300,
       "enable_learning": true
     },
@@ -255,10 +255,10 @@
   "stock_selection": {
     "mode": "momentum_focused",
     "longhu_count": 10,
-    "social_count": 10,
+    "social_count": 5,
     "potential_count": 10,
     "momentum_count": 10,
-    "max_total_stocks": 50,
+    "max_total_stocks": 100,
     "enable_longhu": true,
     "enable_social": true,
     "enable_potential": true,

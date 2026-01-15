@@ -22,7 +22,7 @@ import time
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Tuple, Optional, Any
 from pathlib import Path
 import warnings
 import logging
@@ -147,14 +147,14 @@ class AShareTradingAgentsSystem:
             initialize_factors(enable_auto_generation=True)  # 启用自动因子生成
             self.factor_manager = get_factor_manager()
             self.ai_factor_enabled = True
-            
+
             # 获取因子详情
             total_factors = len(self.factor_manager.factors)
             factor_names = list(self.factor_manager.factors.keys())
-            
+
             self.logger.info(f"AI因子系统初始化成功，已注册 {total_factors} 个因子")
             self.logger.info(f"因子列表: {', '.join(factor_names)}")
-            
+
             # 显示自动生成因子的摘要
             try:
                 auto_summary = get_auto_factor_summary()
@@ -162,9 +162,29 @@ class AShareTradingAgentsSystem:
                     self.logger.info(f"其中自动生成因子 {auto_summary['total_factors']} 个")
             except Exception:
                 pass
-                
+
         except ImportError as e:
             self.logger.warning(f"AI因子系统初始化失败: {e}")
+
+        # 市场监控组件初始化（用于因子系统）
+        self.market_monitor = None
+        self.beta_calculator = None
+        if self.ai_factor_enabled:
+            try:
+                from src.market.market_state import MarketMonitor
+                from src.market.beta_calculator import BetaCalculator
+
+                self.market_monitor = MarketMonitor(self.config_manager)
+                self.beta_calculator = BetaCalculator(self.config_manager)
+                self.logger.info("✅ 市场监控组件初始化成功")
+            except ImportError as e:
+                self.logger.warning(f"⚠️ 市场监控组件初始化失败: {e}，相关因子将使用降级模式")
+
+        # 市场数据缓存（在批量分析时使用，所有股票共享）
+        # 改为字典结构支持多市场指数：{'hs300': DataFrame, 'sh_index': DataFrame}
+        self.market_data_cache = {}  # 市场日线数据字典
+        self.market_state_cache = {}  # 市场状态字典
+        self.market_intraday_cache = {}  # 市场5分钟数据字典
         
         # 线程本地存储，用于为每个线程创建独立的组件实例
         self._thread_local = threading.local()
@@ -229,7 +249,7 @@ class AShareTradingAgentsSystem:
 
         # 1. 数据获取
         initial_decision.analysis_status = "in_progress"
-        data, info, indicators, price_info = data_provider.get_stock_data(symbol)
+        data, info, indicators, price_info, intraday_data = data_provider.get_stock_data(symbol)
 
         if data is None or data.empty:
             self.logger.error(f"无法获取股票数据: {symbol}")
@@ -308,7 +328,7 @@ class AShareTradingAgentsSystem:
         ai_factor_analysis = None
         if self.ai_factor_enabled and self.factor_manager:
             try:
-                ai_factor_analysis = self._ai_factor_analysis(symbol, data, indicators)
+                ai_factor_analysis = self._ai_factor_analysis(symbol, data, indicators, intraday_data)
                 if ai_factor_analysis:
                     ai_factor_analysis["analyst_inputs"] = analyst_inputs.copy()
                     analyses.append(ai_factor_analysis)
@@ -488,6 +508,7 @@ class AShareTradingAgentsSystem:
             info = cached_data['info']
             indicators = cached_data['indicators']
             price_info = cached_data['price_info']
+            intraday_data = cached_data.get('intraday_data', pd.DataFrame())  # 获取5分钟数据（如果可用）
             
             # 创业板过滤检查
             if self.config_manager.get_exclude_chinext():
@@ -555,7 +576,7 @@ class AShareTradingAgentsSystem:
             # AI因子分析
             if self.ai_factor_enabled and self.factor_manager:
                 try:
-                    ai_factor_analysis = self._ai_factor_analysis(symbol, data, indicators)
+                    ai_factor_analysis = self._ai_factor_analysis(symbol, data, indicators, intraday_data)
                     if ai_factor_analysis:
                         ai_factor_analysis["analyst_inputs"] = analyst_inputs.copy()
                         analyses.append(ai_factor_analysis)
@@ -668,9 +689,179 @@ class AShareTradingAgentsSystem:
                 "决策理由": f"分析出错: {str(e)}"
             }
 
+    def _get_market_state_for_index(self, key: str, name: str) -> Dict:
+        """获取指定市场指数的状态
+
+        Args:
+            key: 指数键名（如'hs300', 'sh_index'）
+            name: 指数名称（用于日志）
+
+        Returns:
+            市场状态字典
+        """
+        try:
+            data = self.market_data_cache.get(key)
+            if data is None or data.empty:
+                return {}
+
+            # 简化版市场状态计算
+            latest_close = data['Close'].iloc[-1]
+            prev_close = data['Close'].iloc[-2] if len(data) > 1 else latest_close
+            daily_return = (latest_close - prev_close) / prev_close if prev_close != 0 else 0
+
+            # 计算趋势（基于均线）
+            ma5 = data['Close'].rolling(5).mean().iloc[-1] if len(data) >= 5 else latest_close
+            ma20 = data['Close'].rolling(20).mean().iloc[-1] if len(data) >= 20 else latest_close
+
+            if ma5 > ma20 * 1.01:  # 5日线高于20日线1%以上
+                trend = 'uptrend'
+            elif ma5 < ma20 * 0.99:  # 5日线低于20日线1%以上
+                trend = 'downtrend'
+            else:
+                trend = 'neutral'
+
+            # 计算波动率（20日标准差）
+            volatility = data['Close'].pct_change().rolling(20).std().iloc[-1] if len(data) >= 20 else 0
+
+            # 风险等级评估
+            if abs(daily_return) > 0.03 or volatility > 0.025:
+                risk_level = '高'
+            elif abs(daily_return) > 0.015 or volatility > 0.015:
+                risk_level = '中'
+            else:
+                risk_level = '低'
+
+            return {
+                'trend': trend,
+                'daily_return': daily_return,
+                'risk_level': risk_level,
+                'volatility': volatility,
+                'ma5': ma5,
+                'ma20': ma20,
+                'index_name': name,
+                'index_key': key
+            }
+
+        except Exception as e:
+            self.logger.error(f"计算{name}状态失败: {e}")
+            return {}
+
+    def _collect_market_data(self):
+        """收集市场基准数据（沪深300 + 上证指数）"""
+        if not self.ai_factor_enabled or not self.market_monitor:
+            self.logger.debug("市场监控未启用，跳过市场数据收集")
+            return
+
+        try:
+            print("\n[第0阶段] 收集市场基准数据...")
+            self.logger.info("========== 开始收集市场基准数据 ==========")
+
+            # 定义要收集的市场指数（硬编码）
+            benchmarks = [
+                {'key': 'hs300', 'symbol': '000300.SH', 'name': '沪深300'},
+                {'key': 'sh_index', 'symbol': '000001.SH', 'name': '上证指数'}
+            ]
+
+            # 初始化缓存字典
+            market_data = {}
+            market_intraday = {}
+            market_state = {}
+
+            # 依次收集每个指数的数据
+            for benchmark in benchmarks:
+                key = benchmark['key']
+                symbol = benchmark['symbol']
+                name = benchmark['name']
+
+                print(f"  正在获取市场基准: {name} ({symbol})")
+                self.logger.info(f"正在获取基准指数: {name} ({symbol})")
+
+                try:
+                    # 获取指数数据（日线 + 5分钟）
+                    result = self.data_provider.get_stock_data(symbol, period="1y")
+
+                    # 解包数据
+                    if isinstance(result, tuple) and len(result) >= 5:
+                        data, info, indicators, price_info, intraday = result
+                        self.logger.debug(f"{name}: 成功解包数据元组")
+                    elif isinstance(result, tuple) and len(result) >= 1:
+                        # 兼容旧版本（没有5分钟数据）
+                        data = result[0]
+                        intraday = pd.DataFrame()
+                        self.logger.warning(f"{name}: 数据格式为旧版本，没有5分钟数据")
+                    else:
+                        data = result if result is not None else None
+                        intraday = pd.DataFrame()
+                        self.logger.warning(f"{name}: 数据不是预期的元组格式: {type(result)}")
+
+                    # 验证并存储
+                    if data is not None and not data.empty:
+                        market_data[key] = data
+                        market_intraday[key] = intraday if not intraday.empty else pd.DataFrame()
+
+                        intraday_count = len(intraday) if not intraday.empty else 0
+                        self.logger.info(f"✅ {name}数据已收集: 日线{len(data)}条, 5分钟{intraday_count}条")
+                        print(f"  [OK] {name}: 日线{len(data)}条, 5分钟{intraday_count}条")
+                    else:
+                        market_data[key] = None
+                        market_intraday[key] = None
+                        self.logger.warning(f"⚠️ {name}数据为空")
+                        print(f"  [WARN] {name}数据为空")
+
+                except Exception as e:
+                    self.logger.warning(f"⚠️ {name}数据获取失败: {e}")
+                    print(f"  [WARN] {name}数据获取失败: {e}")
+                    market_data[key] = None
+                    market_intraday[key] = None
+
+            # 存储到实例变量
+            self.market_data_cache = market_data
+            self.market_intraday_cache = market_intraday
+
+            # 获取市场状态（针对每个指数）
+            for benchmark in benchmarks:
+                key = benchmark['key']
+                name = benchmark['name']
+
+                if market_data.get(key) is not None:
+                    try:
+                        state = self._get_market_state_for_index(key, name)
+                        market_state[key] = state
+
+                        trend_str = state.get('trend', '未知')
+                        daily_return = state.get('daily_return', 0)
+                        risk_level = state.get('risk_level', '未知')
+
+                        self.logger.info(f"✅ {name}状态: {trend_str}, 今日涨跌: {daily_return:.2%}, 风险: {risk_level}")
+                        print(f"  [OK] {name}状态: {trend_str}, 涨跌: {daily_return:.2%}, 风险: {risk_level}")
+
+                    except Exception as e:
+                        self.logger.warning(f"⚠️ {name}状态获取失败: {e}")
+                        print(f"  [WARN] {name}状态获取失败: {e}")
+                        market_state[key] = None
+                else:
+                    market_state[key] = None
+
+            self.market_state_cache = market_state
+
+            # 统计
+            success_count = sum(1 for v in market_data.values() if v is not None)
+            self.logger.info(f"📊 市场数据收集完成: {success_count}/{len(benchmarks)} 个指数成功")
+            print(f"[第0阶段] 市场数据收集完成: {success_count}/{len(benchmarks)} 个指数\n")
+
+        except Exception as e:
+            self.logger.error(f"❌ 市场数据收集异常: {e}", exc_info=True)
+            print(f"  [ERROR] 市场数据收集异常: {e}")
+            # 发生异常时初始化为空字典
+            self.market_data_cache = {}
+            self.market_intraday_cache = {}
+            self.market_state_cache = {}
 
     def _collect_data_batch(self, stock_list: List[Tuple[str, str]]) -> Dict[str, Dict]:
         """批量收集股票数据(单线程,避免并发问题)"""
+        # 【新增】首先收集市场数据（所有股票共享）
+        self._collect_market_data()
+
         data_cache = {}
 
         print(f"第1阶段: 批量收集 {len(stock_list)} 只股票的数据...")
@@ -679,8 +870,8 @@ class AShareTradingAgentsSystem:
             try:
                 print(f"  收集进度: [{i}/{len(stock_list)}] {name}({symbol})")
 
-                # 获取股票数据
-                data, info, indicators, price_info = self.data_provider.get_stock_data(symbol)
+                # 获取股票数据（包含5分钟数据）
+                data, info, indicators, price_info, intraday_data = self.data_provider.get_stock_data(symbol)
 
                 if data is not None and not data.empty:
                     data_cache[symbol] = {
@@ -689,6 +880,7 @@ class AShareTradingAgentsSystem:
                         'info': info,
                         'indicators': indicators,
                         'price_info': price_info,
+                        'intraday_data': intraday_data,  # 添加5分钟数据
                         'name': name
                     }
                     print(f"    {name} 数据收集成功")
@@ -969,28 +1161,128 @@ class AShareTradingAgentsSystem:
         """保存分析结果到时间戳文件夹"""
         self.output_manager.save_results(results)
 
-    def _ai_factor_analysis(self, symbol: str, data: pd.DataFrame, indicators: Dict) -> Optional[Dict]:
+    def _build_enhanced_data_dict(self, symbol: str, data: pd.DataFrame, intraday_data: pd.DataFrame = None) -> Dict[str, Any]:
+        """
+        构建包含所有因子依赖的增强数据字典
+
+        Args:
+            symbol: 股票代码
+            data: 股票数据DataFrame
+            intraday_data: 5分钟K线数据（可选）
+
+        Returns:
+            增强的数据字典，包含：
+            - price: 基础价格数据
+            - price_daily: 日线价格数据（多时间框架因子需要）
+            - price_5min: 5分钟价格数据（多时间框架因子需要）
+            - volume: 成交量数据
+            - market_data: 市场基准数据（如果可用）
+            - market_state: 市场状态（如果可用）
+            - stock_beta: 股票Beta系数（如果可用）
+        """
+        # 基础数据字典
+        symbol_data = {
+            'price': data[['Open', 'High', 'Low', 'Close']].copy(),
+            'price_daily': data[['Open', 'High', 'Low', 'Close']].copy(),  # 多时间框架因子需要
+            'volume': data[['Volume']].copy(),
+        }
+
+        # === 沪深300数据（向后兼容，保持原有键名） ===
+        hs300_data = self.market_data_cache.get('hs300')
+        hs300_intraday = self.market_intraday_cache.get('hs300')
+        hs300_state = self.market_state_cache.get('hs300')
+
+        if hs300_data is not None and not hs300_data.empty:
+            symbol_data['market_data'] = hs300_data
+            self.logger.debug(f"{symbol}: 使用沪深300数据（{len(hs300_data)}条）")
+        else:
+            symbol_data['market_data'] = None
+            self.logger.debug(f"{symbol}: 沪深300数据不可用，相关因子将降级")
+
+        if hs300_intraday is not None and not hs300_intraday.empty:
+            symbol_data['market_5min'] = hs300_intraday
+        else:
+            symbol_data['market_5min'] = None
+
+        symbol_data['market_state'] = hs300_state
+
+        # 计算相对沪深300的Beta
+        if hs300_data is not None and self.beta_calculator and len(data) >= 60:
+            try:
+                beta_hs300 = self.beta_calculator.calculate_beta(
+                    data, hs300_data, window=60
+                )
+                symbol_data['stock_beta'] = beta_hs300
+                self.logger.debug(f"{symbol}: Beta(vs沪深300) = {beta_hs300:.3f}")
+            except Exception as e:
+                self.logger.debug(f"{symbol}: Beta(vs沪深300)计算失败: {e}")
+                symbol_data['stock_beta'] = None
+        else:
+            symbol_data['stock_beta'] = None
+
+        # === 上证指数数据（新增） ===
+        sh_data = self.market_data_cache.get('sh_index')
+        sh_intraday = self.market_intraday_cache.get('sh_index')
+        sh_state = self.market_state_cache.get('sh_index')
+
+        if sh_data is not None and not sh_data.empty:
+            symbol_data['market_data_sh'] = sh_data
+            self.logger.debug(f"{symbol}: 使用上证指数数据（{len(sh_data)}条）")
+        else:
+            symbol_data['market_data_sh'] = None
+            self.logger.debug(f"{symbol}: 上证指数数据不可用")
+
+        if sh_intraday is not None and not sh_intraday.empty:
+            symbol_data['market_5min_sh'] = sh_intraday
+        else:
+            symbol_data['market_5min_sh'] = None
+
+        symbol_data['market_state_sh'] = sh_state
+
+        # 计算相对上证指数的Beta
+        if sh_data is not None and self.beta_calculator and len(data) >= 60:
+            try:
+                beta_sh = self.beta_calculator.calculate_beta(
+                    data, sh_data, window=60
+                )
+                symbol_data['stock_beta_sh'] = beta_sh
+                self.logger.debug(f"{symbol}: Beta(vs上证) = {beta_sh:.3f}")
+            except Exception as e:
+                self.logger.debug(f"{symbol}: Beta(vs上证)计算失败: {e}")
+                symbol_data['stock_beta_sh'] = None
+        else:
+            symbol_data['stock_beta_sh'] = None
+
+        # === 个股5分钟数据 ===
+        if intraday_data is not None and not intraday_data.empty:
+            symbol_data['price_5min'] = intraday_data[['Open', 'High', 'Low', 'Close']].copy()
+            self.logger.debug(f"{symbol}: 使用5分钟数据（{len(intraday_data)}条）")
+        else:
+            # 即使不可用也添加键，因子会自动降级到仅日线模式
+            symbol_data['price_5min'] = None
+            self.logger.debug(f"{symbol}: 5分钟数据不可用，多时间框架因子将降级到仅日线模式")
+
+        return symbol_data
+
+    def _ai_factor_analysis(self, symbol: str, data: pd.DataFrame, indicators: Dict, intraday_data: pd.DataFrame = None) -> Optional[Dict]:
         """
         AI因子分析
-        
+
         Args:
             symbol: 股票代码
             data: 股票数据
             indicators: 技术指标数据
-            
+            intraday_data: 5分钟K线数据（可选）
+
         Returns:
             AI因子分析结果
         """
         try:
             if not self.ai_factor_enabled or not self.factor_manager:
                 return None
-                
-            # 准备因子计算所需的数据格式
-            # 因子期望的数据格式是 Dict[str, pd.DataFrame]，其中键是依赖名称
-            symbol_data = {
-                'price': data[['Open', 'High', 'Low', 'Close']].copy(),  # 价格数据
-                'volume': data[['Volume']].copy()  # 成交量数据
-            }
+
+            # 【改进】使用增强数据字典（包含市场数据、Beta、5分钟数据等）
+            symbol_data = self._build_enhanced_data_dict(symbol, data, intraday_data)
             
             # 【新方法】使用加权因子信号（自动IC评估）
             # 这个方法会：

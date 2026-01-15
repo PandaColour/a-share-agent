@@ -777,12 +777,12 @@ class StockSelectionManager:
                     from src.filters.previous_day_filter import PreviousDayChangeFilter
 
                     # 构建持仓股票列表（作为过滤器例外）
+                    # 注意：所有在 hold_stock.json 中的股票都不应该被过滤，无论 buy_flag 状态
                     hold_stock_symbols = []
                     try:
                         hold_config = self._load_hold_stock_config()
-                        hold_stock_symbols = [stock['symbol'] for stock in hold_config.get('hold_stocks', [])
-                                            if stock.get('buy_flag', True)]
-                        logger.info(f"过滤器例外股票（持仓）: {len(hold_stock_symbols)}只")
+                        hold_stock_symbols = [stock['symbol'] for stock in hold_config.get('hold_stocks', [])]
+                        logger.info(f"过滤器例外股票（持仓）: {len(hold_stock_symbols)}只（所有持仓股票均豁免过滤）")
                     except Exception as e:
                         logger.warning(f"读取持仓配置失败: {e}")
 

@@ -399,13 +399,18 @@ class AnalysisWidget(QWidget):
             self.status_label.setText(f"完成: {message}")
             self.status_label.setStyleSheet("color: #4CAF50; padding: 5px;")
 
-            # 如果是定时任务触发的分析，且成功完成，则执行回测
+            # 如果是定时任务触发的分析（预测），且成功完成，生成小红书文案
             if self.is_scheduled_task:
-                self.append_output(f"\n[定时任务] 全分析成功完成，准备执行3个月回测...")
-                self.start_backtest()
+                self.append_output(f"\n[定时任务] 全分析（预测）成功完成")
+                # 如果有统一的输出目录，生成小红书文案
+                if self.scheduled_output_dir:
+                    self.append_output(f"\n[小红书文案] 开始生成小红书文案...")
+                    self.generate_xiaohongshu_content()
+
                 # 重置标志位
                 self.is_scheduled_task = False
-
+                # 清理定时任务的输出目录引用
+                self.scheduled_output_dir = None
                 # 恢复定时状态标签
                 self.restore_schedule_status()
         else:
@@ -484,7 +489,7 @@ class AnalysisWidget(QWidget):
             self.execute_scheduled_analysis()
 
     def execute_scheduled_analysis(self):
-        """执行定时分析（每天定时执行）"""
+        """执行定时分析（每天定时执行）- 先回测再预测"""
         # ❌ 不再停止定时器，让它继续运行以支持每天重复执行
         # self.timer.stop()  # 这行代码导致了只能执行一次的问题
 
@@ -510,20 +515,24 @@ class AnalysisWidget(QWidget):
         self.scheduled_output_dir = os.path.join("outputs", timestamp)
         os.makedirs(self.scheduled_output_dir, exist_ok=True)
 
-        # 执行 both 模式分析（传递输出目录）
-        self.append_output(f"\n[定时任务] {current_date} {time_str} 开始执行全分析...")
+        # 输出日志
+        self.append_output(f"\n[定时任务] {current_date} {time_str} 开始执行定时任务")
         self.append_output(f"[定时任务] 统一输出目录: {self.scheduled_output_dir}")
+        self.append_output(f"[定时任务] 执行顺序: 1.回测 -> 2.预测")
         self.append_output(f"[定时任务] 明天 {time_str} 将再次自动执行")
-        self.start_analysis('both', output_dir=self.scheduled_output_dir)
+
+        # 先执行回测（3个月）
+        self.append_output(f"\n[定时任务] 步骤1: 开始执行3个月回测...")
+        self.start_backtest()
 
     def execute_now(self):
-        """立即执行定时任务（全分析+回测）"""
+        """立即执行定时任务（先回测再预测）"""
         # 检查是否有分析正在运行
         if self.analysis_thread and self.analysis_thread.isRunning():
             QMessageBox.warning(self, "提示", "当前有分析任务正在运行，请稍后再试")
             return
 
-        # 设置定时任务标志位（这样分析完成后会自动执行回测）
+        # 设置定时任务标志位（这样回测完成后会自动执行预测）
         self.is_scheduled_task = True
 
         # 生成统一的输出目录（复用 main.py 的路径生成逻辑）
@@ -533,13 +542,15 @@ class AnalysisWidget(QWidget):
 
         # 输出提示
         current_time = datetime.now().strftime("%H:%M:%S")
-        self.append_output(f"\n[立即执行] {current_time} 手动触发定时任务（全分析+回测）")
+        self.append_output(f"\n[立即执行] {current_time} 手动触发定时任务（先回测后预测）")
         self.append_output(f"[立即执行] 统一输出目录: {self.scheduled_output_dir}")
+        self.append_output(f"[立即执行] 执行顺序: 1.回测 -> 2.预测")
         self.schedule_status_label.setText(f"🚀 立即执行中...")
         self.schedule_status_label.setStyleSheet("color: #FF5722; padding: 5px; font-size: 11px;")
 
-        # 执行全分析（传递输出目录）
-        self.start_analysis('both', output_dir=self.scheduled_output_dir)
+        # 先执行回测（3个月）
+        self.append_output(f"\n[立即执行] 步骤1: 开始执行3个月回测...")
+        self.start_backtest()
 
     def restore_schedule_status(self):
         """恢复定时状态标签"""
@@ -638,16 +649,30 @@ class AnalysisWidget(QWidget):
             self.append_output(f"\n[回测任务] 回测成功完成")
             self.append_output(f"{'='*60}\n")
 
-            # 如果有统一的输出目录，生成小红书文案
-            if self.scheduled_output_dir:
-                self.append_output(f"\n[小红书文案] 开始生成小红书文案...")
-                self.generate_xiaohongshu_content()
+            # 如果是定时任务，回测成功后继续执行预测
+            if self.is_scheduled_task:
+                self.append_output(f"\n[定时任务] 步骤2: 回测完成，开始执行全分析（预测）...")
+                self.start_analysis('both', output_dir=self.scheduled_output_dir)
+            else:
+                # 非定时任务的回测，生成小红书文案后清理
+                if self.scheduled_output_dir:
+                    self.append_output(f"\n[小红书文案] 开始生成小红书文案...")
+                    self.generate_xiaohongshu_content()
+                # 清理定时任务的输出目录引用
+                self.scheduled_output_dir = None
         else:
             self.append_output(f"\n[回测任务] 回测失败: {message}")
             self.append_output(f"{'='*60}\n")
 
-        # 清理定时任务的输出目录引用
-        self.scheduled_output_dir = None
+            # 如果定时任务的回测失败，取消后续预测
+            if self.is_scheduled_task:
+                self.append_output(f"\n[定时任务] 回测失败，取消后续预测")
+                # 重置标志位
+                self.is_scheduled_task = False
+                # 清理定时任务的输出目录引用
+                self.scheduled_output_dir = None
+                # 恢复定时状态标签
+                self.restore_schedule_status()
 
     def generate_xiaohongshu_content(self):
         """生成小红书文案"""

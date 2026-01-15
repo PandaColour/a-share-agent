@@ -116,3 +116,4 @@ Pipfile.lock
 /outputs/
 /backtest_results/
 /config/dynamic_stock.json
+/factor_cache/

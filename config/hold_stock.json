@@ -8,7 +8,7 @@
       "name": "乐通股份",
       "purchase_date": "2025-12-18",
       "cost": 11.16,
-      "buy_flag": true
+      "buy_flag": false
     },
     {
       "symbol": "603122.SH",
@@ -65,10 +65,87 @@
       "purchase_date": "2026-01-07",
       "cost": 22,
       "buy_flag": true
+    },
+    {
+      "symbol": "002115.SZ",
+      "name": "三维通信",
+      "purchase_date": "2026-01-13",
+      "cost": 16.19,
+      "buy_flag": false
+    },
+    {
+      "symbol": "002407.SZ",
+      "name": "多氟多",
+      "purchase_date": "2026-01-14",
+      "cost": 16.19,
+      "buy_flag": false
+    },
+    {
+      "symbol": "601106.SH",
+      "name": "中国一重",
+      "purchase_date": "2026-01-15",
+      "cost": 16.19,
+      "buy_flag": false
+    },
+    {
+      "symbol": "301308.SZ",
+      "name": "江波龙",
+      "purchase_date": "2026-01-15",
+      "cost": 16.19,
+      "buy_flag": false
+    },
+    {
+      "symbol": "688525.SH",
+      "name": "佰维存储",
+      "purchase_date": "2026-01-15",
+      "cost": 16.19,
+      "buy_flag": false
+    },
+    {
+      "symbol": "001309.SZ",
+      "name": "德明利",
+      "purchase_date": "2026-01-15",
+      "cost": 16.19,
+      "buy_flag": false
+    },
+    {
+      "symbol": "603986.SH",
+      "name": "兆易创新",
+      "purchase_date": "2026-01-15",
+      "cost": 16.19,
+      "buy_flag": false
+    },
+    {
+      "symbol": "300223.SZ",
+      "name": "北京君正",
+      "purchase_date": "2026-01-15",
+      "cost": 16.19,
+      "buy_flag": false
+    },
+    {
+      "symbol": "300475.SZ",
+      "name": "香农芯创",
+      "purchase_date": "2026-01-15",
+      "cost": 16.19,
+      "buy_flag": false
+    },
+    {
+      "symbol": "300302.SZ",
+      "name": "同有科技",
+      "purchase_date": "2026-01-15",
+      "cost": 16.19,
+      "buy_flag": false
+    },
+    {
+      "symbol": "300042.SZ",
+      "name": "朗科科技",
+      "purchase_date": "2026-01-15",
+      "cost": 16.19,
+      "buy_flag": false
     }
   ],
   "config": {
-    "max_hold_stocks": 10,
+    "max_hold_stocks": 100,
     "stock_validation": true,
     "track_performance": true
   }

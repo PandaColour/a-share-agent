@@ -61,8 +61,14 @@ class BaseFactor(ABC):
     def validate_data(self, data: Dict[str, pd.DataFrame]) -> bool:
         """验证输入数据"""
         for dep in self.dependencies:
-            if dep not in data or data[dep].empty:
+            if dep not in data:
                 logger.warning(f"因子{self.name}缺少依赖数据: {dep}")
+                return False
+            if data[dep] is None:
+                logger.debug(f"因子{self.name}的依赖数据{dep}为None，将使用降级模式")
+                return False
+            if hasattr(data[dep], 'empty') and data[dep].empty:
+                logger.warning(f"因子{self.name}的依赖数据{dep}为空")
                 return False
         return True
 
