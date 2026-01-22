@@ -69,7 +69,7 @@ class AShareDataProvider:
         # 如果已经是标准格式，直接返回
         return symbol
 
-    def get_stock_data(self, symbol: str, start_date: str = None, end_date: str = None, period: str = "1y") -> Tuple[pd.DataFrame, Dict, Dict, Dict, pd.DataFrame]:
+    def get_stock_data(self, symbol: str, start_date: str = None, end_date: str = None, period: str = "1y") -> Tuple[pd.DataFrame, Dict, Dict, Dict, pd.DataFrame, Dict]:
         """
         获取股票完整数据 - 增强版，支持多数据源
 
@@ -80,26 +80,27 @@ class AShareDataProvider:
             period: 时间周期 (当start_date和end_date为None时使用)
 
         Returns:
-            Tuple[data, info, indicators, price_info, intraday_data]
+            Tuple[data, info, indicators, price_info, intraday_data, fundamental_data]
             - data: 日线数据
             - info: 股票信息
             - indicators: 技术指标（包含日线和5分钟指标）
             - price_info: 价格信息
             - intraday_data: 5分钟K线数据（如果获取失败则为空DataFrame）
+            - fundamental_data: 基本面数据字典（PE/PB/ROE等）
         """
         try:
             # 优先使用多数据源提供者
             if self._multi_provider:
                 return self._multi_provider.get_complete_stock_data(symbol, start_date, end_date, period)
 
-            # 降级到原有的YFinance实现（返回空的5分钟数据）
+            # 降级到原有的YFinance实现（返回空的5分钟数据和空的基本面数据）
             logger.debug(f"使用YFinance获取 {symbol} 数据")
             data, info, indicators, price_info = self._get_stock_data_yfinance(symbol, start_date, end_date, period)
-            return data, info, indicators, price_info, pd.DataFrame()  # 添加空的5分钟数据
+            return data, info, indicators, price_info, pd.DataFrame(), {}  # 添加空的5分钟数据和空的基本面数据
 
         except Exception as e:
             logger.error(f"获取股票数据失败 {symbol}: {e}")
-            return pd.DataFrame(), {}, {}, {}, pd.DataFrame()
+            return pd.DataFrame(), {}, {}, {}, pd.DataFrame(), {}
     
     def _get_stock_data_yfinance(self, symbol: str, start_date: str = None, end_date: str = None, period: str = "1y") -> Tuple[pd.DataFrame, Dict, Dict, Dict]:
         """使用YFinance获取股票数据 (原有实现)"""

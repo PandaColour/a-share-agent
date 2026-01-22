@@ -141,7 +141,7 @@ class HoldStockAnalyzer:
             if not self.system:
                 return None, {}
 
-            data, info, indicators, price_info = self.system.data_provider.get_stock_data(symbol)
+            data, info, indicators, price_info, intraday_data, _ = self.system.data_provider.get_stock_data(symbol)
 
             if data is None or data.empty:
                 return None, {}

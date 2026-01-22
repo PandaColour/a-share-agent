@@ -12,13 +12,31 @@
     "vp_corr_56d": 1.0,
     "volatility_18d": 1.3,
     "vp_corr_21d": 1.0,
-    "volatility_34d": 1.0
+    "volatility_34d": 1.0,
+    "vp_corr_35d": 0.0,
+    "momentum_5d": 1.3,
+    "value_pe": 0.0,
+    "value_pb": 0.0,
+    "profitability_roe": 0.0,
+    "growth_revenue": 0.0,
+    "profit_quality": 0.0,
+    "financial_health": 0.0,
+    "volatility_75d": 1.0,
+    "vp_corr_34d": 0.0
   },
   "disabled": [
-    "vp_corr_22d",
-    "vp_corr_42d",
     "volatility_90d",
-    "price_prediction_14d"
+    "vp_corr_42d",
+    "vp_corr_22d",
+    "growth_revenue",
+    "financial_health",
+    "vp_corr_34d",
+    "value_pe",
+    "price_prediction_14d",
+    "profitability_roe",
+    "profit_quality",
+    "vp_corr_35d",
+    "value_pb"
   ],
-  "last_update": "2026-01-15 17:12:19"
+  "last_update": "2026-01-22 09:11:38"
 }

@@ -328,7 +328,7 @@
       "min_market_cap": 500000000,
       "exclude_st": true,
       "exclude_suspended": true,
-      "exclude_chinext": true
+      "exclude_chinext": false
     },
     
     "risk_management": {

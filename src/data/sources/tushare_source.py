@@ -279,3 +279,161 @@ class TushareSource(BaseDataSource):
         except Exception as e:
             logger.error(f"Tushare获取股票信息失败 {symbol}: {e}")
             return StockInfo(symbol=symbol)
+    def get_financial_indicators(self, symbol: str, period: str = None) -> Dict:
+        """获取财务指标数据
+
+        Args:
+            symbol: 股票代码
+            period: 报告期，格式YYYYMMDD，如20231231。None表示获取最新
+
+        Returns:
+            包含ROE、毛利率、营收增长率等指标的字典
+        """
+        try:
+            ts_symbol = self.normalize_symbol(symbol)
+            if ts_symbol is None:
+                return {}
+
+            # 获取财务指标
+            if period:
+                df = self.pro.fina_indicator(ts_code=ts_symbol, period=period)
+            else:
+                # 获取最近4个季度的数据
+                df = self.pro.fina_indicator(ts_code=ts_symbol)
+
+            if df is None or df.empty:
+                logger.debug(f"Tushare未找到财务指标: {ts_symbol}")
+                return {}
+
+            # 取最新一期数据
+            latest = df.iloc[0]
+
+            indicators = {
+                'roe': latest.get('roe', 0),  # 净资产收益率ROE
+                'roe_waa': latest.get('roe_waa', 0),  # 加权平均ROE
+                'grossprofit_margin': latest.get('grossprofit_margin', 0),  # 毛利率
+                'netprofit_margin': latest.get('netprofit_margin', 0),  # 净利率
+                'revenue_yoy': latest.get('or_yoy', 0),  # 营收同比增长率
+                'profit_yoy': latest.get('op_yoy', 0),  # 营业利润同比增长率
+                'netprofit_yoy': latest.get('net_profit_yoy', 0),  # 净利润同比增长率
+                'debt_to_assets': latest.get('debt_to_assets', 0),  # 资产负债率
+                'current_ratio': latest.get('current_ratio', 0),  # 流动比率
+                'quick_ratio': latest.get('quick_ratio', 0),  # 速动比率
+                'report_period': latest.get('end_date', ''),  # 报告期
+            }
+
+            logger.debug(f"Tushare成功获取财务指标: {ts_symbol}, 报告期: {indicators['report_period']}")
+            return indicators
+
+        except Exception as e:
+            logger.error(f"Tushare获取财务指标失败 {symbol}: {e}")
+            return {}
+
+    def get_balance_sheet(self, symbol: str, period: str = None) -> Dict:
+        """获取资产负债表数据
+
+        Args:
+            symbol: 股票代码
+            period: 报告期，格式YYYYMMDD，如20231231。None表示获取最新
+
+        Returns:
+            包含总资产、总负债、股东权益等的字典
+        """
+        try:
+            ts_symbol = self.normalize_symbol(symbol)
+            if ts_symbol is None:
+                return {}
+
+            # 获取资产负债表
+            if period:
+                df = self.pro.balancesheet(ts_code=ts_symbol, period=period)
+            else:
+                # 获取最近4个季度的数据
+                df = self.pro.balancesheet(ts_code=ts_symbol)
+
+            if df is None or df.empty:
+                logger.debug(f"Tushare未找到资产负债表: {ts_symbol}")
+                return {}
+
+            # 取最新一期数据
+            latest = df.iloc[0]
+
+            # 计算债务权益比
+            total_liab = latest.get('total_liab', 0)  # 总负债
+            total_hldr_eqy_exc_min_int = latest.get('total_hldr_eqy_exc_min_int', 0)  # 股东权益合计
+
+            debt_to_equity = 0
+            if total_hldr_eqy_exc_min_int and total_hldr_eqy_exc_min_int != 0:
+                debt_to_equity = total_liab / total_hldr_eqy_exc_min_int
+
+            balance_data = {
+                'total_assets': latest.get('total_assets', 0),  # 总资产
+                'total_liabilities': total_liab,  # 总负债
+                'total_equity': total_hldr_eqy_exc_min_int,  # 股东权益
+                'debt_to_equity': debt_to_equity,  # 债务权益比
+                'current_assets': latest.get('total_cur_assets', 0),  # 流动资产
+                'current_liabilities': latest.get('total_cur_liab', 0),  # 流动负债
+                'report_period': latest.get('end_date', ''),  # 报告期
+            }
+
+            logger.debug(f"Tushare成功获取资产负债表: {ts_symbol}, 债务权益比: {debt_to_equity:.2f}")
+            return balance_data
+
+        except Exception as e:
+            logger.error(f"Tushare获取资产负债表失败 {symbol}: {e}")
+            return {}
+
+    def get_fundamental_data(self, symbol: str) -> Dict:
+        """获取完整的基本面数据（综合方法）
+
+        Args:
+            symbol: 股票代码
+
+        Returns:
+            包含所有基本面指标的字典
+        """
+        try:
+            # 获取股票基本信息（包含PE、PB）
+            stock_info = self.get_stock_info(symbol)
+
+            # 获取财务指标（ROE、毛利率、营收增长率等）
+            financial_indicators = self.get_financial_indicators(symbol)
+
+            # 获取资产负债表（债务权益比等）
+            balance_sheet = self.get_balance_sheet(symbol)
+
+            # 合并所有数据
+            fundamental_data = {
+                # 估值指标
+                'pe_ratio': stock_info.pe_ratio,
+                'pb_ratio': stock_info.pb_ratio,
+                'market_cap': stock_info.market_cap,
+
+                # 盈利能力指标
+                'roe': financial_indicators.get('roe', 0),
+                'roe_waa': financial_indicators.get('roe_waa', 0),
+                'grossprofit_margin': financial_indicators.get('grossprofit_margin', 0),
+                'netprofit_margin': financial_indicators.get('netprofit_margin', 0),
+
+                # 成长性指标
+                'revenue_yoy': financial_indicators.get('revenue_yoy', 0),
+                'profit_yoy': financial_indicators.get('profit_yoy', 0),
+                'netprofit_yoy': financial_indicators.get('netprofit_yoy', 0),
+
+                # 财务健康指标
+                'debt_to_equity': balance_sheet.get('debt_to_equity', 0),
+                'debt_to_assets': financial_indicators.get('debt_to_assets', 0),
+                'current_ratio': financial_indicators.get('current_ratio', 0),
+
+                # 元数据
+                'report_period': financial_indicators.get('report_period', '') or balance_sheet.get('report_period', ''),
+                'industry': stock_info.industry,
+                'name': stock_info.name,
+            }
+
+            logger.debug(f"Tushare成功获取完整基本面数据: {symbol}")
+            return fundamental_data
+
+        except Exception as e:
+            logger.error(f"Tushare获取基本面数据失败 {symbol}: {e}")
+            return {}

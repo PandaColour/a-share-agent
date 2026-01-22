@@ -212,8 +212,20 @@ class HistoricalBacktestRunner:
         """
         historical_data = {}
 
-        # 向前扩展60天，确保有足够的历史数据用于计算指标
-        extended_start = (datetime.strptime(start_date, "%Y-%m-%d") - timedelta(days=90)).strftime("%Y-%m-%d")
+        # 计算回测期间的天数
+        backtest_days = (datetime.strptime(end_date, "%Y-%m-%d") -
+                        datetime.strptime(start_date, "%Y-%m-%d")).days
+
+        # 向前扩展回测期间的3倍，确保K线图有足够的历史背景
+        # 例如：回测3个月(90天)，向前扩展270天(9个月)，K线总共显示12个月
+        #      回测6个月(180天)，向前扩展540天(18个月)，K线总共显示24个月
+        extend_days = max(backtest_days * 3, 180)  # 至少扩展180天（6个月）
+        extended_start = (datetime.strptime(start_date, "%Y-%m-%d") -
+                         timedelta(days=extend_days)).strftime("%Y-%m-%d")
+
+        logger.info(f"回测期间: {start_date} 至 {end_date} ({backtest_days}天)")
+        logger.info(f"K线数据范围: {extended_start} 至 {end_date} (向前扩展{extend_days}天)")
+
 
         for symbol in symbols:
             try:

@@ -230,7 +230,61 @@ class MultiSourceDataProvider:
                 continue
 
         return {"symbol": normalized_symbol}
-    
+
+    def get_fundamental_data(self, symbol: str) -> Dict:
+        """
+        获取基本面数据（PE/PB/ROE/营收增长/毛利率/债务权益比等）
+
+        Args:
+            symbol: 股票代码
+
+        Returns:
+            基本面数据字典，包含:
+            - pe_ratio: 市盈率
+            - pb_ratio: 市净率
+            - roe: 净资产收益率
+            - revenue_yoy: 营收同比增长率
+            - grossprofit_margin: 毛利率
+            - debt_to_equity: 债务权益比
+            - ... 其他指标
+        """
+        # 标准化股票代码格式
+        normalized_symbol = self._normalize_symbol_format(symbol)
+        if normalized_symbol is None:
+            logger.debug(f"股票代码被过滤: {symbol}")
+            return {}
+
+        # 优先使用Tushare（Tushare有完整的财务数据API）
+        sources_to_try = ['tushare', 'akshare']
+
+        for source_name in sources_to_try:
+            if source_name not in self.sources:
+                continue
+
+            try:
+                source = self.sources[source_name]
+
+                # 检查数据源是否支持get_fundamental_data方法
+                if hasattr(source, 'get_fundamental_data'):
+                    fundamental_data = source.get_fundamental_data(normalized_symbol)
+
+                    if fundamental_data and isinstance(fundamental_data, dict):
+                        # 验证至少有一些关键指标
+                        has_data = any(fundamental_data.get(key) is not None
+                                      for key in ['pe_ratio', 'pb_ratio', 'roe', 'revenue_yoy'])
+
+                        if has_data:
+                            logger.debug(f"✅ 从 {source_name} 获取 {normalized_symbol} 基本面数据")
+                            return fundamental_data
+
+            except Exception as e:
+                logger.debug(f"从 {source_name} 获取 {normalized_symbol} 基本面数据失败: {e}")
+                continue
+
+        # 如果所有数据源都失败，返回空字典
+        logger.debug(f"无法获取 {normalized_symbol} 的基本面数据")
+        return {}
+
     def calculate_dual_timeframe_indicators(self, daily_data: pd.DataFrame, intraday_data: pd.DataFrame, info: Dict = None) -> Dict:
         """
         计算双重时间框架技术指标
@@ -383,9 +437,9 @@ class MultiSourceDataProvider:
         logger.error(f"所有数据源都无法获取 {normalized_symbol} 的分钟级数据")
         return pd.DataFrame()
 
-    def get_complete_stock_data(self, symbol: str, start_date: str = None, end_date: str = None, period: str = "1y", include_intraday: bool = True) -> Tuple[pd.DataFrame, Dict, Dict, Dict, pd.DataFrame]:
+    def get_complete_stock_data(self, symbol: str, start_date: str = None, end_date: str = None, period: str = "1y", include_intraday: bool = True) -> Tuple[pd.DataFrame, Dict, Dict, Dict, pd.DataFrame, Dict]:
         """
-        获取完整的股票数据（支持双重时间框架）
+        获取完整的股票数据（支持双重时间框架 + 基本面数据）
 
         Args:
             symbol: 股票代码
@@ -395,19 +449,26 @@ class MultiSourceDataProvider:
             include_intraday: 是否包含5分钟数据
 
         Returns:
-            Tuple[daily_data, info, indicators, price_info, intraday_data]
-            indicators现在包含daily_*和intraday_*指标
-            intraday_data: 5分钟K线数据（如果获取失败则为空DataFrame）
+            Tuple[daily_data, info, indicators, price_info, intraday_data, fundamental_data]
+            - daily_data: 日线数据
+            - info: 股票基本信息
+            - indicators: 技术指标（包含daily_*和intraday_*指标）
+            - price_info: 价格信息
+            - intraday_data: 5分钟K线数据（如果获取失败则为空DataFrame）
+            - fundamental_data: 基本面数据字典（PE/PB/ROE/营收增长/毛利率/债务权益比等）
         """
         try:
             # 获取日线数据
             daily_data = self.get_stock_data(symbol, start_date, end_date, period)
 
             if daily_data.empty:
-                return pd.DataFrame(), {}, {}, {}, pd.DataFrame()
+                return pd.DataFrame(), {}, {}, {}, pd.DataFrame(), {}
 
             # 获取股票信息
             info = self.get_stock_info(symbol)
+
+            # 获取基本面数据（新增）
+            fundamental_data = self.get_fundamental_data(symbol)
 
             # 获取5分钟数据（如果需要）
             intraday_data = pd.DataFrame()
@@ -427,12 +488,12 @@ class MultiSourceDataProvider:
             # 获取价格信息（优先使用实时数据）
             price_info = self._get_realtime_price_info(daily_data, intraday_data)
 
-            # 【改进】返回5分钟数据，供因子计算使用
-            return daily_data, info, indicators, price_info, intraday_data
+            # 【改进】返回5分钟数据和基本面数据，供因子计算使用
+            return daily_data, info, indicators, price_info, intraday_data, fundamental_data
 
         except Exception as e:
             logger.error(f"获取完整股票数据失败 {symbol}: {e}")
-            return pd.DataFrame(), {}, {}, {}, pd.DataFrame()
+            return pd.DataFrame(), {}, {}, {}, pd.DataFrame(), {}
     
     def get_current_price_info(self, data: pd.DataFrame) -> Dict:
         """获取当前价格信息（复用原有逻辑）"""

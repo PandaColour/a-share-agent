@@ -249,7 +249,7 @@ class AShareTradingAgentsSystem:
 
         # 1. 数据获取
         initial_decision.analysis_status = "in_progress"
-        data, info, indicators, price_info, intraday_data = data_provider.get_stock_data(symbol)
+        data, info, indicators, price_info, intraday_data, fundamental_data = data_provider.get_stock_data(symbol)
 
         if data is None or data.empty:
             self.logger.error(f"无法获取股票数据: {symbol}")
@@ -328,7 +328,7 @@ class AShareTradingAgentsSystem:
         ai_factor_analysis = None
         if self.ai_factor_enabled and self.factor_manager:
             try:
-                ai_factor_analysis = self._ai_factor_analysis(symbol, data, indicators, intraday_data)
+                ai_factor_analysis = self._ai_factor_analysis(symbol, data, indicators, intraday_data, fundamental_data)
                 if ai_factor_analysis:
                     ai_factor_analysis["analyst_inputs"] = analyst_inputs.copy()
                     analyses.append(ai_factor_analysis)
@@ -509,7 +509,8 @@ class AShareTradingAgentsSystem:
             indicators = cached_data['indicators']
             price_info = cached_data['price_info']
             intraday_data = cached_data.get('intraday_data', pd.DataFrame())  # 获取5分钟数据（如果可用）
-            
+            fundamental_data = cached_data.get('fundamental_data', {})  # 获取基本面数据（如果可用）
+
             # 创业板过滤检查
             if self.config_manager.get_exclude_chinext():
                 if self._is_chinext_stock(symbol):
@@ -576,7 +577,7 @@ class AShareTradingAgentsSystem:
             # AI因子分析
             if self.ai_factor_enabled and self.factor_manager:
                 try:
-                    ai_factor_analysis = self._ai_factor_analysis(symbol, data, indicators, intraday_data)
+                    ai_factor_analysis = self._ai_factor_analysis(symbol, data, indicators, intraday_data, fundamental_data)
                     if ai_factor_analysis:
                         ai_factor_analysis["analyst_inputs"] = analyst_inputs.copy()
                         analyses.append(ai_factor_analysis)
@@ -780,8 +781,12 @@ class AShareTradingAgentsSystem:
                     # 获取指数数据（日线 + 5分钟）
                     result = self.data_provider.get_stock_data(symbol, period="1y")
 
-                    # 解包数据
-                    if isinstance(result, tuple) and len(result) >= 5:
+                    # 解包数据（新版本返回6个值：日线、info、indicators、price_info、5分钟、基本面）
+                    if isinstance(result, tuple) and len(result) >= 6:
+                        data, info, indicators, price_info, intraday, fundamental = result
+                        self.logger.debug(f"{name}: 成功解包数据元组（含基本面）")
+                    elif isinstance(result, tuple) and len(result) >= 5:
+                        # 兼容旧版本（没有基本面数据）
                         data, info, indicators, price_info, intraday = result
                         self.logger.debug(f"{name}: 成功解包数据元组")
                     elif isinstance(result, tuple) and len(result) >= 1:
@@ -870,8 +875,8 @@ class AShareTradingAgentsSystem:
             try:
                 print(f"  收集进度: [{i}/{len(stock_list)}] {name}({symbol})")
 
-                # 获取股票数据（包含5分钟数据）
-                data, info, indicators, price_info, intraday_data = self.data_provider.get_stock_data(symbol)
+                # 获取股票数据（包含5分钟数据和基本面数据）
+                data, info, indicators, price_info, intraday_data, fundamental_data = self.data_provider.get_stock_data(symbol)
 
                 if data is not None and not data.empty:
                     data_cache[symbol] = {
@@ -881,6 +886,7 @@ class AShareTradingAgentsSystem:
                         'indicators': indicators,
                         'price_info': price_info,
                         'intraday_data': intraday_data,  # 添加5分钟数据
+                        'fundamental_data': fundamental_data,  # 添加基本面数据
                         'name': name
                     }
                     print(f"    {name} 数据收集成功")
@@ -1161,7 +1167,9 @@ class AShareTradingAgentsSystem:
         """保存分析结果到时间戳文件夹"""
         self.output_manager.save_results(results)
 
-    def _build_enhanced_data_dict(self, symbol: str, data: pd.DataFrame, intraday_data: pd.DataFrame = None) -> Dict[str, Any]:
+    def _build_enhanced_data_dict(self, symbol: str, data: pd.DataFrame,
+                                  intraday_data: pd.DataFrame = None,
+                                  fundamental_data: Dict = None) -> Dict[str, Any]:
         """
         构建包含所有因子依赖的增强数据字典
 
@@ -1169,6 +1177,7 @@ class AShareTradingAgentsSystem:
             symbol: 股票代码
             data: 股票数据DataFrame
             intraday_data: 5分钟K线数据（可选）
+            fundamental_data: 基本面数据字典（可选）
 
         Returns:
             增强的数据字典，包含：
@@ -1179,6 +1188,7 @@ class AShareTradingAgentsSystem:
             - market_data: 市场基准数据（如果可用）
             - market_state: 市场状态（如果可用）
             - stock_beta: 股票Beta系数（如果可用）
+            - fundamental: 基本面数据（PE/PB/ROE/营收增长等）
         """
         # 基础数据字典
         symbol_data = {
@@ -1262,9 +1272,27 @@ class AShareTradingAgentsSystem:
             symbol_data['price_5min'] = None
             self.logger.debug(f"{symbol}: 5分钟数据不可用，多时间框架因子将降级到仅日线模式")
 
+        # === 基本面数据（新增） ===
+        if fundamental_data and isinstance(fundamental_data, dict):
+            # 验证至少有一些关键指标
+            has_data = any(fundamental_data.get(key) is not None
+                          for key in ['pe_ratio', 'pb_ratio', 'roe', 'revenue_yoy'])
+            if has_data:
+                symbol_data['fundamental'] = fundamental_data
+                self.logger.debug(f"{symbol}: 使用基本面数据（PE={fundamental_data.get('pe_ratio', 'N/A')}, "
+                                f"PB={fundamental_data.get('pb_ratio', 'N/A')}, ROE={fundamental_data.get('roe', 'N/A')}）")
+            else:
+                symbol_data['fundamental'] = {}
+                self.logger.debug(f"{symbol}: 基本面数据为空或无有效指标")
+        else:
+            symbol_data['fundamental'] = {}
+            self.logger.debug(f"{symbol}: 基本面数据不可用，基本面因子将不参与计算")
+
         return symbol_data
 
-    def _ai_factor_analysis(self, symbol: str, data: pd.DataFrame, indicators: Dict, intraday_data: pd.DataFrame = None) -> Optional[Dict]:
+    def _ai_factor_analysis(self, symbol: str, data: pd.DataFrame, indicators: Dict,
+                           intraday_data: pd.DataFrame = None,
+                           fundamental_data: Dict = None) -> Optional[Dict]:
         """
         AI因子分析
 
@@ -1273,6 +1301,7 @@ class AShareTradingAgentsSystem:
             data: 股票数据
             indicators: 技术指标数据
             intraday_data: 5分钟K线数据（可选）
+            fundamental_data: 基本面数据字典（可选）
 
         Returns:
             AI因子分析结果
@@ -1281,8 +1310,8 @@ class AShareTradingAgentsSystem:
             if not self.ai_factor_enabled or not self.factor_manager:
                 return None
 
-            # 【改进】使用增强数据字典（包含市场数据、Beta、5分钟数据等）
-            symbol_data = self._build_enhanced_data_dict(symbol, data, intraday_data)
+            # 【改进】使用增强数据字典（包含市场数据、Beta、5分钟数据、基本面数据等）
+            symbol_data = self._build_enhanced_data_dict(symbol, data, intraday_data, fundamental_data)
             
             # 【新方法】使用加权因子信号（自动IC评估）
             # 这个方法会：
