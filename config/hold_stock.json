@@ -4,13 +4,6 @@
   "last_updated": "2026-01-19",
   "hold_stocks": [
     {
-      "symbol": "002319.SH",
-      "name": "乐通股份",
-      "purchase_date": "2026-01-19",
-      "cost": 12.71,
-      "buy_flag": false
-    },
-    {
       "symbol": "603122.SH",
       "name": "合富中国",
       "purchase_date": "2026-01-19",
@@ -20,16 +13,16 @@
     {
       "symbol": "000547.SZ",
       "name": "航天发展",
-      "purchase_date": "2026-01-19",
-      "cost": 30.01,
-      "buy_flag": false
+      "purchase_date": "2026-01-22",
+      "cost": 26.965,
+      "buy_flag": true
     },
     {
       "symbol": "002361.SZ",
       "name": "神剑股份",
       "purchase_date": "2025-12-31",
       "cost": 13.21,
-      "buy_flag": true
+      "buy_flag": false
     },
     {
       "symbol": "002413.SZ",
@@ -78,14 +71,14 @@
       "name": "多氟多",
       "purchase_date": "2026-01-19",
       "cost": 32.39,
-      "buy_flag": true
+      "buy_flag": false
     },
     {
       "symbol": "601106.SH",
       "name": "中国一重",
-      "purchase_date": "2026-01-19",
-      "cost": 5.15,
-      "buy_flag": false
+      "purchase_date": "2026-01-20",
+      "cost": 5.537,
+      "buy_flag": true
     },
     {
       "symbol": "301308.SZ",
@@ -142,6 +135,13 @@
       "purchase_date": "2026-01-19",
       "cost": 29.86,
       "buy_flag": false
+    },
+    {
+      "symbol": "002716.SZ",
+      "name": "湖南白银",
+      "purchase_date": "2026-01-22",
+      "cost": 13.193,
+      "buy_flag": true
     }
   ],
   "config": {

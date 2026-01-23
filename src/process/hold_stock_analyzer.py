@@ -63,8 +63,10 @@ class HoldStockAnalyzer:
             # 4. 确定收益状态
             profit_status = self._determine_profit_status(profit_loss_rate)
 
-            # 5. 计算止损价格和状态
-            stop_loss_info = self._calculate_stop_loss(cost, holding_days, current_price)
+            # 5. 计算止损价格和状态（传递symbol和purchase_date用于计算持仓期间最高价）
+            stop_loss_info = self._calculate_stop_loss(
+                cost, holding_days, current_price, symbol, purchase_date
+            )
 
             # 6. 获取系统分析建议（如果提供了existing_result则复用，否则调用系统）
             if existing_result:
@@ -105,11 +107,13 @@ class HoldStockAnalyzer:
                 "持仓收益率": profit_loss_rate,
                 "收益状态": profit_status,
 
-                # 止损分析
+                # 追踪止损分析
                 "止损规则": stop_loss_info['rule'],
                 "止损价格": stop_loss_info['price'],
                 "距离止损": stop_loss_info['distance'],
                 "预警状态": stop_loss_info['warning_status'],
+                "持仓最高价": stop_loss_info.get('highest_price', cost),
+                "最高价回撤": stop_loss_info.get('drawdown_from_peak', 'N/A'),
 
                 # 系统分析
                 "系统建议": system_analysis['recommendation'],
@@ -173,14 +177,21 @@ class HoldStockAnalyzer:
             return "持平"
 
     def _calculate_stop_loss(self, cost: float, holding_days: int,
-                            current_price: float) -> Dict:
+                            current_price: float, symbol: str = None,
+                            purchase_date: str = None) -> Dict:
         """
-        计算止损价格和状态
+        计算追踪止损价格和状态
+
+        新逻辑：
+        - 买入后跟踪最高价格
+        - 从最高价回撤8%时触发止损
 
         Args:
             cost: 成本价
             holding_days: 持仓天数
             current_price: 当前价格
+            symbol: 股票代码（用于获取历史数据）
+            purchase_date: 购买日期（用于计算持仓期间最高价）
 
         Returns:
             止损信息字典
@@ -192,62 +203,98 @@ class HoldStockAnalyzer:
                 'price': None,
                 'distance': 'N/A',
                 'warning_status': '正常',
-                'warning_level': 0
+                'warning_level': 0,
+                'highest_price': cost
             }
 
-        # 观察期(1-3天): 临时止损-3%
-        elif holding_days <= 3:
-            stop_loss_price = cost * 0.97
-            distance_pct = ((current_price - stop_loss_price) / stop_loss_price) * 100
+        # 计算持仓期间的最高价
+        highest_price = self._get_highest_price_since_purchase(
+            symbol, purchase_date, current_price, cost
+        )
 
-            # 判断预警状态
-            if current_price <= stop_loss_price:
-                warning_status = '触发止损'
-                warning_level = 3
-            elif distance_pct <= 1:
-                warning_status = '严重警告'
-                warning_level = 2
-            elif distance_pct <= 2:
-                warning_status = '警告'
-                warning_level = 1
-            else:
-                warning_status = '正常'
-                warning_level = 0
+        # 追踪止损规则：从最高价回撤8%
+        trailing_stop_rate = 0.08
+        stop_loss_price = highest_price * (1 - trailing_stop_rate)
 
-            return {
-                'rule': f'观察期(第{holding_days}天)-临时止损-3%',
-                'price': stop_loss_price,
-                'distance': f"{distance_pct:.2f}%",
-                'warning_status': warning_status,
-                'warning_level': warning_level
-            }
+        # 计算距离止损线的距离
+        distance_pct = ((current_price - stop_loss_price) / stop_loss_price) * 100
 
-        # 正式期(3天以上): 正式止损-5%
+        # 计算从最高价的回撤比例
+        drawdown_from_peak = ((current_price - highest_price) / highest_price) * 100
+
+        # 判断预警状态
+        if current_price <= stop_loss_price:
+            warning_status = '触发追踪止损'
+            warning_level = 3
+        elif distance_pct <= 1:
+            warning_status = '严重警告'
+            warning_level = 2
+        elif distance_pct <= 2:
+            warning_status = '警告'
+            warning_level = 1
         else:
-            stop_loss_price = cost * 0.95
-            distance_pct = ((current_price - stop_loss_price) / stop_loss_price) * 100
+            warning_status = '正常'
+            warning_level = 0
 
-            # 判断预警状态
-            if current_price <= stop_loss_price:
-                warning_status = '触发止损'
-                warning_level = 3
-            elif distance_pct <= 1:
-                warning_status = '严重警告'
-                warning_level = 2
-            elif distance_pct <= 2:
-                warning_status = '警告'
-                warning_level = 1
-            else:
-                warning_status = '正常'
-                warning_level = 0
+        return {
+            'rule': f'追踪止损(持仓{holding_days}天)-最高价回撤8%',
+            'price': stop_loss_price,
+            'distance': f"{distance_pct:.2f}%",
+            'warning_status': warning_status,
+            'warning_level': warning_level,
+            'highest_price': highest_price,
+            'drawdown_from_peak': f"{drawdown_from_peak:.2f}%"
+        }
 
-            return {
-                'rule': f'正式期(第{holding_days}天)-正式止损-5%',
-                'price': stop_loss_price,
-                'distance': f"{distance_pct:.2f}%",
-                'warning_status': warning_status,
-                'warning_level': warning_level
-            }
+    def _get_highest_price_since_purchase(self, symbol: str, purchase_date: str,
+                                         current_price: float, cost: float) -> float:
+        """
+        获取从购买日期到现在的最高价
+
+        Args:
+            symbol: 股票代码
+            purchase_date: 购买日期
+            current_price: 当前价格
+            cost: 成本价
+
+        Returns:
+            最高价格
+        """
+        try:
+            if not symbol or not purchase_date or purchase_date == '未知':
+                # 如果没有历史数据，使用当前价格和成本价的较大值
+                return max(current_price, cost)
+
+            if not self.system or not hasattr(self.system, 'data_provider'):
+                return max(current_price, cost)
+
+            # 获取从购买日期到现在的历史数据
+            from datetime import datetime
+            start_date = purchase_date
+            end_date = datetime.now().strftime('%Y-%m-%d')
+
+            # 获取历史数据
+            data, _, _, _, _, _ = self.system.data_provider.get_stock_data(
+                symbol, start_date=start_date, end_date=end_date
+            )
+
+            if data is None or data.empty:
+                return max(current_price, cost)
+
+            # 计算最高价
+            highest_price = data['High'].max()
+
+            # 确保最高价不低于成本价和当前价格
+            highest_price = max(highest_price, current_price, cost)
+
+            self.logger.debug(f"{symbol} 持仓期间最高价: {highest_price:.2f}, 当前价: {current_price:.2f}")
+
+            return highest_price
+
+        except Exception as e:
+            self.logger.warning(f"获取最高价失败 {symbol}: {e}")
+            # 发生错误时，使用当前价格和成本价的较大值
+            return max(current_price, cost)
 
     def _get_system_analysis(self, symbol: str, name: str) -> Dict:
         """获取系统分析建议"""
@@ -279,11 +326,11 @@ class HoldStockAnalyzer:
     def _generate_action_advice(self, profit_rate: float, stop_loss_info: Dict,
                                system_analysis: Dict, holding_days: int) -> Dict:
         """
-        生成综合操作建议
+        生成综合操作建议（支持追踪止损）
 
         Args:
             profit_rate: 收益率（百分比）
-            stop_loss_info: 止损信息
+            stop_loss_info: 止损信息（包含追踪止损相关字段）
             system_analysis: 系统分析
             holding_days: 持仓天数
 
@@ -302,19 +349,23 @@ class HoldStockAnalyzer:
             system_confidence = 0
 
         warning_level = stop_loss_info.get('warning_level', 0)
+        highest_price = stop_loss_info.get('highest_price', 0)
+        drawdown_from_peak = stop_loss_info.get('drawdown_from_peak', 'N/A')
 
-        # 【最高优先级】触发止损
+        # 【最高优先级】触发追踪止损
         if warning_level == 3:
-            action = "强烈卖出-触发止损"
-            reasons.append(f"当前价格已触及止损线{stop_loss_info['price']:.2f}元")
+            action = "强烈卖出-触发追踪止损"
+            reasons.append(f"从最高价{highest_price:.2f}元回撤{drawdown_from_peak}")
+            reasons.append(f"当前价格已触及追踪止损线{stop_loss_info['price']:.2f}元")
             reasons.append("风险控制要求立即卖出")
-            risk_warning = "⚠️ 已触发止损，建议立即执行卖出操作"
+            risk_warning = "⚠️ 已触发追踪止损，建议立即执行卖出操作"
             next_action = "立即挂单卖出"
 
         # 【次高优先级】严重警告 + 系统建议卖出
         elif warning_level == 2 or (warning_level == 1 and system_action == '卖出' and system_confidence >= 60):
             action = "减仓-风险警告"
-            reasons.append(f"接近止损价{stop_loss_info['price']:.2f}元，距离{stop_loss_info['distance']}")
+            reasons.append(f"接近追踪止损价{stop_loss_info['price']:.2f}元，距离{stop_loss_info['distance']}")
+            reasons.append(f"持仓最高价{highest_price:.2f}元，当前回撤{drawdown_from_peak}")
             if system_action == '卖出':
                 reasons.append(f"系统建议卖出，信心度{system_analysis['confidence']}")
             reasons.append(f"当前收益率{profit_rate:+.2f}%")
@@ -334,13 +385,14 @@ class HoldStockAnalyzer:
                 reasons.append(f"购买{holding_days}天，建议观察")
                 reasons.append(f"当前收益率{profit_rate:+.2f}%")
                 reasons.append(f"系统建议{system_action}，信心度{system_analysis['confidence']}")
-                risk_warning = f"处于观察期，{'满3天后' if holding_days < 3 else ''}设置正式止损"
+                risk_warning = f"处于观察期，追踪止损保护中"
                 next_action = f"继续观察{'至第3天' if holding_days < 3 else '，明日关注开盘'}"
 
         # 大幅盈利 - 考虑止盈
         elif profit_rate >= 30:
             action = "全部止盈-目标达成"
             reasons.append(f"盈利{profit_rate:.2f}%，达到止盈目标")
+            reasons.append(f"持仓最高价{highest_price:.2f}元")
             reasons.append("建议全部卖出锁定利润")
             risk_warning = "大幅盈利，建议及时止盈"
             next_action = "分批卖出或全部止盈"
@@ -348,6 +400,7 @@ class HoldStockAnalyzer:
         elif profit_rate >= 15:
             action = "部分止盈-获利了结"
             reasons.append(f"盈利{profit_rate:.2f}%，建议部分止盈")
+            reasons.append(f"持仓最高价{highest_price:.2f}元，当前回撤{drawdown_from_peak}")
             reasons.append("可减仓30-50%锁定部分利润")
             if system_action == '卖出':
                 reasons.append(f"系统也建议卖出，信心度{system_analysis['confidence']}")
@@ -360,8 +413,9 @@ class HoldStockAnalyzer:
             reasons.append(f"当前盈利{profit_rate:.2f}%，状态良好")
             reasons.append(f"系统强烈建议买入，信心度{system_analysis['confidence']}")
             reasons.append("技术面或基本面出现买入信号")
+            reasons.append(f"追踪止损价{stop_loss_info['price']:.2f}元保护中")
             risk_warning = "有加仓机会，但需控制仓位"
-            next_action = "可考虑加仓10-20%，设好止损"
+            next_action = "可考虑加仓10-20%，追踪止损自动保护"
 
         # 正常持有
         elif -3 <= profit_rate <= 15:
@@ -369,26 +423,29 @@ class HoldStockAnalyzer:
             reasons.append(f"收益率{profit_rate:+.2f}%，在正常范围")
             reasons.append(f"系统建议{system_action}，信心度{system_analysis['confidence']}")
             if stop_loss_info['price']:
-                reasons.append(f"止损价{stop_loss_info['price']:.2f}元，距离{stop_loss_info['distance']}")
+                reasons.append(f"追踪止损价{stop_loss_info['price']:.2f}元，距离{stop_loss_info['distance']}")
+            if highest_price > 0:
+                reasons.append(f"持仓最高价{highest_price:.2f}元")
             risk_warning = "状态正常，继续持有"
-            next_action = "保持观察，关注止损线"
+            next_action = "保持观察，追踪止损自动保护"
 
         # 轻度亏损
         elif -5 <= profit_rate < -3:
             action = "密切观察-轻度亏损"
             reasons.append(f"亏损{abs(profit_rate):.2f}%")
-            reasons.append(f"距止损线{stop_loss_info['distance']}")
+            reasons.append(f"距追踪止损线{stop_loss_info['distance']}")
             reasons.append(f"系统建议{system_action}")
             risk_warning = "⚠️ 出现亏损，需密切关注"
-            next_action = "严格设置止损单，防止进一步亏损"
+            next_action = "严格观察追踪止损线，防止进一步亏损"
 
         # 严重亏损但未触发止损
         else:
             action = "考虑减仓-亏损严重"
             reasons.append(f"亏损{abs(profit_rate):.2f}%")
-            reasons.append("建议考虑减仓或止损")
-            risk_warning = "⚠️ 亏损较大，建议及时止损"
-            next_action = "评估是否继续持有，或执行止损"
+            reasons.append(f"距追踪止损线{stop_loss_info['distance']}")
+            reasons.append("建议考虑减仓或等待止损")
+            risk_warning = "⚠️ 亏损较大，追踪止损会自动触发"
+            next_action = "评估是否手动止损，或等待追踪止损触发"
 
         return {
             'action': action,

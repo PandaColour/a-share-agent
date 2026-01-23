@@ -25,18 +25,18 @@
     "vp_corr_34d": 0.0
   },
   "disabled": [
-    "volatility_90d",
-    "vp_corr_42d",
+    "profit_quality",
+    "profitability_roe",
     "vp_corr_22d",
     "growth_revenue",
-    "financial_health",
-    "vp_corr_34d",
-    "value_pe",
-    "price_prediction_14d",
-    "profitability_roe",
-    "profit_quality",
+    "vp_corr_42d",
     "vp_corr_35d",
-    "value_pb"
+    "volatility_90d",
+    "financial_health",
+    "price_prediction_14d",
+    "value_pe",
+    "value_pb",
+    "vp_corr_34d"
   ],
-  "last_update": "2026-01-22 09:11:38"
+  "last_update": "2026-01-23 15:19:22"
 }

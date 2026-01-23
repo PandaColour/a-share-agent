@@ -245,7 +245,7 @@ class HistoricalBacktestRunner:
 
     def _get_trading_dates(self, start_date: str, end_date: str) -> List[pd.Timestamp]:
         """
-        生成交易日列表（工作日）
+        生成交易日列表（使用TradingCalendar）
 
         Args:
             start_date: 开始日期
@@ -254,9 +254,23 @@ class HistoricalBacktestRunner:
         Returns:
             交易日时间戳列表
         """
+        from src.utils.trading_calendar import trading_calendar
+
         all_dates = pd.date_range(start=start_date, end=end_date, freq='D')
-        # 过滤周末（周一=0, 周日=6）
-        trading_dates = [d for d in all_dates if d.weekday() < 5]
+
+        # 使用TradingCalendar过滤交易日（自动排除周末和节假日）
+        trading_dates = []
+        filtered_count = 0
+
+        for date in all_dates:
+            if trading_calendar.is_trading_day(date):
+                trading_dates.append(date)
+            else:
+                filtered_count += 1
+
+        if filtered_count > 0:
+            logger.info(f"✓ 基于TradingCalendar过滤交易日: 过滤了{filtered_count}个非交易日（周末+节假日）")
+
         return trading_dates
 
     def _generate_historical_recommendations(self,

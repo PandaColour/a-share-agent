@@ -92,6 +92,18 @@ class XiaohongshuContentGenerator:
             buy_recommendations = self._prepare_buy_recommendations(analysis_data, holdings_data)
             sell_warnings = self._prepare_sell_warnings(analysis_data, holdings_data)
 
+            # 2.1 从回测历史中提取最近买入的股票（补充推荐）
+            # 注意：使用15天而不是5天，因为回测数据更新频率可能不是每天
+            backtest_buys = self._extract_recent_buys_from_backtest(output_dir, days=15)
+            if backtest_buys:
+                # 合并回测推荐，并去重（基于symbol）
+                existing_symbols = {rec['symbol'] for rec in buy_recommendations}
+                for backtest_buy in backtest_buys:
+                    if backtest_buy['symbol'] not in existing_symbols:
+                        buy_recommendations.append(backtest_buy)
+                        existing_symbols.add(backtest_buy['symbol'])
+                logger.info(f"合并回测推荐后，买入推荐总数: {len(buy_recommendations)}")
+
             # 3. 构建 AI 输入
             ai_input = self._build_ai_input(holdings_list, buy_recommendations, sell_warnings)
 
@@ -259,6 +271,103 @@ class XiaohongshuContentGenerator:
         logger.info(f"准备卖出预警: {len(sell_list)} 只股票")
         return sell_list
 
+    def _extract_recent_buys_from_backtest(self, output_dir: str, days: int = 5) -> List[Dict]:
+        """
+        从回测交易历史中提取最近N天内的买入股票
+
+        逻辑：
+        1. 找到每个股票最后一个买入记录
+        2. 检查该买入之后是否有策略卖出（排除强制平仓）
+        3. 如果没有策略卖出且买入在最近N天内，则加入推荐列表
+
+        Args:
+            output_dir: 输出目录路径
+            days: 天数范围，默认为5天
+
+        Returns:
+            提取的股票列表
+        """
+        try:
+            # 检查文件是否存在
+            backtest_file = Path(output_dir) / "backtest_trade_history.json"
+            if not backtest_file.exists():
+                logger.debug(f"回测交易历史文件不存在: {backtest_file}")
+                return []
+
+            # 读取JSON文件
+            with open(backtest_file, 'r', encoding='utf-8') as f:
+                trade_history = json.load(f)
+
+            if not trade_history:
+                logger.debug("回测交易历史为空")
+                return []
+
+            # 计算截止日期（最近N天）
+            today = datetime.now()
+            cutoff_date = (today - pd.Timedelta(days=days)).strftime('%Y-%m-%d')
+
+            # 按symbol分组交易记录
+            symbol_trades = {}
+            for record in trade_history:
+                symbol = record.get('symbol', '')
+                if symbol:
+                    if symbol not in symbol_trades:
+                        symbol_trades[symbol] = []
+                    symbol_trades[symbol].append(record)
+
+            # 提取满足条件的股票
+            recent_buys = []
+            for symbol, trades in symbol_trades.items():
+                # 按日期排序
+                sorted_trades = sorted(trades, key=lambda x: x.get('date', ''))
+
+                if not sorted_trades:
+                    continue
+
+                # 找到最后一个买入记录
+                last_buy_idx = None
+                for i in range(len(sorted_trades) - 1, -1, -1):
+                    if sorted_trades[i].get('action') == '买入':
+                        last_buy_idx = i
+                        break
+
+                if last_buy_idx is None:
+                    continue
+
+                last_buy = sorted_trades[last_buy_idx]
+
+                # 检查该买入之后是否有策略卖出（排除强制平仓）
+                has_strategy_sell = False
+                for i in range(last_buy_idx + 1, len(sorted_trades)):
+                    trade = sorted_trades[i]
+                    if (trade.get('action') == '卖出' and
+                        trade.get('reason') == '主动卖出'):
+                        has_strategy_sell = True
+                        break
+
+                # 如果没有策略卖出，且买入在最近N天内
+                if (not has_strategy_sell and
+                    last_buy.get('date', '') >= cutoff_date):
+                    recent_buys.append({
+                        'symbol': last_buy['symbol'],
+                        'name': last_buy.get('name', last_buy['symbol']),
+                        'date': last_buy['date'],
+                        'confidence': '系统回测',
+                        'reason': f"回测在{last_buy['date']}检测到买入信号",
+                        'news': '',
+                        'from_backtest': True
+                    })
+
+            logger.info(f"从回测历史中提取到 {len(recent_buys)} 只最近{days}天买入的股票（排除已策略卖出）")
+            return recent_buys
+
+        except json.JSONDecodeError as e:
+            logger.warning(f"回测交易历史JSON格式错误: {e}")
+            return []
+        except Exception as e:
+            logger.warning(f"提取回测买入股票失败: {e}")
+            return []
+
     def _build_ai_input(
         self,
         holdings_list: List[Dict],
@@ -266,11 +375,33 @@ class XiaohongshuContentGenerator:
         sell_warnings: List[Dict]
     ) -> str:
         """构建 AI 输入"""
+        # 获取交易日信息（包含日期、星期几、本周第几个交易日等）
+        try:
+            from src.utils.trading_calendar import get_current_trading_day_info
+            trading_day_info = get_current_trading_day_info()
+        except Exception as e:
+            logger.warning(f"获取交易日信息失败: {e}，使用默认日期")
+            trading_day_info = {
+                'current_date': datetime.now().strftime('%Y年%m月%d日'),
+                'weekday_cn': '未知',
+                'week_trading_day_num': 0,
+                'is_trading_day': True,
+                'holiday_info': {'is_holiday_week': False},
+                'summary_text': ''
+            }
+
         data_json = {
             'holdings_data': holdings_list,
             'buy_recommendations': buy_recommendations,
             'sell_warnings': sell_warnings,
-            'analysis_date': datetime.now().strftime('%Y年%m月%d日')
+            'analysis_date': trading_day_info['current_date'],
+            'trading_day_info': {
+                'weekday': trading_day_info['weekday_cn'],
+                'week_trading_day_num': trading_day_info['week_trading_day_num'],
+                'is_trading_day': trading_day_info['is_trading_day'],
+                'holiday_info': trading_day_info['holiday_info'],
+                'date_summary': trading_day_info['summary_text']
+            }
         }
 
         ai_input = f"{self.prompt_template}\n\n## 输入数据\n\n```json\n{json.dumps(data_json, ensure_ascii=False, indent=2)}\n```\n\n请生成小红书文案："

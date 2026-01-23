@@ -70,6 +70,32 @@ class TradingCalendar:
                 # 国庆节: 2025年10月1日-10月8日
                 datetime(2025, 10, 1), datetime(2025, 10, 2), datetime(2025, 10, 3), datetime(2025, 10, 4),
                 datetime(2025, 10, 5), datetime(2025, 10, 6), datetime(2025, 10, 7), datetime(2025, 10, 8),
+            },
+
+            # 2026年节假日
+            2026: {
+                # 元旦: 2026年1月1日
+                datetime(2026, 1, 1),
+
+                # 春节: 2026年2月11日-2月17日
+                datetime(2026, 2, 11), datetime(2026, 2, 12), datetime(2026, 2, 13), datetime(2026, 2, 14),
+                datetime(2026, 2, 15), datetime(2026, 2, 16), datetime(2026, 2, 17),
+
+                # 清明节: 2026年4月4日-4月6日
+                datetime(2026, 4, 4), datetime(2026, 4, 5), datetime(2026, 4, 6),
+
+                # 劳动节: 2026年5月1日-5月5日
+                datetime(2026, 5, 1), datetime(2026, 5, 2), datetime(2026, 5, 3), datetime(2026, 5, 4), datetime(2026, 5, 5),
+
+                # 端午节: 2026年6月9日-6月11日
+                datetime(2026, 6, 9), datetime(2026, 6, 10), datetime(2026, 6, 11),
+
+                # 中秋节: 2026年9月15日-9月17日
+                datetime(2026, 9, 15), datetime(2026, 9, 16), datetime(2026, 9, 17),
+
+                # 国庆节: 2026年10月1日-10月8日
+                datetime(2026, 10, 1), datetime(2026, 10, 2), datetime(2026, 10, 3), datetime(2026, 10, 4),
+                datetime(2026, 10, 5), datetime(2026, 10, 6), datetime(2026, 10, 7), datetime(2026, 10, 8),
             }
         }
 
@@ -423,6 +449,194 @@ class TradingCalendar:
             'risk_summary': risk_summary
         }
 
+    def get_current_trading_day_info(self, date: datetime = None) -> Dict:
+        """
+        获取当前交易日详细信息（用于小红书文案生成）
+
+        包括：当前日期、星期几、本周第几个交易日、是否为假期后第一周等
+
+        Args:
+            date: 日期（默认为当前日期）
+
+        Returns:
+            包含详细信息的字典
+        """
+        if date is None:
+            date = datetime.now()
+
+        # 基础日期信息
+        date_only = date.replace(hour=0, minute=0, second=0, microsecond=0)
+        weekday_name = date.strftime('%A')  # 英文星期名
+        weekday_cn = self._get_chinese_weekday(date.weekday())  # 中文星期名
+        date_str = date.strftime('%Y年%m月%d日')
+
+        # 检查是否为交易日
+        is_trading = self.is_trading_day(date)
+
+        # 计算本周第几个交易日
+        week_trading_day_num = self._get_week_trading_day_number(date)
+
+        # 检查是否为假期后第一周及假期名称
+        holiday_info = self._check_holiday_week(date)
+
+        return {
+            'current_date': date_str,
+            'weekday_cn': weekday_cn,
+            'weekday_num': date.weekday(),  # 0=周一, 6=周日
+            'is_trading_day': is_trading,
+            'week_trading_day_num': week_trading_day_num,
+            'holiday_info': holiday_info,
+            'summary_text': self._generate_date_summary_text(
+                date_str, weekday_cn, week_trading_day_num, holiday_info
+            )
+        }
+
+    def _get_chinese_weekday(self, weekday_num: int) -> str:
+        """将星期数转换为中文"""
+        weekday_map = {
+            0: '周一',
+            1: '周二',
+            2: '周三',
+            3: '周四',
+            4: '周五',
+            5: '周六',
+            6: '周日'
+        }
+        return weekday_map.get(weekday_num, '未知')
+
+    def _get_week_trading_day_number(self, date: datetime) -> int:
+        """
+        获取本周第几个交易日
+
+        Args:
+            date: 日期
+
+        Returns:
+            本周第几个交易日（1-5）
+        """
+        # 获取本周一（周一=0）
+        monday = date - timedelta(days=date.weekday())
+
+        # 计算从周一到当前日期有多少个交易日
+        trading_days = 0
+        current = monday
+
+        while current <= date:
+            if self.is_trading_day(current):
+                trading_days += 1
+            current += timedelta(days=1)
+
+        return trading_days
+
+    def _check_holiday_week(self, date: datetime) -> Dict:
+        """
+        检查是否为假期后的第一周
+
+        Args:
+            date: 日期
+
+        Returns:
+            包含假期信息的字典
+        """
+        # 获取本周一
+        monday = date - timedelta(days=date.weekday())
+        monday_only = monday.replace(hour=0, minute=0, second=0, microsecond=0)
+
+        # 假期名称映射
+        holiday_ranges = {
+            '元旦': [
+                (datetime(2025, 1, 1), datetime(2025, 1, 1)),
+                (datetime(2026, 1, 1), datetime(2026, 1, 1)),
+            ],
+            '春节': [
+                (datetime(2025, 1, 28), datetime(2025, 2, 3)),
+                (datetime(2026, 2, 11), datetime(2026, 2, 17)),
+            ],
+            '清明': [
+                (datetime(2025, 4, 5), datetime(2025, 4, 7)),
+                (datetime(2026, 4, 4), datetime(2026, 4, 6)),
+            ],
+            '劳动': [
+                (datetime(2025, 5, 1), datetime(2025, 5, 5)),
+                (datetime(2026, 5, 1), datetime(2026, 5, 5)),
+            ],
+            '端午': [
+                (datetime(2025, 5, 31), datetime(2025, 6, 2)),
+                (datetime(2026, 6, 9), datetime(2026, 6, 11)),
+            ],
+            '中秋': [
+                (datetime(2025, 10, 6), datetime(2025, 10, 8)),
+                (datetime(2026, 9, 15), datetime(2026, 9, 17)),
+            ],
+            '国庆': [
+                (datetime(2025, 10, 1), datetime(2025, 10, 8)),
+                (datetime(2026, 10, 1), datetime(2026, 10, 8)),
+            ],
+        }
+
+        # 检查本周一是否在任何假期后的一周内
+        for holiday_name, ranges in holiday_ranges.items():
+            for start_date, end_date in ranges:
+                # 计算假期结束后的下一个交易日
+                next_trading_day = end_date + timedelta(days=1)
+                for _ in range(7):
+                    if self.is_trading_day(next_trading_day):
+                        break
+                    next_trading_day += timedelta(days=1)
+
+                # 获取该交易日所在周的周一
+                holiday_week_monday = next_trading_day - timedelta(days=next_trading_day.weekday())
+
+                # 检查本周一是否等于假期后第一周的周一
+                if monday_only == holiday_week_monday:
+                    # 计算这是假期后第几个交易日
+                    days_after_holiday = (date - end_date).days
+                    trading_days_after = 0
+                    check_date = end_date + timedelta(days=1)
+
+                    while check_date <= date:
+                        if self.is_trading_day(check_date):
+                            trading_days_after += 1
+                        check_date += timedelta(days=1)
+
+                    return {
+                        'is_holiday_week': True,
+                        'holiday_name': holiday_name,
+                        'trading_days_after_holiday': trading_days_after,
+                        'days_after_holiday': days_after_holiday
+                    }
+
+        # 不是假期后的第一周
+        return {
+            'is_holiday_week': False,
+            'holiday_name': None,
+            'trading_days_after_holiday': 0,
+            'days_after_holiday': 0
+        }
+
+    def _generate_date_summary_text(self, date_str: str, weekday_cn: str,
+                                    week_trading_day_num: int, holiday_info: Dict) -> str:
+        """
+        生成日期摘要文本（用于小红书文案）
+
+        Args:
+            date_str: 日期字符串（中文格式）
+            weekday_cn: 中文星期名
+            week_trading_day_num: 本周第几个交易日
+            holiday_info: 假期信息
+
+        Returns:
+            摘要文本
+        """
+        summary = f"{date_str}（{weekday_cn}），本周第{week_trading_day_num}个交易日"
+
+        if holiday_info['is_holiday_week'] and holiday_info['holiday_name']:
+            holiday_name = holiday_info['holiday_name']
+            trading_days = holiday_info['trading_days_after_holiday']
+            summary += f"，{holiday_name}假期后第{trading_days}个交易日"
+
+        return summary
+
 
 # 全局实例
 trading_calendar = TradingCalendar()
@@ -464,3 +678,8 @@ def calculate_position_metrics(cost_price: float,
 def get_position_summary(stocks: List[Dict]) -> Dict:
     """计算持仓汇总信息（快捷函数）"""
     return trading_calendar.get_position_summary(stocks)
+
+
+def get_current_trading_day_info(date: datetime = None) -> Dict:
+    """获取当前交易日详细信息（快捷函数）"""
+    return trading_calendar.get_current_trading_day_info(date)

@@ -67,7 +67,8 @@
       "Bash(PYTHONIOENCODING=utf-8 python:*)",
       "Bash(iconv:*)",
       "Bash(grep:*)",
-      "WebSearch"
+      "WebSearch",
+      "Bash(python3:*)"
     ],
     "deny": [],
     "ask": []

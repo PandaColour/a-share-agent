@@ -112,24 +112,29 @@ class AdvancedBacktestEngine:
             
             # 2. 重置回测状态
             self._reset_backtest_state()
-            
+
             # 3. 按时间排序推荐
             sorted_recommendations = sorted(
-                valid_recommendations, 
+                valid_recommendations,
                 key=lambda x: x.get('analysis_time', '')
             )
-            
+
             # 获取回测时间范围
             start_date, end_date = self._get_backtest_period(sorted_recommendations)
             all_dates = pd.date_range(start=start_date, end=end_date, freq='D')
-            trading_dates = [d for d in all_dates if d.weekday() < 5]  # 工作日
-            
+
+            # 使用TradingCalendar过滤交易日（自动排除周末和节假日）
+            from src.utils.trading_calendar import trading_calendar
+            trading_dates = [d for d in all_dates if trading_calendar.is_trading_day(d)]
+
+            logger.info(f"回测交易日: {len(trading_dates)}天 (过滤了{len(all_dates)-len(trading_dates)}个非交易日)")
+
             # 逐日执行回测
             for current_date in trading_dates:
                 self._process_trading_day(
                     current_date, sorted_recommendations, market_data
                 )
-            
+
             # 强制平仓所有持仓
             self._close_all_positions(trading_dates[-1], market_data)
             
@@ -231,64 +236,98 @@ class AdvancedBacktestEngine:
     
     def _execute_buy_signal(self, symbol: str, price: float, date: pd.Timestamp,
                           confidence: float, recommendation: Dict):
-        """执行买入信号"""
-        # 检查是否已有持仓
-        if symbol in self.positions:
-            # 记录持仓期间出现的重复买点
-            if 'missed_buy_signals' not in self.positions[symbol]:
-                self.positions[symbol]['missed_buy_signals'] = []
+        """
+        执行买入信号
 
-            self.positions[symbol]['missed_buy_signals'].append({
-                'date': date.strftime('%Y-%m-%d'),
-                'price': price,
-                'confidence': confidence,
-                'days_since_entry': (date - self.positions[symbol]['entry_date']).days
-            })
-
-            logger.info(f"⚠️ {symbol} 持仓期间出现重复买点 - 价格:{price:.2f}, 信心度:{confidence:.2%}, "
-                       f"持仓天数:{(date - self.positions[symbol]['entry_date']).days}天")
-            return
-        
+        新逻辑：
+        - 如果没有持仓，则新建仓位
+        - 如果已有持仓，则加仓并更新平均成本价和最高价
+        """
         # 计算仓位大小 (基于信心度调整)
         base_position_size = self.max_position_size * confidence
         portfolio_value = self._calculate_current_portfolio_value(date)
-        
+
         position_value = portfolio_value * base_position_size
         shares = int(position_value / price / 100) * 100  # A股最小交易单位100股
-        
+
         if shares < 100:  # 不足一手
             logger.debug(f"{symbol} 资金不足一手，跳过买入")
             return
-        
+
         # 计算实际交易金额和成本
         actual_value = shares * price
         transaction_cost = max(
-            actual_value * self.transaction_cost_rate, 
+            actual_value * self.transaction_cost_rate,
             self.min_transaction_cost
         )
         total_cost = actual_value + transaction_cost
-        
+
         if total_cost > self.current_capital:
             logger.debug(f"{symbol} 资金不足，跳过买入")
             return
-        
-        # 执行买入
+
+        # 检查是否已有持仓 - 如果有则加仓
+        if symbol in self.positions:
+            old_position = self.positions[symbol]
+            old_shares = old_position['shares']
+            old_entry_price = old_position['entry_price']
+            old_cost = old_shares * old_entry_price + old_position['transaction_cost']
+
+            # 执行加仓
+            self.current_capital -= total_cost
+
+            # 计算新的平均成本价
+            new_shares = old_shares + shares
+            new_total_cost = old_cost + total_cost
+            new_avg_price = (old_cost + actual_value) / new_shares
+
+            # 更新持仓信息
+            old_position['shares'] = new_shares
+            old_position['entry_price'] = new_avg_price  # 更新为平均成本价
+            old_position['transaction_cost'] += transaction_cost
+            old_position['position_value'] = new_shares * price
+
+            # 如果加仓价格高于最高价，更新最高价
+            if price > old_position.get('highest_price', old_entry_price):
+                old_position['highest_price'] = price
+
+            # 记录加仓交易
+            trade = {
+                'date': date.strftime('%Y-%m-%d'),
+                'symbol': symbol,
+                'action': '加仓',
+                'shares': shares,
+                'price': price,
+                'value': actual_value,
+                'transaction_cost': transaction_cost,
+                'reason': f'策略买入信号-加仓(新持仓{new_shares}股,均价{new_avg_price:.2f})',
+                'total_shares': new_shares,
+                'avg_price': new_avg_price
+            }
+            self.trade_history.append(trade)
+
+            logger.info(f"{date.strftime('%Y-%m-%d')} 加仓 {symbol} {shares}股 @{price:.2f}元 "
+                       f"(总持仓{new_shares}股, 均价{new_avg_price:.2f}元)")
+            return
+
+        # 新建仓位（首次买入）
         self.current_capital -= total_cost
-        
+
         position = {
             'symbol': symbol,
             'shares': shares,
             'entry_price': price,
             'entry_date': date,
             'current_price': price,
+            'highest_price': price,  # 追踪最高价，用于追踪止损
             'position_value': actual_value,
             'transaction_cost': transaction_cost,
             'confidence': confidence,
             'recommendation': recommendation
         }
-        
+
         self.positions[symbol] = position
-        
+
         # 记录交易
         trade = {
             'date': date.strftime('%Y-%m-%d'),
@@ -301,7 +340,7 @@ class AdvancedBacktestEngine:
             'reason': '策略买入信号'
         }
         self.trade_history.append(trade)
-        
+
         logger.info(f"{date.strftime('%Y-%m-%d')} 买入 {symbol} {shares}股 @{price:.2f}元")
     
     def _execute_sell_signal(self, symbol: str, price: float, 
@@ -355,9 +394,9 @@ class AdvancedBacktestEngine:
                    f"收益率: {return_rate:.2%}")
     
     def _update_positions(self, date: pd.Timestamp, market_data: Dict[str, pd.DataFrame]):
-        """更新持仓价格"""
+        """更新持仓价格和最高价"""
         date_str = date.strftime('%Y-%m-%d')
-        
+
         for symbol, position in self.positions.items():
             if symbol in market_data:
                 stock_data = market_data[symbol]
@@ -367,25 +406,39 @@ class AdvancedBacktestEngine:
                         current_price = daily_data.iloc[0]['Close']
                         position['current_price'] = current_price
                         position['position_value'] = position['shares'] * current_price
+
+                        # 更新最高价（追踪止损用）
+                        if 'highest_price' not in position:
+                            position['highest_price'] = position['entry_price']
+
+                        if current_price > position['highest_price']:
+                            old_highest = position['highest_price']
+                            position['highest_price'] = current_price
+                            logger.debug(f"{symbol} 更新最高价: {old_highest:.2f} -> {current_price:.2f}")
     
     def _check_stop_conditions(self, date: pd.Timestamp, market_data: Dict[str, pd.DataFrame]):
-        """检查止损止盈条件"""
+        """
+        检查追踪止损条件
+
+        新逻辑：
+        - 追踪止损：从最高价下跌8%时卖出
+        - 如果遇到卖出信号也会触发清仓（在_process_recommendation中处理）
+        """
         symbols_to_sell = []
-        
+
         for symbol, position in self.positions.items():
-            entry_price = position['entry_price']
+            highest_price = position.get('highest_price', position['entry_price'])
             current_price = position['current_price']
-            
-            return_rate = (current_price - entry_price) / entry_price
-            
-            # 检查止损
-            if return_rate <= self.stop_loss_rate:
-                symbols_to_sell.append((symbol, "止损"))
-            
-            # 检查止盈
-            elif return_rate >= self.take_profit_rate:
-                symbols_to_sell.append((symbol, "止盈"))
-        
+
+            # 计算从最高价的回撤比例
+            drawdown_from_peak = (current_price - highest_price) / highest_price
+
+            # 追踪止损：从最高价回撤8%
+            trailing_stop_rate = -0.08
+            if drawdown_from_peak <= trailing_stop_rate:
+                symbols_to_sell.append((symbol, f"追踪止损(最高价{highest_price:.2f}回撤{abs(drawdown_from_peak):.1%})"))
+                logger.info(f"⚠️ {symbol} 触发追踪止损: 最高价{highest_price:.2f}, 当前价{current_price:.2f}, 回撤{abs(drawdown_from_peak):.1%}")
+
         # 执行卖出
         for symbol, reason in symbols_to_sell:
             self._execute_sell_signal(symbol, self.positions[symbol]['current_price'], date, reason)
