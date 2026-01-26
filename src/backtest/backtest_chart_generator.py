@@ -206,13 +206,24 @@ def _generate_mplfinance_chart(symbol: str, stock_name: str, data, trades: List[
     buy_prices = []
     add_position_dates = []
     add_position_prices = []
-    sell_dates = []
-    sell_prices = []
+
+    # 分类收集不同类型的卖点
+    active_sell_dates = []
+    active_sell_prices = []
+    trailing_stop_dates = []
+    trailing_stop_prices = []
+    expired_sell_dates = []
+    expired_sell_prices = []
+    forced_close_dates = []
+    forced_close_prices = []
+    other_sell_dates = []
+    other_sell_prices = []
 
     for trade in trades:
         trade_date = pd.to_datetime(trade.get('date', ''))
         trade_price = trade.get('price', 0)
         action = trade.get('action', '')
+        reason = trade.get('reason', '')
 
         if action == '买入':
             # 首次买入：绿色实心向上三角形
@@ -223,14 +234,32 @@ def _generate_mplfinance_chart(symbol: str, stock_name: str, data, trades: List[
             add_position_dates.append(trade_date)
             add_position_prices.append(trade_price)
         elif action == '卖出':
-            # 卖出：红色实心向下三角形
-            sell_dates.append(trade_date)
-            sell_prices.append(trade_price)
+            # 根据卖出原因分类
+            if reason == '主动卖出':
+                active_sell_dates.append(trade_date)
+                active_sell_prices.append(trade_price)
+            elif '追踪止损' in reason:
+                trailing_stop_dates.append(trade_date)
+                trailing_stop_prices.append(trade_price)
+            elif '超期持有' in reason:
+                expired_sell_dates.append(trade_date)
+                expired_sell_prices.append(trade_price)
+            elif '回测结束强制平仓' in reason:
+                forced_close_dates.append(trade_date)
+                forced_close_prices.append(trade_price)
+            else:
+                # 未知类型的卖出，归入其他类别
+                other_sell_dates.append(trade_date)
+                other_sell_prices.append(trade_price)
 
     # 创建买卖点Series
     buy_series = pd.Series(index=buy_dates, data=buy_prices)
     add_position_series = pd.Series(index=add_position_dates, data=add_position_prices)
-    sell_series = pd.Series(index=sell_dates, data=sell_prices)
+    active_sell_series = pd.Series(index=active_sell_dates, data=active_sell_prices)
+    trailing_stop_series = pd.Series(index=trailing_stop_dates, data=trailing_stop_prices)
+    expired_sell_series = pd.Series(index=expired_sell_dates, data=expired_sell_prices)
+    forced_close_series = pd.Series(index=forced_close_dates, data=forced_close_prices)
+    other_sell_series = pd.Series(index=other_sell_dates, data=other_sell_prices)
 
     # 准备附加图层
     apds = []
@@ -242,10 +271,28 @@ def _generate_mplfinance_chart(symbol: str, stock_name: str, data, trades: List[
         # 加仓：蓝色实心向上三角形
         apds.append(mpf.make_addplot(add_position_series, type='scatter', markersize=120,
                                      marker='^', color='blue', label='加仓'))
-    if not sell_series.empty:
-        # 卖出：红色实心向下三角形
-        apds.append(mpf.make_addplot(sell_series, type='scatter', markersize=120,
-                                     marker='v', color='red', label='卖出'))
+
+    # 不同类型的卖出标记
+    if not active_sell_series.empty:
+        # 主动卖出：红色实心向下三角形
+        apds.append(mpf.make_addplot(active_sell_series, type='scatter', markersize=120,
+                                     marker='v', color='red', label='主动卖出'))
+    if not trailing_stop_series.empty:
+        # 追踪止损：橙色实心向下三角形
+        apds.append(mpf.make_addplot(trailing_stop_series, type='scatter', markersize=120,
+                                     marker='v', color='orange', label='追踪止损'))
+    if not expired_sell_series.empty:
+        # 超期持有：紫色实心向下三角形
+        apds.append(mpf.make_addplot(expired_sell_series, type='scatter', markersize=120,
+                                     marker='v', color='purple', label='超期持有'))
+    if not forced_close_series.empty:
+        # 强制平仓：灰色实心向下三角形
+        apds.append(mpf.make_addplot(forced_close_series, type='scatter', markersize=120,
+                                     marker='v', color='gray', label='强制平仓'))
+    if not other_sell_series.empty:
+        # 其他卖出：深红色实心向下三角形（向后兼容）
+        apds.append(mpf.make_addplot(other_sell_series, type='scatter', markersize=120,
+                                     marker='v', color='darkred', label='其他卖出'))
 
     # 图表样式
     mc = mpf.make_marketcolors(up='red', down='green', edge='inherit',
@@ -302,6 +349,7 @@ def _generate_matplotlib_chart(symbol: str, stock_name: str, data, trades: List[
         trade_date = pd.to_datetime(trade.get('date', ''))
         trade_price = trade.get('price', 0)
         action = trade.get('action', '')
+        reason = trade.get('reason', '')
 
         if action == '买入':
             # 首次买入：绿色实心向上三角形
@@ -322,13 +370,44 @@ def _generate_matplotlib_chart(symbol: str, stock_name: str, data, trades: List[
                         ha='center', fontsize=10, color='blue', weight='bold')
 
         elif action == '卖出':
-            # 卖出：红色实心向下三角形
-            ax1.scatter(trade_date, trade_price, marker='v', color='red',
-                       s=250, zorder=5, edgecolors='darkred', linewidth=1.5,
-                       label='卖出' if '卖出' not in [t.get_label() for t in ax1.get_children()] else '')
-            ax1.annotate('卖', xy=(trade_date, trade_price),
+            # 根据卖出原因分类标记
+            if reason == '主动卖出':
+                # 主动卖出：红色实心向下三角形
+                color = 'red'
+                edge_color = 'darkred'
+                text = '卖'
+                label_text = '主动卖出'
+            elif '追踪止损' in reason:
+                # 追踪止损：橙色实心向下三角形
+                color = 'orange'
+                edge_color = 'darkorange'
+                text = '止'
+                label_text = '追踪止损'
+            elif '超期持有' in reason:
+                # 超期持有：紫色实心向下三角形
+                color = 'purple'
+                edge_color = 'darkviolet'
+                text = '期'
+                label_text = '超期持有'
+            elif '回测结束强制平仓' in reason:
+                # 强制平仓：灰色实心向下三角形
+                color = 'gray'
+                edge_color = 'darkgray'
+                text = '平'
+                label_text = '强制平仓'
+            else:
+                # 其他卖出：深红色实心向下三角形（向后兼容）
+                color = 'darkred'
+                edge_color = 'maroon'
+                text = '卖'
+                label_text = '其他卖出'
+
+            ax1.scatter(trade_date, trade_price, marker='v', color=color,
+                       s=250, zorder=5, edgecolors=edge_color, linewidth=1.5,
+                       label=label_text if label_text not in [t.get_label() for t in ax1.get_children()] else '')
+            ax1.annotate(text, xy=(trade_date, trade_price),
                         xytext=(0, -18), textcoords='offset points',
-                        ha='center', fontsize=10, color='red', weight='bold')
+                        ha='center', fontsize=10, color=color, weight='bold')
 
     # 设置标题和标签
     title_suffix = "（完整历史）" if chart_type == 'LONG' else "（回测期间+1月）"
