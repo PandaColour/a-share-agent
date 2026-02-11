@@ -163,24 +163,28 @@ class FactorManager:
             logger.error(f"计算因子失败 {factor_name}: {e}")
             return None
     
-    def calculate_all_factors(self, symbol: str, data: Dict[str, pd.DataFrame], 
-                            categories: List[str] = None) -> Dict[str, FactorValue]:
+    def calculate_all_factors(self, symbol: str, data: Dict[str, pd.DataFrame],
+                            categories: List[str] = None, **kwargs) -> Dict[str, FactorValue]:
         """计算所有因子或指定类别的因子"""
         results = {}
-        
+
+        # 添加factor_manager到kwargs（如果还没有）
+        if 'factor_manager' not in kwargs:
+            kwargs['factor_manager'] = self
+
         # 筛选要计算的因子
         factors_to_calc = {}
         for name, factor in self.factors.items():
             if categories is None or factor.category in categories:
                 factors_to_calc[name] = factor
-        
+
         # 并发计算因子
         with ThreadPoolExecutor(max_workers=4) as executor:
             future_to_name = {
-                executor.submit(self.calculate_factor, name, symbol, data): name
+                executor.submit(self.calculate_factor, name, symbol, data, **kwargs): name
                 for name in factors_to_calc.keys()
             }
-            
+
             for future in future_to_name:
                 factor_name = future_to_name[future]
                 try:
@@ -189,7 +193,7 @@ class FactorManager:
                         results[factor_name] = result
                 except Exception as e:
                     logger.error(f"并发计算因子失败 {factor_name}: {e}")
-        
+
         logger.info(f"计算因子完成 {symbol}: {len(results)}/{len(factors_to_calc)} 个因子")
         return results
     

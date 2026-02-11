@@ -28,6 +28,39 @@ class HoldStockAnalyzer:
         self.today = date.today()
         self.logger = logging.getLogger(__name__)
 
+    def _get_trailing_stop_drawdown(self) -> float:
+        """
+        获取追踪止损回撤阈值配置
+
+        Returns:
+            float: 追踪止损回撤阈值 (默认0.08，即8%)
+        """
+        if not self.config:
+            return 0.08  # 默认值
+
+        try:
+            # 从analysis_settings读取
+            analysis_risk = self.config.get_analysis_config().get('risk_management', {})
+            trailing_stop_drawdown = analysis_risk.get('trailing_stop_drawdown', None)
+
+            if trailing_stop_drawdown is not None:
+                # 验证范围 [0.01, 0.50]
+                if trailing_stop_drawdown < 0.01:
+                    self.logger.warning(f"追踪止损回撤阈值 {trailing_stop_drawdown:.1%} 过低，使用最小值 1%")
+                    return 0.01
+                if trailing_stop_drawdown > 0.50:
+                    self.logger.warning(f"追踪止损回撤阈值 {trailing_stop_drawdown:.1%} 过高，使用最大值 50%")
+                    return 0.50
+                return trailing_stop_drawdown
+
+            # 回退到默认值
+            self.logger.debug("未配置trailing_stop_drawdown，使用默认值 8%")
+            return 0.08
+
+        except Exception as e:
+            self.logger.warning(f"读取追踪止损配置失败: {e}，使用默认值 8%")
+            return 0.08
+
     def analyze_position(self, stock: Dict, existing_result: Dict = None) -> Dict:
         """
         分析单只持仓股票
@@ -212,8 +245,8 @@ class HoldStockAnalyzer:
             symbol, purchase_date, current_price, cost
         )
 
-        # 追踪止损规则：从最高价回撤8%
-        trailing_stop_rate = 0.08
+        # 追踪止损规则：从最高价回撤指定阈值(可配置)
+        trailing_stop_rate = self._get_trailing_stop_drawdown()
         stop_loss_price = highest_price * (1 - trailing_stop_rate)
 
         # 计算距离止损线的距离
@@ -237,7 +270,7 @@ class HoldStockAnalyzer:
             warning_level = 0
 
         return {
-            'rule': f'追踪止损(持仓{holding_days}天)-最高价回撤8%',
+            'rule': f'追踪止损(持仓{holding_days}天)-最高价回撤{trailing_stop_rate:.1%}',
             'price': stop_loss_price,
             'distance': f"{distance_pct:.2f}%",
             'warning_status': warning_status,

@@ -140,7 +140,7 @@ class XiaohongshuContentGenerator:
                 logger.info(f"加载持仓数据: {len(df)} 条记录")
                 return df
             else:
-                logger.warning(f"持仓数据文件不存在: {filepath}")
+                logger.warning("当前没有持仓")
                 return None
         except Exception as e:
             logger.error(f"加载持仓数据失败: {e}")

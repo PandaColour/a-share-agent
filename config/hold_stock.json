@@ -15,7 +15,7 @@
       "name": "航天发展",
       "purchase_date": "2026-01-22",
       "cost": 26.965,
-      "buy_flag": true
+      "buy_flag": false
     },
     {
       "symbol": "002361.SZ",
@@ -39,13 +39,6 @@
       "buy_flag": false
     },
     {
-      "symbol": "600151.SZ",
-      "name": "航天机电",
-      "purchase_date": "2026-01-19",
-      "cost": 17.08,
-      "buy_flag": false
-    },
-    {
       "symbol": "002156.SZ",
       "name": "通富微电",
       "purchase_date": "2026-01-19",
@@ -60,10 +53,10 @@
       "buy_flag": false
     },
     {
-      "symbol": "002115.SZ",
-      "name": "三维通信",
-      "purchase_date": "2026-01-19",
-      "cost": 15.83,
+      "symbol": "601212.SH",
+      "name": "白银有色",
+      "purchase_date": "2026-01-27",
+      "cost": 11.42,
       "buy_flag": false
     },
     {
@@ -74,15 +67,15 @@
       "buy_flag": false
     },
     {
-      "symbol": "601106.SH",
-      "name": "中国一重",
-      "purchase_date": "2026-01-20",
-      "cost": 5.537,
-      "buy_flag": true
+      "symbol": "000630.SZ",
+      "name": "铜陵有色",
+      "purchase_date": "2026-01-27",
+      "cost": 7.524,
+      "buy_flag": false
     },
     {
-      "symbol": "301308.SZ",
-      "name": "江波龙",
+      "symbol": "300058.SZ",
+      "name": "蓝色光标",
       "purchase_date": "2026-01-19",
       "cost": 336.16,
       "buy_flag": false
@@ -95,10 +88,10 @@
       "buy_flag": false
     },
     {
-      "symbol": "001309.SZ",
-      "name": "德明利",
-      "purchase_date": "2026-01-19",
-      "cost": 268.19,
+      "symbol": "000603.SZ",
+      "name": "盛达资源",
+      "purchase_date": "2026-01-29",
+      "cost": 69.875,
       "buy_flag": false
     },
     {
@@ -116,11 +109,11 @@
       "buy_flag": false
     },
     {
-      "symbol": "300475.SZ",
-      "name": "香农芯创",
-      "purchase_date": "2026-01-19",
-      "cost": 168.34,
-      "buy_flag": false
+      "symbol": "002054.SZ",
+      "name": "德美化工",
+      "purchase_date": "2026-02-11",
+      "cost": 10.69,
+      "buy_flag": true
     },
     {
       "symbol": "300302.SZ",
@@ -137,11 +130,11 @@
       "buy_flag": false
     },
     {
-      "symbol": "002716.SZ",
-      "name": "湖南白银",
-      "purchase_date": "2026-01-22",
-      "cost": 13.193,
-      "buy_flag": true
+      "symbol": "002506.SZ",
+      "name": "协鑫集成",
+      "purchase_date": "2026-02-10",
+      "cost": 5.174,
+      "buy_flag": false
     }
   ],
   "config": {

@@ -68,7 +68,11 @@
       "Bash(iconv:*)",
       "Bash(grep:*)",
       "WebSearch",
-      "Bash(python3:*)"
+      "Bash(python3:*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\n优化K线图卖点标记 - 区分显示不同策略卖出\n\n实现功能:\n- 按卖出原因分类标记: 主动卖出\\(红\\)、追踪止损\\(橙\\)、超期持有\\(紫\\)、强制平仓\\(灰\\)\n- mplfinance和matplotlib双版本支持\n- 图表图例自动显示所有卖点类型\n- 向后兼容性: 自动处理未知reason字段\n\n改动内容:\n- src/backtest/backtest_chart_generator.py: 修改_generate_mplfinance_chart和_generate_matplotlib_chart函数\n- 将单一的卖点Series分解为5个分类Series \\(主动卖出、追踪止损、超期持有、强制平仓、其他\\)\n- 根据trade.reason字段使用包含匹配进行分类\n- 分别为每种卖点类型添加独立的图层,使用不同颜色和标注文字\n\n测试:\n- 已创建test_sell_point_marking.py完整功能测试\n- 验证4种卖出类型的标记、向后兼容性、图表生成\n\n预期效果:\n- 清晰区分不同卖出策略,帮助分析策略有效性\n- 识别策略弱点\\(如频繁止损、超期持有过多\\)\n- 支持图表化分析交易决策过程\n\nCo-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(if exist test_factor_cache rmdir /s /q test_factor_cache)",
+      "Bash(if exist test_cold_start_cache rmdir /s /q test_cold_start_cache)"
     ],
     "deny": [],
     "ask": []

@@ -20,6 +20,11 @@ from .fundamental_factors import (
     ValuePEFactor, ValuePBFactor, ProfitabilityROEFactor,
     GrowthRevenueFactor, ProfitQualityFactor, FinancialHealthFactor
 )
+from .factor_momentum_factors import (
+    FactorMomentum3dFactor, FactorMomentum5dFactor,
+    FactorMomentum15dFactor, FactorMomentum20dFactor,
+    register_factor_momentum_factors
+)
 
 # 注册市场增强因子
 def register_market_enhanced_factors():
@@ -92,6 +97,7 @@ def initialize_factors(enable_auto_generation: bool = True):
     register_market_enhanced_factors()  # 注册市场增强因子
     register_multi_timeframe_factors()   # 注册多时间框架因子
     register_fundamental_factors()       # 注册基本面因子
+    register_factor_momentum_factors()   # 注册因子动量因子
 
     # 如果启用自动因子生成
     if enable_auto_generation:
@@ -147,6 +153,8 @@ __all__ = [
     'MultiTimeframeRSIFactor', 'MultiTimeframeMACDFactor',
     'ValuePEFactor', 'ValuePBFactor', 'ProfitabilityROEFactor',
     'GrowthRevenueFactor', 'ProfitQualityFactor', 'FinancialHealthFactor',
+    'FactorMomentum3dFactor', 'FactorMomentum5dFactor',
+    'FactorMomentum15dFactor', 'FactorMomentum20dFactor',
 
     # 自动化组件
     'AutoFactorSelector', 'FactorPerformance', 'SelectionCriteria',
@@ -166,6 +174,7 @@ __all__ = [
     'generate_auto_strategy', 'create_market_metrics', 'create_performance_metrics',
     'create_auto_factor_generator', 'generate_new_factors', 'get_auto_factor_summary', 'generate_additional_factors',
     'register_prediction_factors', 'register_multi_timeframe_factors', 'register_fundamental_factors',
+    'register_factor_momentum_factors',
     'create_multi_timeframe_rsi_factor', 'create_multi_timeframe_macd_factor',
     'get_timeframe_weight_optimizer', 'optimize_timeframe_weights'
 ]

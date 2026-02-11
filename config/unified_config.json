@@ -258,12 +258,37 @@
     "social_count": 5,
     "potential_count": 10,
     "momentum_count": 10,
+    "sector_rotation_count": 15,
     "max_total_stocks": 100,
     "enable_longhu": true,
     "enable_social": true,
     "enable_potential": true,
     "enable_early_breakout": true,
+    "enable_sector_rotation": true,
     "score_threshold": 15,
+
+    "sector_rotation": {
+      "hot_sector_count": 5,
+      "stocks_per_sector": 3,
+      "total_sector_stocks": 15,
+      "lookback_days": 5,
+      "min_sector_change": 1.0,
+      "exclude_small_sectors": true,
+      "weights": {
+        "change_pct": 0.40,
+        "fund_flow": 0.30,
+        "volume_change": 0.20,
+        "active_ratio": 0.10
+      },
+      "stock_selection_weights": {
+        "market_cap": 0.30,
+        "recent_return": 0.25,
+        "fund_flow": 0.25,
+        "technical": 0.20
+      },
+      "description": "板块轮动配置：选择5个热门板块，每板块3只股票，总共15只。综合评分模型：涨跌幅40% + 资金流30% + 成交量20% + 活跃度10%"
+    },
+
     "filters": {
       "description": "潜力股专用技术过滤器（仅应用于AUTO_DISCOVERY类型股票）- 优化早期动量发现",
       "max_daily_change": 30,
@@ -336,10 +361,9 @@
       "stop_loss_rate": -0.05,
       "take_profit_rate": 0.08,
       "max_holding_days": 7,
-      "trailing_stop": 0.02,
+      "trailing_stop_drawdown": 0.05,
       "breakout_entry": true,
-      "enable_forced_exit": false,
-      "description": "动量优化：7天目标，8%止盈，5%止损，2%移动止损，允许突破买入。enable_forced_exit=false表示回测时完全按策略信号执行，不强制止损止盈"
+      "enable_forced_exit": false
     },
 
     "sector_rotation": {

@@ -5,6 +5,7 @@
 """
 
 from .stock_selection_manager import StockSelectionManager
+from .sector_rotation_picker import SectorRotationPicker, create_sector_rotation_picker
 
 # 为了兼容旧的stock_list.py，提供便捷的函数接口
 def get_all_stocks():
@@ -12,4 +13,9 @@ def get_all_stocks():
     manager = StockSelectionManager()
     return manager.get_all_stocks()
 
-__all__ = ['StockSelectionManager', 'get_all_stocks']
+__all__ = [
+    'StockSelectionManager',
+    'get_all_stocks',
+    'SectorRotationPicker',
+    'create_sector_rotation_picker'
+]

@@ -68,6 +68,9 @@ class AdvancedBacktestEngine:
         self.take_profit_rate = analysis_risk.get('take_profit_rate', 0.15)
         self.max_holding_days = analysis_risk.get('max_holding_days', 45)
 
+        # 追踪止损配置
+        self.trailing_stop_drawdown = self._get_trailing_stop_drawdown(analysis_risk)
+
         # 是否启用强制退出规则（止损止盈、超期持有）
         self.enable_forced_exit = analysis_risk.get('enable_forced_exit', True)
 
@@ -79,9 +82,32 @@ class AdvancedBacktestEngine:
 
         logger.info(f"回测引擎初始化完成 - 初始资金: {self.initial_capital:.0f}元, 最大仓位: {self.max_position_size:.1%}")
         if self.enable_forced_exit:
-            logger.info(f"风险管理 - 止损: {self.stop_loss_rate:.1%}, 止盈: {self.take_profit_rate:.1%}, 最大持有: {self.max_holding_days}天")
+            logger.info(f"风险管理 - 止损: {self.stop_loss_rate:.1%}, 止盈: {self.take_profit_rate:.1%}, "
+                       f"追踪止损: 回撤{self.trailing_stop_drawdown:.1%}, 最大持有: {self.max_holding_days}天")
         else:
             logger.info(f"风险管理 - 完全按策略信号执行，不启用强制止损止盈")
+
+    def _get_trailing_stop_drawdown(self, risk_config: Dict) -> float:
+        """
+        获取追踪止损回撤阈值配置
+
+        Args:
+            risk_config: 风险管理配置字典
+
+        Returns:
+            float: 追踪止损回撤阈值 (默认0.08，即8%)
+        """
+        trailing_stop_drawdown = risk_config.get('trailing_stop_drawdown', 0.08)
+
+        # 验证范围 [0.01, 0.50]
+        if trailing_stop_drawdown < 0.01:
+            logger.warning(f"追踪止损回撤阈值 {trailing_stop_drawdown:.1%} 过低，使用最小值 1%")
+            return 0.01
+        if trailing_stop_drawdown > 0.50:
+            logger.warning(f"追踪止损回撤阈值 {trailing_stop_drawdown:.1%} 过高，使用最大值 50%")
+            return 0.50
+
+        return trailing_stop_drawdown
         
     def run_strategy_backtest(self, recommendations: List[Dict], 
                             market_data: Dict[str, pd.DataFrame],
@@ -433,11 +459,12 @@ class AdvancedBacktestEngine:
             # 计算从最高价的回撤比例
             drawdown_from_peak = (current_price - highest_price) / highest_price
 
-            # 追踪止损：从最高价回撤8%
-            trailing_stop_rate = -0.08
+            # 追踪止损：从最高价回撤指定阈值(可配置)
+            trailing_stop_rate = -self.trailing_stop_drawdown  # 注意:负值用于比较
             if drawdown_from_peak <= trailing_stop_rate:
                 symbols_to_sell.append((symbol, f"追踪止损(最高价{highest_price:.2f}回撤{abs(drawdown_from_peak):.1%})"))
-                logger.info(f"⚠️ {symbol} 触发追踪止损: 最高价{highest_price:.2f}, 当前价{current_price:.2f}, 回撤{abs(drawdown_from_peak):.1%}")
+                logger.info(f"⚠️ {symbol} 触发追踪止损(阈值{self.trailing_stop_drawdown:.1%}): "
+                           f"最高价{highest_price:.2f}, 当前价{current_price:.2f}, 回撤{abs(drawdown_from_peak):.1%}")
 
         # 执行卖出
         for symbol, reason in symbols_to_sell:

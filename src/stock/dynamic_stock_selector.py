@@ -30,6 +30,7 @@ class StockSource(Enum):
     LONGHU_BANG = "longhu_bang"    # 龙虎榜
     SOCIAL_MEDIA = "social_media"  # 社交媒体热门
     AUTO_DISCOVERY = "auto_discovery"  # 自动发现
+    SECTOR_ROTATION = "sector_rotation"  # 板块轮动
 
 @dataclass
 class StockCandidate:
@@ -102,7 +103,16 @@ class DynamicStockSelector:
                 logger.info(f"📱 社交媒体股票: {len(social_stocks)} 只 (第四优先级)")
             except Exception as e:
                 logger.warning(f"社交媒体股票获取失败: {e}")
-        
+
+        # 第五优先级：板块轮动股票（新增）
+        if selection_config.get('enable_sector_rotation', False):
+            try:
+                sector_stocks = self._get_sector_rotation_stocks(selection_config.get('sector_rotation_count', 15))
+                all_candidates.extend(sector_stocks)
+                logger.info(f"🔄 板块轮动股票: {len(sector_stocks)} 只 (第五优先级)")
+            except Exception as e:
+                logger.warning(f"板块轮动股票获取失败: {e}")
+
         # 4. 去重并按评分排序
         unique_candidates = self._deduplicate_and_rank(all_candidates)
         
@@ -473,7 +483,49 @@ class DynamicStockSelector:
         except Exception as e:
             logger.error(f"潜力股获取失败: {e}")
             return []
-    
+
+    def _get_sector_rotation_stocks(self, count: int) -> List[StockCandidate]:
+        """
+        获取板块轮动股票
+
+        Args:
+            count: 需要获取的股票数量
+
+        Returns:
+            List[StockCandidate]: 板块轮动股票列表
+        """
+        try:
+            from .sector_rotation_picker import create_sector_rotation_picker
+
+            # 创建板块轮动选股器
+            picker = create_sector_rotation_picker(self.config_manager)
+
+            # 获取板块轮动股票
+            sector_stocks = picker.get_sector_rotation_stocks()
+
+            # 转换为候选股票格式
+            candidates = []
+            for stock in sector_stocks:
+                candidate = StockCandidate(
+                    symbol=stock['symbol'],
+                    name=stock['name'],
+                    source=StockSource.SECTOR_ROTATION,
+                    score=stock['score'],
+                    reason=stock['reason'],
+                    change_pct=stock.get('change_pct', 0.0),
+                    market_cap=stock.get('market_cap', 0.0)
+                )
+                candidates.append(candidate)
+
+            logger.info(f"板块轮动股票获取成功: {len(candidates)} 只")
+            return candidates
+
+        except Exception as e:
+            logger.error(f"板块轮动股票获取失败: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return []
+
     def _normalize_stock_symbol(self, symbol: str) -> str:
         """标准化股票代码"""
         if not symbol:
@@ -596,10 +648,11 @@ class DynamicStockSelector:
                 # 如果已存在，保留评分更高的或者来源更优的
                 existing = unique_stocks[symbol]
                 
-                # 来源优先级: CONFIG > AUTO_DISCOVERY(潜力股) > LONGHU_BANG > SOCIAL_MEDIA
+                # 来源优先级: CONFIG > AUTO_DISCOVERY(潜力股) > SECTOR_ROTATION > LONGHU_BANG > SOCIAL_MEDIA
                 source_priority = {
                     StockSource.CONFIG: 4,           # 最高优先级
                     StockSource.AUTO_DISCOVERY: 3,   # 潜力股第二优先级
+                    StockSource.SECTOR_ROTATION: 3,  # 板块轮动与潜力股同级
                     StockSource.LONGHU_BANG: 2,      # 龙虎榜第三优先级
                     StockSource.SOCIAL_MEDIA: 1      # 社交媒体最低优先级
                 }
@@ -620,6 +673,7 @@ class DynamicStockSelector:
             source_priority = {
                 StockSource.CONFIG: 4,           # 最高优先级
                 StockSource.AUTO_DISCOVERY: 3,   # 潜力股第二优先级
+                StockSource.SECTOR_ROTATION: 3,  # 板块轮动与潜力股同级
                 StockSource.LONGHU_BANG: 2,      # 龙虎榜第三优先级
                 StockSource.SOCIAL_MEDIA: 1      # 社交媒体最低优先级
             }
@@ -713,6 +767,7 @@ class DynamicStockSelector:
         # 按新的优先级顺序分层选择
         config_stocks = [c for c in candidates if c.source == StockSource.CONFIG]
         potential_stocks = [c for c in candidates if c.source == StockSource.AUTO_DISCOVERY]
+        sector_stocks = [c for c in candidates if c.source == StockSource.SECTOR_ROTATION]
         longhu_stocks = [c for c in candidates if c.source == StockSource.LONGHU_BANG]
         social_stocks = [c for c in candidates if c.source == StockSource.SOCIAL_MEDIA]
 
@@ -725,10 +780,25 @@ class DynamicStockSelector:
 
         remaining_slots = max_count - len(final_stocks)
 
-        # 第二优先级：潜力股票（占剩余的50%）
-        potential_count = min(len(potential_stocks), int(remaining_slots * 0.5))
-        final_stocks.extend(potential_stocks[:potential_count])
-        logger.info(f"🔍 选入潜力股票: {potential_count} 只")
+        # 第二优先级：潜力股票+板块轮动（合计占剩余的50%）
+        combined_count = min(len(potential_stocks) + len(sector_stocks), int(remaining_slots * 0.5))
+
+        # 在潜力股和板块轮动之间平衡分配
+        if potential_stocks and sector_stocks:
+            potential_count = min(len(potential_stocks), combined_count // 2)
+            sector_count = min(len(sector_stocks), combined_count - potential_count)
+            final_stocks.extend(potential_stocks[:potential_count])
+            final_stocks.extend(sector_stocks[:sector_count])
+            logger.info(f"🔍 选入潜力股票: {potential_count} 只")
+            logger.info(f"🔄 选入板块轮动股票: {sector_count} 只")
+        elif potential_stocks:
+            potential_count = min(len(potential_stocks), combined_count)
+            final_stocks.extend(potential_stocks[:potential_count])
+            logger.info(f"🔍 选入潜力股票: {potential_count} 只")
+        elif sector_stocks:
+            sector_count = min(len(sector_stocks), combined_count)
+            final_stocks.extend(sector_stocks[:sector_count])
+            logger.info(f"🔄 选入板块轮动股票: {sector_count} 只")
 
         remaining_slots = max_count - len(final_stocks)
 
@@ -791,7 +861,8 @@ class DynamicStockSelector:
                 'config': source_counts.get('config', 0),
                 'longhu_bang': source_counts.get('longhu_bang', 0),
                 'social_media': source_counts.get('social_media', 0),
-                'auto_discovery': source_counts.get('auto_discovery', 0)
+                'auto_discovery': source_counts.get('auto_discovery', 0),
+                'sector_rotation': source_counts.get('sector_rotation', 0)
             }
         }
 
