@@ -319,6 +319,6 @@ def register_factor_momentum_factors():
 
     for factor in factors:
         manager.register_factor(factor)
-        logger.info(f"✓ 已注册因子动量因子: {factor.name} ({factor.time_window}天窗口)")
+        logger.info(f"[OK] Registered factor momentum: {factor.name} ({factor.time_window} days)")
 
-    print(f"✓ 因子动量因子已注册: 4个时间窗口 (3d, 5d, 15d, 20d)")
+    print(f"[OK] Factor momentum factors registered: 4 time windows (3d, 5d, 15d, 20d)")

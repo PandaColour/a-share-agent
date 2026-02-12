@@ -117,3 +117,4 @@ Pipfile.lock
 /backtest_results/
 /config/dynamic_stock.json
 /factor_cache/
+/qlib_data/

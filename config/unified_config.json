@@ -2,17 +2,14 @@
   "system_settings": {
     "version": "2.1.0",
     "description": "A股TradingAgents统一配置文件",
-    
     "execution": {
       "max_workers": 5,
       "analysis_timeout": 300,
       "enable_learning": true
     },
-
     "multi_timeframe_factors": {
       "enabled": true,
       "description": "多时间框架因子配置 - 结合日线和5分钟粒度的MACD/RSI因子",
-
       "timeframes": {
         "daily": {
           "enabled": true,
@@ -28,7 +25,6 @@
           "description": "5分钟数据权重30%，缓存5分钟，保留3天历史"
         }
       },
-
       "rsi_settings": {
         "daily_period": 14,
         "minute_5_long_period": 70,
@@ -40,10 +36,17 @@
         },
         "description": "RSI参数：日线14周期，5分钟长周期70/短周期14"
       },
-
       "macd_settings": {
-        "daily": {"fast": 12, "slow": 26, "signal": 9},
-        "minute_5": {"fast": 60, "slow": 130, "signal": 45},
+        "daily": {
+          "fast": 12,
+          "slow": 26,
+          "signal": 9
+        },
+        "minute_5": {
+          "fast": 60,
+          "slow": 130,
+          "signal": 45
+        },
         "signal_weights": {
           "daily": 0.6,
           "minute": 0.4
@@ -51,21 +54,24 @@
         "divergence_detection": true,
         "description": "MACD参数：日线(12,26,9)，5分钟(60,130,45)，启用背离检测"
       },
-
       "cache_settings": {
         "max_symbols": 50,
         "max_memory_mb": 500,
         "eviction_policy": "LRU",
         "description": "缓存配置：最多50只股票，500MB内存，LRU淘汰策略"
       },
-
       "trading_hours": {
-        "morning": ["09:30", "11:30"],
-        "afternoon": ["13:00", "15:00"],
+        "morning": [
+          "09:30",
+          "11:30"
+        ],
+        "afternoon": [
+          "13:00",
+          "15:00"
+        ],
         "update_interval_seconds": 300,
         "description": "交易时段配置：早盘9:30-11:30，午盘13:00-15:00，5分钟更新一次"
       },
-
       "performance": {
         "enable_parallel": true,
         "max_workers": 4,
@@ -74,10 +80,24 @@
         "description": "性能配置：启用并行计算，4个工作线程，批量处理10只股票"
       }
     },
-
     "data_sources": {
       "primary_source": "tushare",
-      "fallback_sources": ["akshare","yfinance"],
+      "fallback_sources": [
+        "akshare",
+        "yfinance"
+      ],
+      "qlib": {
+        "enabled": true,
+        "data_dir": "./qlib_data",
+        "supported_timeframes": [
+          "daily",
+          "5min"
+        ],
+        "auto_sync": true,
+        "sync_mode": "background",
+        "sync_schedule": "daily",
+        "description": "Qlib本地高性能数据源（.bin格式），数据访问速度10-40倍提升。auto_sync启用后，从Tushare/AkShare获取的数据会自动后台同步到Qlib存储。"
+      },
       "akshare": {
         "enabled": true,
         "description": "AkShare - 免费的A股数据源"
@@ -92,7 +112,6 @@
         "description": "YFinance - Yahoo Finance数据源"
       }
     },
-    
     "ai_models": {
       "enable_ai_analysis": true,
       "fallback_to_traditional": true,
@@ -185,7 +204,6 @@
             "temperature": 0.3
           }
         },
-
         "deepseek-v3.1": {
           "name": "360/deepseek-v3.1",
           "description": "360/deepseek-v3.1",
@@ -202,7 +220,6 @@
             "temperature": 0.3
           }
         },
-
         "mock_model": {
           "name": "Mock Model",
           "description": "模拟模型，用于测试",
@@ -222,7 +239,6 @@
         }
       }
     },
-    
     "debate_prompts": {
       "bull_researcher": {
         "system_prompt": "🐂 你是一位具有15年经验的资深看涨研究员，专精于发现投资机会和上涨潜力。\n\n⚠️ 绝对强制要求：\n🔴 必须基于真实数据进行分析，严禁假设或编造任何财务数据\n🔴 所有分析内容必须使用中文\n🔴 投资建议必须使用中文：强烈买入、买入、持有、卖出、强烈卖出\n🔴 绝对不允许使用英文：buy、hold、sell等\n🚫 严格禁止给出\"持有\"建议！作为看涨研究员，你必须明确倡导买入机会\n🎯 最终建议必须是\"买入\"或\"强烈买入\"，置信度必须≥60%\n🔥 你的职责是在不确定性中发现机会，而非回避决策\n\n💪 专业能力：\n- 深度挖掘投资机会和增长潜力\n- 识别被低估的价值和催化剂\n- 多维度论证看涨逻辑的合理性\n- 基于数据反驳看跌观点\n- A股特有的政策利好和行业机会分析\n- 在市场不确定性中果断识别投资价值\n\n🎯 辩论策略：\n- 积极倡导高回报投资机会，强调增长潜力\n- 用数据驱动的论证挑战保守观点\n- 突出对手可能忽视的关键机会\n- 以说服力和逻辑性见长，专注辩论而非单纯陈述\n- 永远寻找买入理由，即使在不利环境中也要发现价值",
@@ -233,25 +249,21 @@
         "debate_prompt": "🎯 作为看跌研究员，你需要为 {symbol}({company_name}) 提供严谨的风险分析：\n\n📊 **市场数据**：\n{market_data}\n\n📈 **分析师报告**：\n{analyses}\n\n🗣️ **辩论状态**：\n- 当前轮次：第 {debate_round} 轮\n- 总交流次数：{exchange_count}\n- 剩余轮次：{rounds_remaining}\n\n📚 **对话历史**：\n{full_history}\n\n🐂 **对方观点** (需要质疑)：\n{opponent_response}\n\n🎯 **你的任务**：\n\n1. **开场分析** (如果是第一轮)：\n   - 基于所有可用数据，识别关键风险因素\n   - 突出潜在的下跌催化剂和负面因素\n   - 提供具体的风险评估和价格预期\n\n2. **针对性质疑** (如果不是第一轮)：\n   - 直接质疑看涨研究员的每个论点\n   - 用具体数据和逻辑反驳对方观点\n   - 指出对方分析中的盲点和风险\n   - 强调对方可能低估的负面因素\n\n3. **核心分析要求**：\n   ⚡ 基于财务数据的风险识别\n   ⚡ 技术面显示的下跌压力\n   ⚡ 政策面和行业面的负面因素\n   ⚡ 具体的目标价格下限和风险时间框架\n   ⚡ 投资机会的重新评估\n\n**输出格式**：\n```\n🐻 看跌观点 - 第{debate_round}轮：\n\n⚠️ 核心风险：[你的主要看跌逻辑]\n\n📉 数据警示：[具体的风险数据和指标]\n\n🎯 价格预期：[具体价格下行区间和风险评估]\n\n🛡️ 防御策略：[投资者应该采取的防御措施]\n\n🔍 质疑要点：[针对看涨观点的具体质疑]\n```\n\n🚫 严格禁止：\n- 使用英文投资建议\n- 假设或编造财务数据\n- 回避对方的有力论证\n- 过度悲观缺乏数据支撑"
       }
     },
-
     "analysis_prompts": {
       "fundamental": {
         "system_prompt": "🎯 你是一位具有15年经验的资深基本面分析师，专精于中国A股市场分析。\n\n⚠️ 绝对强制要求：\n🔴 必须基于真实数据进行分析，严禁假设或编造任何财务数据\n🔴 所有分析内容必须使用中文\n🔴 投资建议必须使用中文：强烈买入、买入、持有、卖出、强烈卖出\n🔴 绝对不允许使用英文：buy、hold、sell等\n\n💪 专业能力：\n- DCF估值模型与相对估值法精准应用\n- 财务报表深度分析与舞弊识别\n- 行业竞争格局与商业模式评估\n- 宏观经济周期与政策影响分析\n- A股特有的估值体系与投资逻辑\n\n🌍 分析框架：\n- 必须提供合理价位区间（元）\n- 必须判断当前股价是否被低估或高估\n- 必须评估财务健康状况和成长性\n- 必须考虑A股市场特殊性和政策因素",
         "user_prompt": "🔍 请对股票{symbol}({company_name})进行专业基本面分析：\n\n📊 **核心财务指标**：\n- 当前价格：{current_price}元\n- 市盈率PE：{pe_ratio}\n- 市净率PB：{pb_ratio}\n- 净资产收益率ROE：{roe}%\n- 所属行业：{industry}\n- 预期增长率：{growth_rate}%\n\n🎯 **市场相关性分析**（新增）：\n- 市场Beta系数：{market_beta}\n- 系统性风险占比：{systematic_risk}%\n- 主要行业相关性：{sector_correlation}\n- 行业轮动信号：{rotation_signal}\n- 风险分类：{risk_classification}\n\n📈 **数据源状态**：\n- 数据质量评级：{data_quality}\n- 多源验证状态：{data_verification}\n\n🎯 **深度分析要求**：\n\n1. **📈 估值分析**（重点）：\n   ⚡ 基于PE、PB、PEG进行相对估值\n   ⚡ 计算合理价值区间（必须给出具体数字）\n   ⚡ 判断当前价格：被低估/合理/被高估\n   ⚡ DCF简化估值（使用{growth_rate}%增长率）\n   ⚡ **结合Beta系数调整风险溢价**\n\n2. **💪 财务健康分析**：\n   💰 盈利能力：ROE、ROA、毛利率评估\n   🏦 偿债能力：负债率、流动比率分析\n   📊 成长性：营收和利润增长趋势\n   💵 现金流：自由现金流状况\n   📊 **系统性vs非系统性风险分解**\n\n3. **🏭 行业竞争力与轮动分析**（增强）：\n   🥇 市场地位和竞争优势\n   🛡️ 护城河深度（品牌、技术、规模等）\n   📊 行业景气度和政策支持\n   ⚖️ 上下游议价能力\n   🔄 **行业轮动周期定位和机会窗口**\n   📈 **与行业ETF表现对比分析**\n\n4. **⚠️ 风险评估**（全面升级）：\n   📉 业务经营风险\n   💸 财务杠杆风险\n   🏛️ 政策监管风险\n   🌍 宏观经济风险\n   📊 **市场Beta风险（系统性风险{systematic_risk}%）**\n   🔄 **行业轮动风险和机会**\n\n**📋 必须输出格式**：\n```\n🎯 基本面评级：[优秀🌟/良好✅/一般⚪/较差⚠️/风险🔴]\n💡 投资建议：[强烈买入🚀/买入📈/持有💎/卖出📉/强烈卖出🔻]\n🎯 目标价位：[低位]元 - [高位]元\n📊 估值状况：[严重低估/低估/合理/高估/严重高估]\n💪 财务健康：[优秀/良好/一般/较差/风险]\n📊 Beta风险：[高Beta{market_beta}/中等Beta/低Beta]，系统性风险{systematic_risk}%\n🔄 行业定位：{sector_correlation}，轮动信号{rotation_signal}\n\n🔥 核心买入逻辑：\n1. [具体逻辑1 - 结合估值+行业轮动]\n2. [具体逻辑2 - 结合Beta风险]\n3. [具体逻辑3 - 结合数据质量]\n\n⚠️ 主要投资风险：\n1. [Beta风险：Beta={market_beta}的系统性风险]\n2. [行业风险：{rotation_signal}]\n3. [其他重要风险]\n\n📊 投资组合建议：\n- 建议仓位：基于Beta={market_beta}建议[X]%仓位\n- 风险对冲：[具体对冲建议]\n- 时机选择：结合行业轮动{rotation_signal}\n```\n\n🚫 严格禁止：\n- 使用英文投资建议\n- 假设或编造财务数据\n- 模糊的价格区间\n- 缺乏具体数据支撑的结论\n- 忽略Beta风险和行业轮动分析"
       },
-      
       "technical": {
         "system_prompt": "📈 你是一位具有15年经验的专业技术分析师，精通中国A股市场技术分析。\n\n⚠️ 绝对强制要求：\n🔴 必须基于真实技术数据进行分析，严禁假设或编造任何指标数值\n🔴 所有分析内容必须使用中文\n🔴 操作建议必须使用中文：强烈买入、买入、持有、卖出、强烈卖出\n🔴 绝对不允许使用英文：buy、hold、sell等\n\n💪 专业技能：\n- 多时间框架技术分析（日线、周线、月线）\n- 经典图表形态识别（头肩顶底、双顶双底、三角形等）\n- 趋势线和支撑阻力位精准定位\n- 技术指标综合运用和背离分析\n- 量价关系深度解读\n- A股特有的技术特征和市场节奏把握\n\n🎯 分析框架：\n- 必须识别主要趋势方向和强度\n- 必须提供关键支撑阻力位（具体价格）\n- 必须给出具体的买卖点位建议\n- 必须评估短中期风险和机会\n- 必须考虑成交量配合情况",
         "user_prompt": "请对股票{symbol}进行专业技术分析（多维度增强框架）：\n\n**价格数据：**\n- 当前价格：{current_price}元\n- 今日最高：{daily_high}元\n- 今日最低：{daily_low}元\n- 涨跌幅：{daily_change}%\n\n**日线技术指标：**\n- 日线MA5：{daily_ma5}元\n- 日线MA20：{daily_ma20}元\n- 日线RSI(14)：{daily_rsi}\n- 日线MACD：{daily_macd}，信号线：{daily_macd_signal}，柱状图：{daily_macd_histogram}\n- 日线KDJ：K={daily_kdj_k}，D={daily_kdj_d}，J={daily_kdj_j}\n- 日线换手率：{daily_turnover_rate}%\n- 日线量价关系：{daily_volume_price_trend}\n- 日线波动率：{daily_volatility}%\n\n**5分钟技术指标：**\n- 短期MA5：{intraday_ma5}元\n- 短期MA20：{intraday_ma20}元\n- 短期RSI(14)：{intraday_rsi}\n- 短期MACD：{intraday_macd}\n- 短期成交量放大：{intraday_volume_ratio}倍\n- 短期动量：{intraday_momentum}\n- 短期波动率：{intraday_volatility}%\n\n**融合指标：**\n- 趋势一致性：{trend_consistency}\n- 波动率预警：{volatility_alert}\n- 动量背离：{momentum_divergence}\n- 成交量放大：{volume_amplification}倍\n- 风险级别：{risk_level}\n- 短期动量：{short_term_momentum}\n\n**🎯 市场相关性分析**（新增）：\n- 市场Beta系数：{market_beta}\n- 与沪深300相关性：{hs300_correlation}\n- 行业技术同步性：{sector_tech_sync}\n- 系统性技术风险：{systematic_tech_risk}%\n\n**🤖 AI技术因子**（新增）：\n- AI因子综合评分：{ai_factor_score}\n- 主要AI信号：{top_ai_factors}\n- AI置信度：{ai_confidence}%\n- 因子权重分布：{factor_weights}\n\n**📊 增强分析指标**：\n- 多时间框架一致性：{multi_timeframe_consistency}\n- 量价背离预警：{volume_price_divergence}\n- 技术形态识别：{pattern_recognition}\n\n**📈 连续涨跌统计**（新增）：\n- 连续涨跌天数：{consecutive_days}天\n- 连续涨跌幅度：{consecutive_change}%\n- 最近10天上涨天数：{rising_days_10}天\n- 最近30天上涨天数：{rising_days_30}天\n\n**输出格式：**\n```\n🎯 技术面评级：[强烈看涨🚀/看涨📈/中性⚪/看跌📉/强烈看跌🔻]\n💡 操作建议：[强烈买入/买入/持有/卖出/强烈卖出]\n📍 关键点位：支撑{daily_ma20}元，阻力{daily_ma5}元\n📊 Beta风险：{market_beta}（系统性技术风险{systematic_tech_risk}%）\n🤖 AI增强：{ai_factor_score}分，置信度{ai_confidence}%\n🔄 行业同步：{sector_tech_sync}\n📈 连续统计：{consecutive_days}天连续涨跌，累计{consecutive_change}%；最近10天上涨{rising_days_10}天，30天上涨{rising_days_30}天\n\n📈 多时间框架信号：\n- 日线信号：[基于日线指标的主要信号]\n- 短期信号：[基于5分钟数据的短期信号]\n- AI因子信号：[基于AI因子的技术信号]\n\n🎯 融合判断：\n- 传统技术：[基于经典技术指标]\n- AI增强：[基于AI因子的增强判断]\n- 市场相关性：[基于Beta和相关性的市场风险]\n- 最终建议：[综合所有维度的最终判断]\n\n⚠️ 风险提示：\n- 技术风险：[基于融合指标的技术风险]\n- 系统性风险：Beta={market_beta}，系统性风险{systematic_tech_risk}%\n- AI因子风险：[基于AI分析的潜在风险]\n- 行业技术风险：{sector_tech_sync}\n```\n\n**🎯 增强分析要求**：\n1. **多层次技术分析**：优先日线趋势，结合5分钟短期信号，融入AI因子判断\n2. **市场相关性整合**：重点关注Beta={market_beta}对技术信号的影响\n3. **AI因子权重**：AI评分{ai_factor_score}分作为技术分析的重要补充\n4. **风险级别响应**：波动率预警critical时必须特别注明，成交量放大>3倍重点关注\n5. **行业技术对比**：结合{sector_tech_sync}判断个股技术强度\n6. **系统性风险评估**：基于{systematic_tech_risk}%评估市场整体技术风险"
       },
-      
       "sentiment": {
         "system_prompt": "📰 你是一位具有15年经验的资深舆情分析师，专精于中国A股市场舆情分析和行为金融学。\n\n⚠️ 绝对强制要求：\n🔴 必须基于真实新闻数据进行分析，严禁假设或编造任何新闻内容\n🔴 所有分析内容必须使用中文\n🔴 情绪判断必须使用中文：积极、中性、消极\n🔴 操作建议必须使用中文：强烈买入、买入、持有、卖出、强烈卖出\n🔴 绝对不允许使用英文：positive、negative、buy、sell等\n\n💪 专业能力：\n- 多源新闻聚合分析（东方财富、新浪、雪球等）\n- 深度自然语言处理和情感计算\n- 社交媒体情绪挖掘和传播分析\n- 行为金融学和市场心理学应用\n- A股特有的政策敏感性和舆情特征\n- 量化舆情建模和情绪指数构建\n\n🌍 分析框架：\n- 必须量化新闻情感强度（-5到+5分）\n- 必须评估消息时效性和可信度\n- 必须识别关键舆情催化剂\n- 必须预测情绪演化趋势\n- 必须考虑A股投资者结构特征",
         "user_prompt": "🔍 请对股票{symbol}({company_name})进行专业舆情分析（行业轮动增强版）：\n\n📊 **市场表现数据**：\n- 近5日收益率：{recent_returns}%\n- 成交量变化：{volume_trend}%\n- 市场波动率：{volatility}%\n\n🔄 **行业轮动与资金流向**（新增）：\n- 行业热度排名：{sector_heat_ranking}\n- 行业资金净流入：{sector_money_flow}\n- 行业轮动阶段：{rotation_stage}\n- 风格偏好转换：{style_shift}\n\n📱 **社交媒体与市场关注**（新增）：\n- 龙虎榜出现次数：{longhu_appearances}\n- 社交媒体提及热度：{social_mentions}\n- 机构调研关注度：{institutional_attention}\n- 散户讨论热度：{retail_discussion}\n\n🎯 **市场情绪与风险偏好**（新增）：\n- 市场风险偏好：{market_risk_preference}\n- Beta情绪影响：{beta_sentiment_impact}\n- 系统性情绪风险：{systematic_sentiment_risk}%\n\n🎯 **深度舆情分析要求**：\n\n1. **🔥 核心舆情解读**（重点）：\n   💡 关键新闻主题分析（业绩、政策、行业、事件）\n   💡 情感强度量化评分（-5到+5，必须给出具体数值）\n   💡 消息可信度评估（权威媒体vs小道消息）\n   💡 时效性分析（最新消息权重更高）\n\n2. **🔄 行业轮动情绪分析**（新增重点）：\n   📈 行业热度变化趋势和投资者情绪迁移\n   💰 资金流向与情绪的相互验证\n   🎯 轮动阶段对个股情绪的影响\n   📊 风格偏好转换对估值情绪的冲击\n\n3. **📱 社交媒体情绪挖掘**（增强）：\n   🔥 龙虎榜关注度与散户情绪关联\n   💬 讨论热度与股价波动的领先指标\n   🏛️ 机构vs散户情绪分化程度\n   📊 舆情传播路径和影响范围\n\n4. **⚠️ 情绪风险评估**（系统性升级）：\n   📉 情绪泡沫和崩塌风险\n   🌍 系统性情绪风险传染\n   📊 Beta情绪：高Beta股票的情绪放大效应\n   🔄 行业轮动中的情绪陷阱\n\n**📋 必须输出格式**：\n```\n🎯 舆情评级：[极度积极🔥/积极📈/中性⚪/消极📉/极度消极🔻]\n📊 情感强度：[+5到-5的具体数值]分\n💡 操作建议：[强烈买入🚀/买入📈/持有💎/卖出📉/强烈卖出🔻]\n🔄 行业轮动影响：{sector_heat_ranking}，{rotation_stage}\n📱 社交关注度：龙虎榜{longhu_appearances}次，讨论热度{social_mentions}\n⏰ 影响时效：[短期1-3天/中期1-2周/长期持续]\n📈 股价影响：预期[+/-]X%的情绪驱动波动\n📊 Beta情绪风险：{beta_sentiment_impact}，系统性风险{systematic_sentiment_risk}%\n\n🔥 情绪催化剂：\n1. [主要正面催化剂]\n2. [主要负面风险点]\n3. [行业轮动机会/风险]\n\n🔄 行业情绪定位：\n- 当前行业热度：{sector_heat_ranking}\n- 资金流向：{sector_money_flow}\n- 轮动机会：[基于轮动阶段的情绪机会]\n\n📱 社交媒体洞察：\n- 关注度变化：[龙虎榜和社交媒体趋势]\n- 情绪分化：[机构vs散户情绪对比]\n- 传播风险：[舆情传播的潜在风险]\n\n⚠️ 情绪风险预警：\n- 泡沫风险：[基于情感强度的泡沫评估]\n- 系统性风险：{systematic_sentiment_risk}%\n- Beta放大：{beta_sentiment_impact}\n- 轮动陷阱：[行业轮动中的情绪风险]\n```\n\n🚫 **严格禁止**：\n- 使用英文情绪判断和投资建议\n- 假设或编造新闻和社交媒体数据\n- 忽略行业轮动对情绪的影响\n- 忽略Beta系数对情绪波动的放大作用\n- 缺乏社交媒体数据的深度挖掘"
       }
     }
   },
-  
   "stock_selection": {
     "mode": "momentum_focused",
     "longhu_count": 10,
@@ -266,7 +278,6 @@
     "enable_early_breakout": true,
     "enable_sector_rotation": true,
     "score_threshold": 15,
-
     "sector_rotation": {
       "hot_sector_count": 5,
       "stocks_per_sector": 3,
@@ -275,20 +286,19 @@
       "min_sector_change": 1.0,
       "exclude_small_sectors": true,
       "weights": {
-        "change_pct": 0.40,
-        "fund_flow": 0.30,
-        "volume_change": 0.20,
-        "active_ratio": 0.10
+        "change_pct": 0.4,
+        "fund_flow": 0.3,
+        "volume_change": 0.2,
+        "active_ratio": 0.1
       },
       "stock_selection_weights": {
-        "market_cap": 0.30,
+        "market_cap": 0.3,
         "recent_return": 0.25,
         "fund_flow": 0.25,
-        "technical": 0.20
+        "technical": 0.2
       },
       "description": "板块轮动配置：选择5个热门板块，每板块3只股票，总共15只。综合评分模型：涨跌幅40% + 资金流30% + 成交量20% + 活跃度10%"
     },
-
     "filters": {
       "description": "潜力股专用技术过滤器（仅应用于AUTO_DISCOVERY类型股票）- 优化早期动量发现",
       "max_daily_change": 30,
@@ -311,14 +321,16 @@
         "consistent_volume": true
       },
       "technical_position": {
-        "rsi_range": [50, 80],
+        "rsi_range": [
+          50,
+          80
+        ],
         "price_near_high": true,
         "ma_trend_positive": true
       }
     },
     "description": "动量优先选股策略：配置股+潜力股+龙虎榜+社交媒体+动量股，强化早期突破发现。优化：降低评分阈值到15，增加动量筛选"
   },
-
   "analysis_settings": {
     "web_scraping": {
       "enabled": true,
@@ -337,7 +349,6 @@
       "timeout_seconds": 30,
       "headless": true
     },
-
     "filters": {
       "description": "全局基础过滤器（应用于所有股票）",
       "enable_price_limits": true,
@@ -347,7 +358,10 @@
         "enabled": true,
         "max_increase_percent": 8.0,
         "min_increase_percent": 1.0,
-        "consecutive_days_range": [2, 4],
+        "consecutive_days_range": [
+          2,
+          4
+        ],
         "description": "优化：筛选1-8%涨幅，关注连续上涨2-4天的股票"
       },
       "min_market_cap": 500000000,
@@ -355,7 +369,6 @@
       "exclude_suspended": true,
       "exclude_chinext": false
     },
-    
     "risk_management": {
       "max_position_size": 0.12,
       "stop_loss_rate": -0.05,
@@ -365,7 +378,6 @@
       "breakout_entry": true,
       "enable_forced_exit": false
     },
-
     "sector_rotation": {
       "enabled": true,
       "hot_sectors_max": 5,
@@ -374,7 +386,6 @@
       "rotation_signal_weight": 0.3,
       "description": "行业轮动配置：跟踪5个热门行业，每行业5只股票，行业涨幅阈值2%"
     },
-
     "early_signal_detection": {
       "enabled": true,
       "pre_breakout_scoring": true,
@@ -387,14 +398,17 @@
       },
       "description": "早期信号检测：突破前评分、放量检测、动量持续性、连续上涨分析"
     },
-
-  "market_analysis": {
-    "enabled": true,
-    "description": "市场相关性分析配置",
-
+    "market_analysis": {
+      "enabled": true,
+      "description": "市场相关性分析配置",
       "correlation_analysis": {
         "enabled": true,
-        "lookback_periods": [20, 60, 120, 250],
+        "lookback_periods": [
+          20,
+          60,
+          120,
+          250
+        ],
         "correlation_thresholds": {
           "high": 0.7,
           "medium": 0.4,
@@ -402,7 +416,6 @@
         },
         "min_data_points": 20
       },
-
       "beta_analysis": {
         "enabled": true,
         "beta_thresholds": {
@@ -411,14 +424,12 @@
         },
         "rolling_window": 60
       },
-
       "sector_rotation": {
         "enabled": true,
         "rotation_period": 20,
         "momentum_threshold": 0.02,
         "sync_threshold": 0.6
       },
-
       "integration": {
         "technical_analysis": true,
         "fundamental_analysis": false,
@@ -426,21 +437,18 @@
         "weight_adjustment": 0.2
       }
     },
-
     "short_term_trading": {
       "enabled": true,
       "target_days": 10,
       "target_return": 0.05,
       "description": "短期交易专用配置：针对10天5%目标优化",
-
       "signal_weights": {
         "technical_breakout": 0.35,
         "volume_surge": 0.25,
-        "longhu_bang": 0.20,
+        "longhu_bang": 0.2,
         "momentum": 0.15,
         "fundamental": 0.05
       },
-
       "filters": {
         "min_volume_ratio": 2.0,
         "min_consecutive_days": 1,
@@ -449,21 +457,18 @@
         "max_daily_volatility": 8.0,
         "max_consecutive_surge": 3
       },
-
       "catalyst_detection": {
         "longhu_bang_weight": 0.5,
         "social_trending_weight": 0.3,
         "sector_rotation_weight": 0.2
       }
     },
-
     "output": {
       "save_csv": true,
       "save_json": true,
       "output_directory": "outputs"
     }
   },
-  
   "backtest_settings": {
     "capital_management": {
       "initial_capital": 1000000,
@@ -471,22 +476,21 @@
       "min_position_value": 10000,
       "reserve_cash_ratio": 0.05
     },
-    
     "transaction_costs": {
       "commission_rate": 0.0015,
       "min_commission": 5.0,
       "stamp_duty_rate": 0.001,
-      "transfer_fee_rate": 0.00002
+      "transfer_fee_rate": 2e-05
     },
-    
     "strategy_filters": {
       "min_confidence": 0.3,
-      "preferred_recommendations": ["买入"],
+      "preferred_recommendations": [
+        "买入"
+      ],
       "exclude_recommendations": [],
       "min_stock_price": 5.0,
       "max_stock_price": 500.0
     },
-    
     "output": {
       "save_detailed_trades": true,
       "save_daily_positions": true,

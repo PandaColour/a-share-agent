@@ -16,6 +16,7 @@ class DataSourceType(Enum):
     AKSHARE = "akshare"
     TUSHARE = "tushare"
     YFINANCE = "yfinance"
+    QLIB = "qlib"
 
 
 class TimeFrame(Enum):

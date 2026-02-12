@@ -35,11 +35,24 @@ class MultiSourceDataProvider:
         data_sources_config = self.config.get('system_settings', {}).get('data_sources', {})
         self.primary_source = data_sources_config.get('primary_source', 'akshare')
         self.fallback_sources = data_sources_config.get('fallback_sources', ['yfinance'])
-        
+
         # 初始化各种数据源
         self.sources = {}
         self._init_data_sources()
-        
+
+        # 【新增】初始化Qlib自动同步器
+        self.qlib_syncer = None
+        qlib_config = data_sources_config.get('qlib', {})
+        if qlib_config.get('enabled', False) and qlib_config.get('auto_sync', False):
+            try:
+                from src.data.qlib_data_syncer import QlibDataSyncer
+                qlib_dir = qlib_config.get('data_dir', './qlib_data')
+                self.qlib_syncer = QlibDataSyncer(qlib_dir, self)
+                logger.info("✅ Qlib自动同步已启用")
+            except Exception as e:
+                logger.warning(f"⚠️ Qlib自动同步初始化失败: {e}")
+                self.qlib_syncer = None
+
         logger.info(f"多数据源提供者初始化完成，主数据源: {self.primary_source}")
     
     def _load_config(self, config_file: str = None) -> Dict:
@@ -81,6 +94,17 @@ class MultiSourceDataProvider:
         """初始化数据源"""
         # 获取数据源配置
         data_sources_config = self.config.get('system_settings', {}).get('data_sources', {})
+
+        # 【新增】初始化Qlib数据源（优先级最高）
+        qlib_config = data_sources_config.get('qlib', {})
+        if qlib_config.get('enabled', False):
+            try:
+                from src.data.sources.qlib_source import QlibDataProvider
+                qlib_dir = qlib_config.get('data_dir', './qlib_data')
+                self.sources['qlib'] = QlibDataProvider(qlib_dir)
+                logger.info("✅ Qlib数据源初始化成功")
+            except Exception as e:
+                logger.warning(f"⚠️ Qlib数据源初始化失败: {e}，将使用备用数据源")
 
         # 初始化AkShare
         akshare_config = data_sources_config.get('akshare', {})
@@ -153,6 +177,18 @@ class MultiSourceDataProvider:
                     logger.debug(f"✅ 从 {source_name} 成功获取 {normalized_symbol} 数据: {len(data)}条记录")
                     # 添加数据源标记
                     data.attrs['source'] = source_name
+
+                    # 【新增】后台异步同步到Qlib（不阻塞主流程）
+                    if self.qlib_syncer is not None and source_name != 'qlib':
+                        import threading
+                        sync_thread = threading.Thread(
+                            target=self._sync_to_qlib_background,
+                            args=(normalized_symbol, data.copy()),  # 传递数据副本避免并发问题
+                            daemon=True  # 守护线程，不阻塞主程序退出
+                        )
+                        sync_thread.start()
+                        logger.debug(f"🔄 启动Qlib后台同步: {normalized_symbol}")
+
                     return data
                 else:
                     logger.debug(f"⚠️ {source_name} 返回空数据: {normalized_symbol}")
@@ -960,6 +996,27 @@ class MultiSourceDataProvider:
             return momentum
         except Exception:
             return 0.0
+
+    def _sync_to_qlib_background(self, symbol: str, data: pd.DataFrame):
+        """
+        后台异步写入Qlib（不影响主流程性能）
+
+        Args:
+            symbol: 股票代码
+            data: 股票数据DataFrame
+        """
+        try:
+            if self.qlib_syncer is None:
+                return
+
+            # 使用QlibDataSyncer的内部方法写入数据
+            from src.data.interfaces import TimeFrame
+            self.qlib_syncer._write_to_qlib(symbol, data, TimeFrame.DAILY)
+            logger.debug(f"✅ Qlib自动同步完成: {symbol}")
+
+        except Exception as e:
+            # 同步失败不应该影响主流程
+            logger.debug(f"⚠️ Qlib自动同步失败 {symbol}: {e}")
 
 
 class DataSourceBase:

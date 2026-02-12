@@ -47,7 +47,7 @@ def register_fundamental_factors():
         manager.register_factor(ProfitQualityFactor())
         manager.register_factor(FinancialHealthFactor())
 
-        print(f"✓ 基本面因子已注册: value_pe, value_pb, profitability_roe, growth_revenue, profit_quality, financial_health")
+        print(f"[OK] Fundamental factors registered: value_pe, value_pb, profitability_roe, growth_revenue, profit_quality, financial_health")
     except Exception as e:
         print(f"注册基本面因子失败: {e}")
         import traceback
@@ -82,10 +82,65 @@ def register_multi_timeframe_factors(config: dict = None):
         macd_factor = MultiTimeframeMACDFactor(mtf_config)
         manager.register_factor(macd_factor)
 
-        print(f"✓ 多时间框架因子已注册: {rsi_factor.name}, {macd_factor.name}")
+        print(f"[OK] Multi-timeframe factors registered: {rsi_factor.name}, {macd_factor.name}")
 
     except Exception as e:
         print(f"注册多时间框架因子失败: {e}")
+        import traceback
+        traceback.print_exc()
+
+# 注册Qlib因子
+def register_qlib_factors():
+    """注册Qlib因子（Alpha158）- 已弃用，使用register_qlib_split_factors"""
+    try:
+        from src.factors.qlib_factor_calculator import QlibAlpha158Factor
+
+        manager = get_factor_manager()
+
+        # 注册Alpha158因子（bundled版本，已弃用）
+        alpha158 = QlibAlpha158Factor()
+        # manager.register_factor(alpha158)  # 已禁用，使用拆分版本
+
+        print(f"[INFO] Qlib bundled factor (Alpha158) is deprecated, using split factors instead")
+
+    except ImportError as e:
+        print(f"[WARN] Qlib factor unavailable: {e}")
+    except Exception as e:
+        print(f"[ERROR] Failed to register Qlib factor: {e}")
+        import traceback
+        traceback.print_exc()
+
+def register_qlib_split_factors():
+    """注册97个拆分后的Qlib因子（独立IC评估和权重优化）"""
+    try:
+        # 导入5个类别的因子获取函数
+        from src.factors.qlib_momentum_factors import get_momentum_factors
+        from src.factors.qlib_volatility_factors import get_volatility_factors
+        from src.factors.qlib_volprice_factors import get_volprice_factors
+        from src.factors.qlib_technical_factors import get_technical_factors
+        from src.factors.qlib_trend_factors import get_trend_factors
+
+        manager = get_factor_manager()
+
+        # 批量注册97个Qlib因子
+        all_qlib_factors = (
+            get_momentum_factors() +      # 23个
+            get_volatility_factors() +    # 20个
+            get_volprice_factors() +      # 17个
+            get_technical_factors() +     # 19个
+            get_trend_factors()           # 18个
+        )
+
+        for factor in all_qlib_factors:
+            manager.register_factor(factor)
+
+        print(f"[OK] Qlib split factors registered: {len(all_qlib_factors)} independent factors")
+        print(f"     - Momentum: 23, Volatility: 20, VolPrice: 17, Technical: 19, Trend: 18")
+
+    except ImportError as e:
+        print(f"[WARN] Qlib split factors unavailable: {e}")
+    except Exception as e:
+        print(f"[ERROR] Failed to register Qlib split factors: {e}")
         import traceback
         traceback.print_exc()
 
@@ -98,6 +153,8 @@ def initialize_factors(enable_auto_generation: bool = True):
     register_multi_timeframe_factors()   # 注册多时间框架因子
     register_fundamental_factors()       # 注册基本面因子
     register_factor_momentum_factors()   # 注册因子动量因子
+    # register_qlib_factors()            # 【已禁用】旧的bundled Alpha158
+    register_qlib_split_factors()        # 【新增】97个独立Qlib因子
 
     # 如果启用自动因子生成
     if enable_auto_generation:
