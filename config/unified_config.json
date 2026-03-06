@@ -227,15 +227,10 @@
           "config": {}
         },
         "claude_sonnet": {
-          "name": "Claude Sonnet 4.5",
-          "description": "Anthropic Claude Sonnet 4.5 - 用于小红书文案生成",
+          "name": "Claude Code SDK",
+          "description": "通过本地 claude CLI 调用 - 用于小红书文案生成",
           "type": "claude_sdk",
-          "config": {
-            "api_key": "YOUR_ANTHROPIC_API_KEY_HERE",
-            "model": "claude-3-5-sonnet-20241022",
-            "max_tokens": 2000,
-            "temperature": 0.7
-          }
+          "config": {}
         }
       }
     },

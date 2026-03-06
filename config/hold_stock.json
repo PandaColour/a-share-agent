@@ -102,18 +102,18 @@
       "buy_flag": false
     },
     {
-      "symbol": "300223.SZ",
-      "name": "北京君正",
-      "purchase_date": "2026-01-19",
-      "cost": 126.02,
-      "buy_flag": false
+      "symbol": "000890.SZ",
+      "name": "法尔胜",
+      "purchase_date": "2026-03-06",
+      "cost": 8.927,
+      "buy_flag": true
     },
     {
       "symbol": "002054.SZ",
       "name": "德美化工",
       "purchase_date": "2026-02-11",
       "cost": 10.69,
-      "buy_flag": true
+      "buy_flag": false
     },
     {
       "symbol": "300302.SZ",
@@ -123,17 +123,31 @@
       "buy_flag": false
     },
     {
-      "symbol": "300042.SZ",
-      "name": "朗科科技",
-      "purchase_date": "2026-01-19",
-      "cost": 29.86,
-      "buy_flag": false
+      "symbol": "001896.SZ",
+      "name": "豫能控股",
+      "purchase_date": "2026-03-03",
+      "cost": 13.89,
+      "buy_flag": true
     },
     {
       "symbol": "002506.SZ",
       "name": "协鑫集成",
       "purchase_date": "2026-02-10",
       "cost": 5.174,
+      "buy_flag": false
+    },
+    {
+      "symbol": "603466.SH",
+      "name": "风语筑",
+      "purchase_date": "2026-02-25",
+      "cost": 12.440,
+      "buy_flag": false
+    },
+    {
+      "symbol": "002283.SZ",
+      "name": "天润工业",
+      "purchase_date": "2026-02-25",
+      "cost": 10.108,
       "buy_flag": false
     }
   ],
