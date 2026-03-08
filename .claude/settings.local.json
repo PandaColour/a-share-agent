@@ -74,7 +74,8 @@
       "Bash(if exist test_factor_cache rmdir /s /q test_factor_cache)",
       "Bash(if exist test_cold_start_cache rmdir /s /q test_cold_start_cache)",
       "Bash(ls:*)",
-      "Bash(pip uninstall:*)"
+      "Bash(pip uninstall:*)",
+      "Bash(.venv/Scripts/pip.exe list:*)"
     ],
     "deny": [],
     "ask": []

@@ -36,16 +36,16 @@ class ClaudeSDKClient(AIModelInterface):
 
         # 延迟导入，避免未安装时影响其他模块
         try:
-            from claude_code_sdk import ClaudeCodeOptions, ClaudeSDKClient as SDKClient
-            from claude_code_sdk import AssistantMessage, TextBlock, ResultMessage
+            from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient as SDKClient
+            from claude_agent_sdk import AssistantMessage, TextBlock, ResultMessage
 
             self.SDKClient = SDKClient
-            self.ClaudeCodeOptions = ClaudeCodeOptions
+            self.ClaudeAgentOptions = ClaudeAgentOptions
             self.AssistantMessage = AssistantMessage
             self.TextBlock = TextBlock
             self.ResultMessage = ResultMessage
             self.available = True
-            logger.info(f"Claude Code SDK 导入成功")
+            logger.info(f"Claude Agent SDK 导入成功")
         except ImportError as e:
             logger.warning(f"claude-agent-sdk 包未安装: {e}")
             logger.warning("请运行: pip install claude-agent-sdk")
@@ -69,7 +69,7 @@ class ClaudeSDKClient(AIModelInterface):
             working_dir.mkdir(parents=True, exist_ok=True)
 
             # 创建选项
-            options = self.ClaudeCodeOptions(
+            options = self.ClaudeAgentOptions(
                 cwd=str(working_dir),
                 system_prompt=self.system_prompt,
                 permission_mode="acceptEdits"  # 自动接受编辑，启用工具
