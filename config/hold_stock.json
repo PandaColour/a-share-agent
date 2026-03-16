@@ -53,9 +53,9 @@
       "buy_flag": false
     },
     {
-      "symbol": "601212.SH",
-      "name": "白银有色",
-      "purchase_date": "2026-01-27",
+      "symbol": "001267.SZ",
+      "name": "汇绿生态",
+      "purchase_date": "2026-03-12",
       "cost": 11.42,
       "buy_flag": false
     },
@@ -105,7 +105,7 @@
       "symbol": "000890.SZ",
       "name": "法尔胜",
       "purchase_date": "2026-03-06",
-      "cost": 8.927,
+      "cost": 11.098,
       "buy_flag": true
     },
     {
@@ -127,7 +127,7 @@
       "name": "豫能控股",
       "purchase_date": "2026-03-03",
       "cost": 13.89,
-      "buy_flag": true
+      "buy_flag": false
     },
     {
       "symbol": "002506.SZ",

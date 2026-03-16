@@ -240,6 +240,48 @@ class HistoricalPercentileFactor(BaseFactor):
         )
 
 
+class OvernightGapFactor(BaseFactor):
+    """隔夜跳空因子 - 计算隔夜价格变化幅度"""
+
+    def __init__(self):
+        super().__init__(
+            name="overnight_gap",
+            category="momentum",
+            description="隔夜跳空因子，衡量(前一日收盘价 - 当日开盘价)/当日开盘价"
+        )
+        self.dependencies = ["price"]
+        self.lookback_days = 2  # 只需要2天数据
+
+    def calculate(self, data: Dict[str, pd.DataFrame], symbol: str, **kwargs) -> FactorValue:
+        """计算隔夜跳空"""
+        df = data['price'].tail(self.lookback_days)
+
+        if len(df) < 2:
+            return FactorValue(symbol, self.name, 0.0, datetime.now(), 0.5)
+
+        prev_close = df['Close'].iloc[-2]  # 前一日收盘价
+        curr_open = df['Open'].iloc[-1]    # 当日开盘价
+
+        # 隔夜跳空 = (前一日收盘价 - 当日开盘价) / 当日开盘价
+        overnight_gap = (prev_close - curr_open) / curr_open
+
+        # 标准化到[-1, 1]区间
+        normalized_signal = np.tanh(overnight_gap * 20)
+
+        return FactorValue(
+            symbol=symbol,
+            factor_name=self.name,
+            value=normalized_signal,
+            timestamp=datetime.now(),
+            confidence=0.75,
+            raw_data={
+                'prev_close': float(prev_close),
+                'curr_open': float(curr_open),
+                'overnight_gap_raw': float(overnight_gap)
+            }
+        )
+
+
 def register_momentum_enhanced_factors():
     """注册所有增强动量因子"""
     from .factor_manager import get_factor_manager
@@ -250,5 +292,6 @@ def register_momentum_enhanced_factors():
     factor_manager.register_factor(GapStrengthFactor())
     factor_manager.register_factor(TrendPersistenceFactor())
     factor_manager.register_factor(HistoricalPercentileFactor())
+    factor_manager.register_factor(OvernightGapFactor())  # 新增
 
-    logger.info("✅ 增强动量因子注册完成 (4个因子)")
+    logger.info("✅ 增强动量因子注册完成 (5个因子)")

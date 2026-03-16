@@ -12,6 +12,12 @@ from .base import AIModelInterface
 
 logger = logging.getLogger(__name__)
 
+import os
+os.environ["ANTHROPIC_API_KEY"] = "f5f275eec89440e5aa281f77483bc35e.W1GrOLUDw08ZghSz"
+os.environ["ANTHROPIC_BASE_URL"] = "https://open.bigmodel.cn/api/anthropic"
+os.environ["ANTHROPIC_DEFAULT_HAIKU_MODEL"] = "glm-5"
+os.environ["ANTHROPIC_DEFAULT_SONNET_MODEL"] = "glm-5"
+os.environ["ANTHROPIC_DEFAULT_OPUS_MODEL"] = "glm-5"
 
 class ClaudeSDKClient(AIModelInterface):
     """Claude Code SDK 客户端实现"""
