@@ -25,10 +25,10 @@
       "buy_flag": false
     },
     {
-      "symbol": "002413.SZ",
-      "name": "雷科防务",
-      "purchase_date": "2026-01-19",
-      "cost": 13.78,
+      "symbol": "000533.SZ",
+      "name": "顺钠股份",
+      "purchase_date": "2026-03-17",
+      "cost": 18.398,
       "buy_flag": false
     },
     {
@@ -74,10 +74,10 @@
       "buy_flag": false
     },
     {
-      "symbol": "300058.SZ",
-      "name": "蓝色光标",
-      "purchase_date": "2026-01-19",
-      "cost": 336.16,
+      "symbol": "600227.SH",
+      "name": "赤天化",
+      "purchase_date": "2026-03-18",
+      "cost": 5.308,
       "buy_flag": false
     },
     {
@@ -104,9 +104,9 @@
     {
       "symbol": "000890.SZ",
       "name": "法尔胜",
-      "purchase_date": "2026-03-06",
+      "purchase_date": "2026-03-16",
       "cost": 11.098,
-      "buy_flag": true
+      "buy_flag": false
     },
     {
       "symbol": "002054.SZ",
@@ -125,9 +125,9 @@
     {
       "symbol": "001896.SZ",
       "name": "豫能控股",
-      "purchase_date": "2026-03-03",
-      "cost": 13.89,
-      "buy_flag": false
+      "purchase_date": "2026-03-17",
+      "cost": 14.23,
+      "buy_flag": true
     },
     {
       "symbol": "002506.SZ",

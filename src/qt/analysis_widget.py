@@ -232,7 +232,7 @@ class AnalysisWidget(QWidget):
         # 分
         self.minute_spin = QSpinBox()
         self.minute_spin.setRange(0, 59)
-        self.minute_spin.setValue(30)
+        self.minute_spin.setValue(10)
         self.minute_spin.setSuffix(" 分")
         self.minute_spin.setMinimumWidth(80)
         time_layout.addWidget(self.minute_spin)
