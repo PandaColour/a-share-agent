@@ -11,7 +11,7 @@ from datetime import datetime, date
 from typing import List, Dict, Optional, Tuple
 from pathlib import Path
 
-from .dynamic_stock_selector import DynamicStockSelector, get_dynamic_stock_list
+from .dynamic_stock_selector import DynamicStockSelector, get_dynamic_stock_list, get_dynamic_stock_list_with_stats
 
 logger = logging.getLogger(__name__)
 
@@ -81,13 +81,16 @@ class StockSelectionManager:
         """
         enhanced_stocks = []
 
-        # 加载常量股票配置获取已知信息
-        const_config = self._load_const_stock_config()
+        # 加载持仓股票配置获取已知信息
+        const_config = self._load_hold_stock_config()
         all_known_stocks = {}
 
         # 建立已知股票的映射
-        for stock in const_config.get('default_stocks', []):
+        for stock in const_config.get('hold_stocks', []):
             all_known_stocks[stock['symbol']] = stock
+
+        # 初始化数据源提供者（用于获取行业信息）
+        data_provider = self._get_data_provider()
 
         for symbol, name in stocks:
             # 尝试从已知股票中获取信息
@@ -106,12 +109,18 @@ class StockSelectionManager:
             source = "config"  # 默认来源
             reason = known_info.get('reason', '动态选择')
 
+            # 获取行业信息（新增）
+            sector = known_info.get('sector', '未分类')
+            if sector == '未分类':
+                # 从数据源获取实时行业信息
+                sector = self._get_stock_sector(symbol, data_provider)
+
             # 构建增强的股票信息
             enhanced_stock = {
                 "symbol": symbol,
                 "name": name,
                 "market": known_info.get('market', market),
-                "sector": known_info.get('sector', '未分类'),
+                "sector": sector,  # 使用增强后的行业信息
                 "source": source,
                 "reason": reason,
                 "score": 70.0,  # 默认评分
@@ -125,6 +134,127 @@ class StockSelectionManager:
             enhanced_stocks.append(enhanced_stock)
 
         return enhanced_stocks
+
+    def _get_data_provider(self):
+        """
+        获取数据源提供者实例（复用现有的多数据源架构）
+
+        Returns:
+            MultiSourceDataProvider实例，如果初始化失败返回None
+        """
+        try:
+            from src.data.multi_source_data_provider import MultiSourceDataProvider
+
+            # 如果有配置管理器，传递给数据提供者
+            if self.config_manager:
+                # 尝试从配置管理器获取统一配置文件路径
+                config_file = None
+                if hasattr(self.config_manager, 'config_file'):
+                    config_file = self.config_manager.config_file
+                return MultiSourceDataProvider(config_file=config_file)
+            else:
+                # 使用默认配置
+                return MultiSourceDataProvider()
+
+        except Exception as e:
+            logger.error(f"初始化数据源提供者失败: {e}")
+            return None
+
+    def _get_stock_sector(self, symbol: str, data_provider) -> str:
+        """
+        从数据源获取股票行业信息（支持多数据源降级）
+
+        Args:
+            symbol: 股票代码
+            data_provider: 数据源提供者实例
+
+        Returns:
+            行业信息字符串，获取失败返回'未分类'
+        """
+        if not data_provider:
+            logger.debug(f"数据源提供者未初始化，无法获取 {symbol} 的行业信息")
+            return '未分类'
+
+        try:
+            logger.debug(f"正在获取 {symbol} 的行业信息...")
+
+            # 调用多数据源的 get_stock_info 方法
+            stock_info = data_provider.get_stock_info(symbol)
+
+            if not stock_info:
+                logger.debug(f"未获取到 {symbol} 的基本信息")
+                return '未分类'
+
+            # 尝试多种可能的行业字段
+            sector_fields = ['industry', 'sector', '行业', '所属行业', 'INDUSTRY']
+            sector = '未分类'
+
+            for field in sector_fields:
+                if field in stock_info and stock_info[field]:
+                    sector = str(stock_info[field]).strip()
+                    if sector and sector != 'nan' and sector != 'None' and sector != '未分类':
+                        logger.debug(f"✅ 从字段 '{field}' 获取到 {symbol} 的行业信息: {sector}")
+                        break
+
+            # 如果还是未分类，尝试根据股票名称推断
+            if sector == '未分类':
+                sector = self._infer_sector_from_name(symbol, stock_info.get('name', ''))
+
+            return sector
+
+        except Exception as e:
+            logger.warning(f"获取 {symbol} 行业信息失败: {e}")
+            return '未分类'
+
+    def _infer_sector_from_name(self, symbol: str, name: str) -> str:
+        """
+        根据股票名称推断行业分类（备选方案）
+
+        Args:
+            symbol: 股票代码
+            name: 股票名称
+
+        Returns:
+            推断的行业分类
+        """
+        if not name:
+            return '未分类'
+
+        try:
+            # 定义行业关键词映射
+            sector_keywords = {
+                '银行': ['银行'],
+                '保险': ['保险', '人寿', '财险'],
+                '证券': ['证券', '券商', '投资'],
+                '房地产': ['房地产', '地产', '置业', '开发'],
+                '建筑建材': ['建筑', '建材', '建工', '水泥', '钢铁'],
+                '医药生物': ['医药', '生物', '制药', '医疗', '健康'],
+                '食品饮料': ['食品', '饮料', '酒业', '茅台', '五粮液', '乳业'],
+                '汽车': ['汽车', '车辆', '客车'],
+                '电子': ['电子', '科技', '信息', '通信', '半导体'],
+                '计算机': ['软件', '网络', '计算机', '数据', '云'],
+                '化工': ['化工', '化学', '石化'],
+                '机械设备': ['机械', '设备', '制造'],
+                '电力设备': ['电力', '电气', '能源'],
+                '公用事业': ['水务', '燃气', '供电'],
+                '传媒': ['传媒', '广告', '文化', '影视'],
+                '交通运输': ['交通', '运输', '航空', '港口'],
+                '商业贸易': ['商业', '贸易', '零售', '超市']
+            }
+
+            # 按优先级匹配
+            for sector, keywords in sector_keywords.items():
+                for keyword in keywords:
+                    if keyword in name:
+                        logger.debug(f"根据名称推断 {symbol}({name}) 行业为: {sector}")
+                        return sector
+
+            logger.debug(f"无法推断 {symbol}({name}) 的行业分类")
+            return '未分类'
+
+        except Exception as e:
+            logger.debug(f"推断 {symbol} 行业分类失败: {e}")
+            return '未分类'
 
     def _save_cached_data(self, stocks: List[Tuple[str, str]], metadata: Dict):
         """
@@ -143,7 +273,7 @@ class StockSelectionManager:
             metadata_copy['cache_info'] = {
                 'description': 'Dynamic stock selection cache file with enhanced stock information',
                 'version': '2.0',
-                'note': 'This file is automatically generated and updated daily. Contains detailed stock metadata for easy migration to const_stock.json'
+                'note': 'This file is automatically generated and updated daily. Contains detailed stock metadata for easy migration to hold_stock.json'
             }
 
             cache_data = {
@@ -230,53 +360,47 @@ class StockSelectionManager:
             logger.error(f"获取配置股票失败: {e}")
             return self._get_default_stocks()
 
-    def _load_const_stock_config(self) -> Dict:
-        """加载常量股票配置文件"""
+    def _load_hold_stock_config(self) -> Dict:
+        """加载持仓股票配置文件"""
         try:
             # 获取项目根目录
             current_dir = Path(__file__).parent
             project_root = current_dir.parent.parent
-            const_stock_file = project_root / "config" / "const_stock.json"
+            hold_stock_file = project_root / "config" / "hold_stock.json"
 
-            if not const_stock_file.exists():
-                logger.warning(f"常量股票配置文件不存在: {const_stock_file}")
+            if not hold_stock_file.exists():
+                logger.warning(f"持仓股票配置文件不存在: {hold_stock_file}")
                 return {}
 
-            with open(const_stock_file, 'r', encoding='utf-8') as f:
+            with open(hold_stock_file, 'r', encoding='utf-8') as f:
                 config = json.load(f)
 
-            logger.info(f"成功加载常量股票配置: {len(config.get('default_stocks', []))} 只默认股票")
+            logger.info(f"成功加载持仓股票配置: {len(config.get('hold_stocks', []))} 只持仓股票")
             return config
 
         except Exception as e:
-            logger.error(f"加载常量股票配置失败: {e}")
+            logger.error(f"加载持仓股票配置失败: {e}")
             return {}
 
     def _get_default_stocks(self) -> List[str]:
         """获取默认股票列表"""
         try:
             # 从配置文件加载
-            const_config = self._load_const_stock_config()
-            default_stocks = const_config.get('default_stocks', [])
+            hold_config = self._load_hold_stock_config()
+            hold_stocks = hold_config.get('hold_stocks', [])
 
-            if default_stocks:
+            if hold_stocks:
                 # 提取股票代码
-                stock_symbols = [stock['symbol'] for stock in default_stocks]
-                logger.info(f"从配置文件获取默认股票: {len(stock_symbols)} 只")
+                stock_symbols = [stock['symbol'] for stock in hold_stocks]
+                logger.info(f"从配置文件获取持仓股票: {len(stock_symbols)} 只")
                 return stock_symbols
+            else:
+                logger.info("配置文件中无持仓股票，返回空列表")
+                return []
 
         except Exception as e:
-            logger.error(f"从配置文件获取默认股票失败: {e}")
-
-        # 如果配置文件加载失败，使用硬编码的备选列表
-        logger.warning("使用硬编码的备选股票列表")
-        return [
-            '000001.SZ',  # 平安银行
-            '600519.SH',  # 贵州茅台
-            '000002.SZ',  # 万科A
-            '600036.SH',  # 招商银行
-            '000858.SZ'   # 五粮液
-        ]
+            logger.error(f"从配置文件获取持仓股票失败: {e}")
+            return []
 
     def get_all_stocks(self) -> List[Tuple[str, str]]:
         """
@@ -286,24 +410,19 @@ class StockSelectionManager:
             List[Tuple[str, str]]: 股票代码和名称的列表
         """
         try:
-            const_config = self._load_const_stock_config()
-            default_stocks = const_config.get('default_stocks', [])
+            hold_config = self._load_hold_stock_config()
+            hold_stocks = hold_config.get('hold_stocks', [])
 
-            if default_stocks:
+            if hold_stocks:
                 # 转换为(symbol, name)格式
-                return [(stock['symbol'], stock['name']) for stock in default_stocks]
+                return [(stock['symbol'], stock['name']) for stock in hold_stocks]
+            else:
+                logger.info("配置文件中无股票，返回空列表")
+                return []
 
         except Exception as e:
             logger.error(f"获取所有股票列表失败: {e}")
-
-        # 备选硬编码列表
-        return [
-            ('000001.SZ', '平安银行'),
-            ('600519.SH', '贵州茅台'),
-            ('000002.SZ', '万科A'),
-            ('600036.SH', '招商银行'),
-            ('000858.SZ', '五粮液')
-        ]
+            return []
 
     def get_fallback_stocks(self) -> List[Tuple[str, str]]:
         """
@@ -325,36 +444,28 @@ class StockSelectionManager:
         try:
             logger.info("开始执行动态选股...")
 
-            # 使用现有的get_dynamic_stock_list函数
+            # 使用带统计数据的动态选股函数
             if self.config_manager:
-                dynamic_stocks = get_dynamic_stock_list(self.config_manager)
+                dynamic_stocks, stats = get_dynamic_stock_list_with_stats(self.config_manager)
             else:
                 # 如果没有配置管理器，使用DynamicStockSelector的默认逻辑
                 dynamic_stocks = []
+                stats = {
+                    'selection_method': 'no_config_manager',
+                    'total_selected': 0,
+                    'selection_time': datetime.now().isoformat(),
+                    'sources': {},
+                    'summary': {
+                        'config': 0,
+                        'longhu_bang': 0,
+                        'social_media': 0,
+                        'auto_discovery': 0
+                    }
+                }
                 logger.warning("无配置管理器，跳过动态选股")
 
-            # 构建元数据
-            metadata = {
-                'selection_method': 'dynamic',
-                'total_selected': len(dynamic_stocks),
-                'selection_time': datetime.now().isoformat(),
-                'sources': {
-                    'config': 0,
-                    'longhu_bang': 0,
-                    'social_media': 0,
-                    'potential': 0
-                }
-            }
-
-            # 如果有detailed的选股结果，可以分析来源分布
-            # 这里简化处理
-            if dynamic_stocks:
-                # 假设前5个是配置股票，其余是动态选股
-                metadata['sources']['config'] = min(5, len(dynamic_stocks))
-                metadata['sources']['potential'] = max(0, len(dynamic_stocks) - 5)
-
             logger.info(f"动态选股完成，共选择 {len(dynamic_stocks)} 只股票")
-            return dynamic_stocks, metadata
+            return dynamic_stocks, stats
 
         except Exception as e:
             logger.error(f"动态选股失败: {e}")
@@ -366,7 +477,19 @@ class StockSelectionManager:
                 'selection_method': 'fallback_config',
                 'total_selected': len(config_stock_tuples),
                 'error': str(e),
-                'selection_time': datetime.now().isoformat()
+                'selection_time': datetime.now().isoformat(),
+                'sources': {
+                    'config': len(config_stock_tuples),
+                    'longhu_bang': 0,
+                    'social_media': 0,
+                    'auto_discovery': 0
+                },
+                'summary': {
+                    'config': len(config_stock_tuples),
+                    'longhu_bang': 0,
+                    'social_media': 0,
+                    'auto_discovery': 0
+                }
             }
             return config_stock_tuples, metadata
 
@@ -528,9 +651,9 @@ class StockSelectionManager:
 
         return []
 
-    def migrate_to_const_stock(self, symbols: List[str]) -> Dict:
+    def migrate_to_hold_stock(self, symbols: List[str]) -> Dict:
         """
-        将指定的股票从动态选股迁移到常量股票池
+        将指定的股票从动态选股迁移到持仓股票池
 
         Args:
             symbols: 要迁移的股票代码列表
@@ -543,22 +666,23 @@ class StockSelectionManager:
             dynamic_stocks = self.get_dynamic_stock_details()
             dynamic_stock_map = {stock['symbol']: stock for stock in dynamic_stocks}
 
-            # 加载当前常量股票配置
-            const_config = self._load_const_stock_config()
-            if not const_config:
-                const_config = {
-                    "description": "默认股票池配置文件",
+            # 加载当前持仓股票配置
+            hold_config = self._load_hold_stock_config()
+            if not hold_config:
+                hold_config = {
+                    "description": "持仓股票配置文件",
                     "version": "1.0",
                     "last_updated": str(date.today()),
-                    "default_stocks": [],
+                    "hold_stocks": [],
                     "config": {
-                        "max_default_stocks": 20,
-                        "stock_validation": True
+                        "max_hold_stocks": 20,
+                        "stock_validation": True,
+                        "track_performance": True
                     }
                 }
 
             # 获取现有的股票代码
-            existing_symbols = {stock['symbol'] for stock in const_config.get('default_stocks', [])}
+            existing_symbols = {stock['symbol'] for stock in hold_config.get('hold_stocks', [])}
 
             # 准备迁移的股票
             migrated_stocks = []
@@ -571,29 +695,31 @@ class StockSelectionManager:
 
                 if symbol in dynamic_stock_map:
                     stock_info = dynamic_stock_map[symbol]
-                    # 构建常量股票格式
-                    const_stock = {
+                    # 构建持仓股票格式
+                    hold_stock = {
                         "symbol": stock_info['symbol'],
                         "name": stock_info['name'],
                         "market": stock_info['market'],
                         "sector": stock_info['sector'],
-                        "reason": f"从动态选股迁移 - {stock_info['reason']}"
+                        "reason": f"从动态选股迁移 - {stock_info['reason']}",
+                        "purchase_date": date.today().strftime("%Y-%m-%d"),
+                        "cost": 0.0
                     }
-                    const_config['default_stocks'].append(const_stock)
+                    hold_config['hold_stocks'].append(hold_stock)
                     migrated_stocks.append(symbol)
                 else:
                     logger.warning(f"股票 {symbol} 不在动态选股结果中")
 
             # 更新配置文件
             if migrated_stocks:
-                const_config['last_updated'] = str(date.today())
+                hold_config['last_updated'] = str(date.today())
 
                 # 保存更新后的配置
-                const_stock_file = Path(__file__).parent.parent.parent / "config" / "const_stock.json"
-                with open(const_stock_file, 'w', encoding='utf-8') as f:
-                    json.dump(const_config, f, ensure_ascii=False, indent=2)
+                hold_stock_file = Path(__file__).parent.parent.parent / "config" / "hold_stock.json"
+                with open(hold_stock_file, 'w', encoding='utf-8') as f:
+                    json.dump(hold_config, f, ensure_ascii=False, indent=2)
 
-                logger.info(f"成功迁移 {len(migrated_stocks)} 只股票到常量股票池")
+                logger.info(f"成功迁移 {len(migrated_stocks)} 只股票到持仓股票池")
 
             return {
                 "success": True,
@@ -605,7 +731,7 @@ class StockSelectionManager:
             }
 
         except Exception as e:
-            logger.error(f"迁移股票到常量股票池失败: {e}")
+            logger.error(f"迁移股票到持仓股票池失败: {e}")
             return {
                 "success": False,
                 "error": str(e),
@@ -613,4 +739,91 @@ class StockSelectionManager:
                 "migrated_stocks": [],
                 "skipped_count": 0,
                 "skipped_stocks": []
+            }
+
+    def get_stocks_with_filter(self, data_provider=None, force_refresh: bool = False) -> Tuple[List[Tuple[str, str]], Dict]:
+        """
+        获取股票列表并应用过滤器（统一的选股和过滤逻辑）
+
+        这个方法集成了：
+        1. 使用StockSelectionManager的选股+缓存机制
+        2. 应用PreviousDayChangeFilter前日涨幅过滤（如果启用）
+        3. 支持当日缓存复用
+
+        Args:
+            data_provider: 数据提供者实例（用于过滤器）
+            force_refresh: 是否强制刷新，忽略缓存
+
+        Returns:
+            (股票列表, 元数据信息)
+        """
+        try:
+            # 步骤1: 获取基础选股结果（自动处理缓存）
+            stock_list, metadata = self.get_selected_stocks(force_refresh=force_refresh)
+
+            if not stock_list:
+                logger.warning("未获取到任何股票")
+                return stock_list, metadata
+
+            logger.info(f"获取到{len(stock_list)}只股票，开始应用过滤器...")
+
+            # 步骤2: 应用前日涨幅过滤（如果启用且有数据提供者）
+            filter_config = {}
+            if self.config_manager:
+                filter_config = self.config_manager.get('analysis_settings.filters.previous_day_change', {})
+
+            if filter_config.get('enabled', False) and data_provider:
+                try:
+                    from src.filters.previous_day_filter import PreviousDayChangeFilter
+
+                    # 构建持仓股票列表（作为过滤器例外）
+                    # 注意：所有在 hold_stock.json 中的股票都不应该被过滤，无论 buy_flag 状态
+                    hold_stock_symbols = []
+                    try:
+                        hold_config = self._load_hold_stock_config()
+                        hold_stock_symbols = [stock['symbol'] for stock in hold_config.get('hold_stocks', [])]
+                        logger.info(f"过滤器例外股票（持仓）: {len(hold_stock_symbols)}只（所有持仓股票均豁免过滤）")
+                    except Exception as e:
+                        logger.warning(f"读取持仓配置失败: {e}")
+
+                    # 应用过滤器
+                    original_count = len(stock_list)
+                    max_increase = filter_config.get('max_increase_percent', 9.0)
+                    logger.info(f"应用前日涨幅过滤（阈值: {max_increase}%）...")
+
+                    prev_day_filter = PreviousDayChangeFilter(self.config_manager, data_provider, hold_stock_symbols)
+                    stock_list = prev_day_filter.filter_stocks(stock_list)
+
+                    filtered_count = original_count - len(stock_list)
+                    logger.info(f"过滤完成: 原{original_count}只 → 保留{len(stock_list)}只，过滤{filtered_count}只")
+
+                    # 更新元数据记录过滤信息
+                    metadata['filtering_applied'] = True
+                    metadata['original_count'] = original_count
+                    metadata['filtered_count'] = filtered_count
+                    metadata['filter_threshold'] = max_increase
+
+                except Exception as filter_error:
+                    logger.warning(f"前日涨幅过滤失败: {filter_error}，继续使用未过滤的列表")
+                    metadata['filter_error'] = str(filter_error)
+            else:
+                if not filter_config.get('enabled', False):
+                    logger.debug("前日涨幅过滤已禁用")
+                if not data_provider:
+                    logger.debug("无数据提供者，跳过前日涨幅过滤")
+                metadata['filtering_applied'] = False
+
+            logger.info(f"最终选股结果: {len(stock_list)}只股票")
+            return stock_list, metadata
+
+        except Exception as e:
+            logger.error(f"获取并过滤股票列表失败: {e}")
+            import traceback
+            traceback.print_exc()
+            # 返回空列表和错误信息
+            return [], {
+                'selection_method': 'error',
+                'total_selected': 0,
+                'error': str(e),
+                'selection_time': datetime.now().isoformat()
             }

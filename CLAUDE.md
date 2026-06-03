@@ -26,12 +26,8 @@
 
 ### 核心模块
 
-**`src/agents/`** - 多智能体协作系统
-- `fundamental_analyst.py` - 基本面分析师（PE比率、市值、财务指标）
-- `technical_analyst.py` - 技术面分析师（均线、RSI、MACD）含AI因子集成
-- `sentiment_analyst.py` - 情感面分析师（价格趋势、市场情绪）
-- `advanced_decision_engine.py` - 高级决策引擎
-- `portfolio_manager.py` - 投资组合管理
+**`src/agents/`** - 简化的分析决策系统
+- `portfolio_manager.py` - 投资组合管理（基于AI因子分析）
 - `risk_manager.py` - 风险管理
 
 **`src/factors/`** - AI因子系统（新功能）
@@ -79,7 +75,7 @@ python main.py
 # 系统将自动执行：
 # 1. 使用自动生成因子初始化AI因子系统
 # 2. 运行动态股票选择（配置+龙虎榜+社交媒体）
-# 3. 执行四维分析（基本面+技术面+情感面+AI因子）
+# 3. 执行AI因子分析
 # 4. 输出综合分析结果
 ```
 
@@ -144,8 +140,8 @@ grep -r "TODO\|FIXME\|XXX" src/ || echo "未发现待处理任务"
 - **AI增强**: 4种AI增强策略用于因子生成
 - **动态扩展**: 因子库从2个基础因子增长到8+个因子
 
-### 多智能体分析
-- **四维分析**: 传统3个分析师 + AI因子分析师
+### 双维度智能分析
+- **核心分析**: 技术面分析师 + AI因子分析师
 - **基于置信度的决策**: 每个分析师提供置信度评分
 - **AI模型专业化**: 不同分析师类型分配不同AI模型
 
@@ -167,20 +163,22 @@ grep -r "TODO\|FIXME\|XXX" src/ || echo "未发现待处理任务"
 ### 导入结构
 ```python
 # 始终使用相对导入从src模块导入
-from src.agents.fundamental_analyst import FundamentalAnalyst
+from src.agents.risk_manager import RiskManager
+from src.agents.portfolio_manager import PortfolioManager
 from src.data.multi_source_data_provider import MultiSourceDataProvider
-from src.factors import AutoFactorSelector, AutoStrategyGenerator
+from src.factors import AutoFactorSelector, AutoStrategyGenerator, FactorManager
 ```
 
 ### 错误处理模式
 ```python
-# 标准错误处理与优雅降级
+# AI因子分析错误处理
 try:
-    # AI分析
-    ai_result = ai_analyzer.analyze(data)
+    # AI因子分析
+    ai_result = factor_manager.calculate_all_factors(symbol, data)
 except Exception as e:
-    logger.warning(f"AI分析失败: {e}, 回退到传统分析")
-    ai_result = traditional_analyzer.analyze(data)
+    logger.error(f"AI因子分析失败: {e}")
+    # 返回分析失败决策
+    return create_failure_decision(str(e))
 
 # 数据源故障转移模式
 def get_data_with_fallback(symbol, sources):

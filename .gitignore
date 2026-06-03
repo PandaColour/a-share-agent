@@ -109,10 +109,13 @@ config/*secret*
 Pipfile.lock
 
 # 本地数据文件
-data/
 *.db
 *.sqlite
 *.sqlite3
 /logs/
 /outputs/
 /backtest_results/
+/config/dynamic_stock.json
+/factor_cache/
+/qlib_data/
+/config/unified_config.json

@@ -10,6 +10,7 @@ from .ollama_client import OllamaClient
 from .custom_http_client import CustomHTTPClient
 from .ml_prediction_client import MLPredictionClient
 from .mock_client import MockAIClient
+from .claude_sdk_client import ClaudeSDKClient
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +38,8 @@ class AIModelFactory:
             return CustomHTTPClient(model_config)
         elif model_type == "ml_prediction":
             return MLPredictionClient(model_config)
+        elif model_type == "claude_sdk":
+            return ClaudeSDKClient(model_config.get("config", {}))
         elif model_type == "mock":
             return MockAIClient(model_config)
         else:
@@ -55,6 +58,8 @@ class AIModelFactory:
             return CustomHTTPClient(model_config)
         elif model_type == "ml_prediction":
             return MLPredictionClient(model_config)
+        elif model_type == "claude_sdk":
+            return ClaudeSDKClient(model_config.get("config", {}))
         elif model_type == "mock":
             return MockAIClient(model_config)
         else:

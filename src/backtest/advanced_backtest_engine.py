@@ -67,15 +67,47 @@ class AdvancedBacktestEngine:
         self.stop_loss_rate = analysis_risk.get('stop_loss_rate', -0.08)
         self.take_profit_rate = analysis_risk.get('take_profit_rate', 0.15)
         self.max_holding_days = analysis_risk.get('max_holding_days', 45)
-        
+
+        # 追踪止损配置
+        self.trailing_stop_drawdown = self._get_trailing_stop_drawdown(analysis_risk)
+
+        # 是否启用强制退出规则（止损止盈、超期持有）
+        self.enable_forced_exit = analysis_risk.get('enable_forced_exit', True)
+
         # 回测状态
         self.positions = {}  # 当前持仓 {symbol: position_info}
         self.trade_history = []  # 交易历史
         self.daily_returns = []  # 每日收益率
         self.portfolio_values = []  # 每日组合价值
-        
+
         logger.info(f"回测引擎初始化完成 - 初始资金: {self.initial_capital:.0f}元, 最大仓位: {self.max_position_size:.1%}")
-        logger.info(f"风险管理 - 止损: {self.stop_loss_rate:.1%}, 止盈: {self.take_profit_rate:.1%}, 最大持有: {self.max_holding_days}天")
+        if self.enable_forced_exit:
+            logger.info(f"风险管理 - 止损: {self.stop_loss_rate:.1%}, 止盈: {self.take_profit_rate:.1%}, "
+                       f"追踪止损: 回撤{self.trailing_stop_drawdown:.1%}, 最大持有: {self.max_holding_days}天")
+        else:
+            logger.info(f"风险管理 - 完全按策略信号执行，不启用强制止损止盈")
+
+    def _get_trailing_stop_drawdown(self, risk_config: Dict) -> float:
+        """
+        获取追踪止损回撤阈值配置
+
+        Args:
+            risk_config: 风险管理配置字典
+
+        Returns:
+            float: 追踪止损回撤阈值 (默认0.08，即8%)
+        """
+        trailing_stop_drawdown = risk_config.get('trailing_stop_drawdown', 0.08)
+
+        # 验证范围 [0.01, 0.50]
+        if trailing_stop_drawdown < 0.01:
+            logger.warning(f"追踪止损回撤阈值 {trailing_stop_drawdown:.1%} 过低，使用最小值 1%")
+            return 0.01
+        if trailing_stop_drawdown > 0.50:
+            logger.warning(f"追踪止损回撤阈值 {trailing_stop_drawdown:.1%} 过高，使用最大值 50%")
+            return 0.50
+
+        return trailing_stop_drawdown
         
     def run_strategy_backtest(self, recommendations: List[Dict], 
                             market_data: Dict[str, pd.DataFrame],
@@ -106,24 +138,29 @@ class AdvancedBacktestEngine:
             
             # 2. 重置回测状态
             self._reset_backtest_state()
-            
+
             # 3. 按时间排序推荐
             sorted_recommendations = sorted(
-                valid_recommendations, 
+                valid_recommendations,
                 key=lambda x: x.get('analysis_time', '')
             )
-            
+
             # 获取回测时间范围
             start_date, end_date = self._get_backtest_period(sorted_recommendations)
             all_dates = pd.date_range(start=start_date, end=end_date, freq='D')
-            trading_dates = [d for d in all_dates if d.weekday() < 5]  # 工作日
-            
+
+            # 使用TradingCalendar过滤交易日（自动排除周末和节假日）
+            from src.utils.trading_calendar import trading_calendar
+            trading_dates = [d for d in all_dates if trading_calendar.is_trading_day(d)]
+
+            logger.info(f"回测交易日: {len(trading_dates)}天 (过滤了{len(all_dates)-len(trading_dates)}个非交易日)")
+
             # 逐日执行回测
             for current_date in trading_dates:
                 self._process_trading_day(
                     current_date, sorted_recommendations, market_data
                 )
-            
+
             # 强制平仓所有持仓
             self._close_all_positions(trading_dates[-1], market_data)
             
@@ -162,12 +199,14 @@ class AdvancedBacktestEngine:
         
         # 2. 更新现有持仓
         self._update_positions(current_date, market_data)
-        
-        # 3. 检查止损止盈
-        self._check_stop_conditions(current_date, market_data)
-        
-        # 4. 检查超期持仓
-        self._check_max_holding_period(current_date, market_data)
+
+        # 3. 检查止损止盈（仅在启用强制退出时）
+        if self.enable_forced_exit:
+            self._check_stop_conditions(current_date, market_data)
+
+        # 4. 检查超期持仓（仅在启用强制退出时）
+        if self.enable_forced_exit:
+            self._check_max_holding_period(current_date, market_data)
         
         # 5. 计算当日组合价值
         portfolio_value = self._calculate_portfolio_value(current_date, market_data)
@@ -216,59 +255,105 @@ class AdvancedBacktestEngine:
             self._execute_buy_signal(
                 symbol, current_price, current_date, confidence, recommendation
             )
-        elif rec_type == "卖出" and symbol in self.positions:
+        elif rec_type.startswith("卖出") and symbol in self.positions:
             self._execute_sell_signal(
                 symbol, current_price, current_date, "主动卖出"
             )
     
     def _execute_buy_signal(self, symbol: str, price: float, date: pd.Timestamp,
                           confidence: float, recommendation: Dict):
-        """执行买入信号"""
-        # 检查是否已有持仓
-        if symbol in self.positions:
-            logger.debug(f"{symbol} 已有持仓，跳过买入")
-            return
-        
+        """
+        执行买入信号
+
+        新逻辑：
+        - 如果没有持仓，则新建仓位
+        - 如果已有持仓，则加仓并更新平均成本价和最高价
+        """
         # 计算仓位大小 (基于信心度调整)
         base_position_size = self.max_position_size * confidence
         portfolio_value = self._calculate_current_portfolio_value(date)
-        
+
         position_value = portfolio_value * base_position_size
         shares = int(position_value / price / 100) * 100  # A股最小交易单位100股
-        
+
         if shares < 100:  # 不足一手
             logger.debug(f"{symbol} 资金不足一手，跳过买入")
             return
-        
+
         # 计算实际交易金额和成本
         actual_value = shares * price
         transaction_cost = max(
-            actual_value * self.transaction_cost_rate, 
+            actual_value * self.transaction_cost_rate,
             self.min_transaction_cost
         )
         total_cost = actual_value + transaction_cost
-        
+
         if total_cost > self.current_capital:
             logger.debug(f"{symbol} 资金不足，跳过买入")
             return
-        
-        # 执行买入
+
+        # 检查是否已有持仓 - 如果有则加仓
+        if symbol in self.positions:
+            old_position = self.positions[symbol]
+            old_shares = old_position['shares']
+            old_entry_price = old_position['entry_price']
+            old_cost = old_shares * old_entry_price + old_position['transaction_cost']
+
+            # 执行加仓
+            self.current_capital -= total_cost
+
+            # 计算新的平均成本价
+            new_shares = old_shares + shares
+            new_total_cost = old_cost + total_cost
+            new_avg_price = (old_cost + actual_value) / new_shares
+
+            # 更新持仓信息
+            old_position['shares'] = new_shares
+            old_position['entry_price'] = new_avg_price  # 更新为平均成本价
+            old_position['transaction_cost'] += transaction_cost
+            old_position['position_value'] = new_shares * price
+
+            # 如果加仓价格高于最高价，更新最高价
+            if price > old_position.get('highest_price', old_entry_price):
+                old_position['highest_price'] = price
+
+            # 记录加仓交易
+            trade = {
+                'date': date.strftime('%Y-%m-%d'),
+                'symbol': symbol,
+                'action': '加仓',
+                'shares': shares,
+                'price': price,
+                'value': actual_value,
+                'transaction_cost': transaction_cost,
+                'reason': f'策略买入信号-加仓(新持仓{new_shares}股,均价{new_avg_price:.2f})',
+                'total_shares': new_shares,
+                'avg_price': new_avg_price
+            }
+            self.trade_history.append(trade)
+
+            logger.info(f"{date.strftime('%Y-%m-%d')} 加仓 {symbol} {shares}股 @{price:.2f}元 "
+                       f"(总持仓{new_shares}股, 均价{new_avg_price:.2f}元)")
+            return
+
+        # 新建仓位（首次买入）
         self.current_capital -= total_cost
-        
+
         position = {
             'symbol': symbol,
             'shares': shares,
             'entry_price': price,
             'entry_date': date,
             'current_price': price,
+            'highest_price': price,  # 追踪最高价，用于追踪止损
             'position_value': actual_value,
             'transaction_cost': transaction_cost,
             'confidence': confidence,
             'recommendation': recommendation
         }
-        
+
         self.positions[symbol] = position
-        
+
         # 记录交易
         trade = {
             'date': date.strftime('%Y-%m-%d'),
@@ -281,7 +366,7 @@ class AdvancedBacktestEngine:
             'reason': '策略买入信号'
         }
         self.trade_history.append(trade)
-        
+
         logger.info(f"{date.strftime('%Y-%m-%d')} 买入 {symbol} {shares}股 @{price:.2f}元")
     
     def _execute_sell_signal(self, symbol: str, price: float, 
@@ -311,7 +396,7 @@ class AdvancedBacktestEngine:
         profit = net_proceeds - entry_cost
         return_rate = profit / entry_cost
         
-        # 记录交易
+        # 记录交易（包含持仓期间的重复买点信息）
         trade = {
             'date': date.strftime('%Y-%m-%d'),
             'symbol': symbol,
@@ -323,7 +408,8 @@ class AdvancedBacktestEngine:
             'profit': profit,
             'return_rate': return_rate,
             'holding_days': (date - position['entry_date']).days,
-            'reason': reason
+            'reason': reason,
+            'missed_buy_signals': position.get('missed_buy_signals', [])  # 记录持仓期间的重复买点
         }
         self.trade_history.append(trade)
         
@@ -334,9 +420,9 @@ class AdvancedBacktestEngine:
                    f"收益率: {return_rate:.2%}")
     
     def _update_positions(self, date: pd.Timestamp, market_data: Dict[str, pd.DataFrame]):
-        """更新持仓价格"""
+        """更新持仓价格和最高价"""
         date_str = date.strftime('%Y-%m-%d')
-        
+
         for symbol, position in self.positions.items():
             if symbol in market_data:
                 stock_data = market_data[symbol]
@@ -346,25 +432,40 @@ class AdvancedBacktestEngine:
                         current_price = daily_data.iloc[0]['Close']
                         position['current_price'] = current_price
                         position['position_value'] = position['shares'] * current_price
+
+                        # 更新最高价（追踪止损用）
+                        if 'highest_price' not in position:
+                            position['highest_price'] = position['entry_price']
+
+                        if current_price > position['highest_price']:
+                            old_highest = position['highest_price']
+                            position['highest_price'] = current_price
+                            logger.debug(f"{symbol} 更新最高价: {old_highest:.2f} -> {current_price:.2f}")
     
     def _check_stop_conditions(self, date: pd.Timestamp, market_data: Dict[str, pd.DataFrame]):
-        """检查止损止盈条件"""
+        """
+        检查追踪止损条件
+
+        新逻辑：
+        - 追踪止损：从最高价下跌8%时卖出
+        - 如果遇到卖出信号也会触发清仓（在_process_recommendation中处理）
+        """
         symbols_to_sell = []
-        
+
         for symbol, position in self.positions.items():
-            entry_price = position['entry_price']
+            highest_price = position.get('highest_price', position['entry_price'])
             current_price = position['current_price']
-            
-            return_rate = (current_price - entry_price) / entry_price
-            
-            # 检查止损
-            if return_rate <= self.stop_loss_rate:
-                symbols_to_sell.append((symbol, "止损"))
-            
-            # 检查止盈
-            elif return_rate >= self.take_profit_rate:
-                symbols_to_sell.append((symbol, "止盈"))
-        
+
+            # 计算从最高价的回撤比例
+            drawdown_from_peak = (current_price - highest_price) / highest_price
+
+            # 追踪止损：从最高价回撤指定阈值(可配置)
+            trailing_stop_rate = -self.trailing_stop_drawdown  # 注意:负值用于比较
+            if drawdown_from_peak <= trailing_stop_rate:
+                symbols_to_sell.append((symbol, f"追踪止损(最高价{highest_price:.2f}回撤{abs(drawdown_from_peak):.1%})"))
+                logger.info(f"⚠️ {symbol} 触发追踪止损(阈值{self.trailing_stop_drawdown:.1%}): "
+                           f"最高价{highest_price:.2f}, 当前价{current_price:.2f}, 回撤{abs(drawdown_from_peak):.1%}")
+
         # 执行卖出
         for symbol, reason in symbols_to_sell:
             self._execute_sell_signal(symbol, self.positions[symbol]['current_price'], date, reason)
@@ -463,7 +564,7 @@ class AdvancedBacktestEngine:
         # 交易统计
         total_trades = len(self.trade_history)
         buy_trades = [t for t in self.trade_history if t['action'] == '买入']
-        sell_trades = [t for t in self.trade_history if t['action'] == '卖出']
+        sell_trades = [t for t in self.trade_history if t['action'].startswith('卖出')]
         
         successful_trades = [t for t in sell_trades if t.get('profit', 0) > 0]
         win_rate = len(successful_trades) / len(sell_trades) if sell_trades else 0

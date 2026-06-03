@@ -6,22 +6,99 @@
 
 import os
 import sys
+
+# Windows 控制台编码设置 — 必须在 logging.StreamHandler 创建之前执行，
+# 否则 StreamHandler 会捕获 GBK 编码的 stdout 引用，导致中文输出乱码或报错
+if hasattr(sys.stdout, 'reconfigure'):
+    try:
+        sys.stdout.reconfigure(encoding='utf-8')
+        sys.stderr.reconfigure(encoding='utf-8')
+    except Exception:
+        pass
+
+# 禁用 scikit-learn/joblib 的并行功能，避免 Windows 兼容性问题
+# 我们使用自己的 ThreadPoolExecutor 来实现并行
+os.environ['LOKY_MAX_CPU_COUNT'] = '1'  # 禁用 joblib 并行
+os.environ['JOBLIB_MULTIPROCESSING'] = '0'  # 禁用 joblib 多进程
+os.environ['OMP_NUM_THREADS'] = '1'
+os.environ['MKL_NUM_THREADS'] = '1'
+os.environ['OPENBLAS_NUM_THREADS'] = '1'
+
 import json
 import pandas as pd
 import numpy as np
 import time
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime
-from typing import Dict, List, Tuple, Optional
+from datetime import datetime, timedelta
+from typing import Dict, List, Tuple, Optional, Any
 from pathlib import Path
 import warnings
+import logging
+from logging.handlers import RotatingFileHandler
 
-from src.utils.decision import TradingDecision
+from src.trade.decision import TradingDecision
 
-# Add config directory to path  
+# Add config directory to path
 config_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config')
 sys.path.insert(0, config_dir)
+
+# 配置日志系统
+def setup_logging():
+    """配置日志系统，输出到文件和控制台"""
+    # 确保logs目录存在
+    log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'logs')
+    os.makedirs(log_dir, exist_ok=True)
+
+    # 配置根日志记录器
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.INFO)
+
+    # 清除现有的处理器
+    for handler in root_logger.handlers[:]:
+        root_logger.removeHandler(handler)
+
+    # 文件处理器 - 主系统日志
+    log_file = os.path.join(log_dir, 'trading_system.log')
+    file_handler = RotatingFileHandler(
+        log_file, maxBytes=50*1024*1024, backupCount=5, encoding='utf-8'
+    )
+    file_handler.setLevel(logging.INFO)
+
+    # AI因子系统日志
+    ai_log_file = os.path.join(log_dir, 'ai_factor_system.log')
+    ai_file_handler = RotatingFileHandler(
+        ai_log_file, maxBytes=50*1024*1024, backupCount=5, encoding='utf-8'
+    )
+    ai_file_handler.setLevel(logging.INFO)
+
+    # 控制台处理器
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(logging.INFO)
+
+    # 格式化器
+    formatter = logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+
+    file_handler.setFormatter(formatter)
+    ai_file_handler.setFormatter(formatter)
+    console_handler.setFormatter(formatter)
+
+    # 添加处理器
+    root_logger.addHandler(file_handler)
+    root_logger.addHandler(console_handler)
+
+    # AI因子系统使用单独的日志文件
+    ai_logger = logging.getLogger('factors')
+    ai_logger.addHandler(ai_file_handler)
+    ai_logger.propagate = False  # 避免重复日志
+
+    return root_logger
+
+# 初始化日志系统
+logger = setup_logging()
 
 try:
     from config_manager import get_config
@@ -35,13 +112,11 @@ warnings.filterwarnings('ignore')
 sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
 
 try:
-    from agents.fundamental_analyst import FundamentalAnalyst
-    from agents.technical_analyst import TechnicalAnalyst
-    from agents.sentiment_analyst import SentimentAnalyst
     from agents.risk_manager import RiskManager
     from agents.portfolio_manager import PortfolioManager
     from data.data_provider import AShareDataProvider
-    from utils.decision import TradingDecision
+    from trade.decision import TradingDecision
+    from output.analysis_output_manager import AnalysisOutputManager
 except ImportError as e:
     print(f"导入模块失败: {e}")
     print("请确保所有依赖文件都已正确创建")
@@ -52,21 +127,21 @@ class AShareTradingAgentsSystem:
     
     def __init__(self, config_manager=None):
         """初始化系统"""
-        import logging
         self.logger = logging.getLogger("AShareTradingSystem")
+
+        # 系统启动时间统计
+        self.system_start_time = time.time()
+        self.logger.info("🚀 A股TradingAgents系统开始初始化...")
         
         # 使用统一配置
         self.config = config_manager or get_config()
         self.config_manager = self.config  # 兼容性别名
         self.max_workers = self.config.get_max_workers()
-        self.debate_rounds = self.config.get_debate_rounds()
-        
+
         # 主线程组件
         self.data_provider = AShareDataProvider()
-        self.fundamental_analyst = FundamentalAnalyst()
-        self.technical_analyst = TechnicalAnalyst()
-        self.sentiment_analyst = SentimentAnalyst()
         self.risk_manager = RiskManager()
+        # 初始化投资组合管理器
         self.portfolio_manager = PortfolioManager()
         
         # 禁用多线程分析器和记忆学习系统（已删除相关模块）
@@ -77,18 +152,18 @@ class AShareTradingAgentsSystem:
         self.ai_factor_enabled = False
         self.factor_manager = None
         try:
-            from factors import initialize_factors, get_factor_manager, get_auto_factor_summary
+            from src.factors import initialize_factors, get_factor_manager, get_auto_factor_summary
             initialize_factors(enable_auto_generation=True)  # 启用自动因子生成
             self.factor_manager = get_factor_manager()
             self.ai_factor_enabled = True
-            
+
             # 获取因子详情
             total_factors = len(self.factor_manager.factors)
             factor_names = list(self.factor_manager.factors.keys())
-            
+
             self.logger.info(f"AI因子系统初始化成功，已注册 {total_factors} 个因子")
             self.logger.info(f"因子列表: {', '.join(factor_names)}")
-            
+
             # 显示自动生成因子的摘要
             try:
                 auto_summary = get_auto_factor_summary()
@@ -96,24 +171,48 @@ class AShareTradingAgentsSystem:
                     self.logger.info(f"其中自动生成因子 {auto_summary['total_factors']} 个")
             except Exception:
                 pass
-                
+
         except ImportError as e:
             self.logger.warning(f"AI因子系统初始化失败: {e}")
+
+        # 市场监控组件初始化（用于因子系统）
+        self.market_monitor = None
+        self.beta_calculator = None
+        if self.ai_factor_enabled:
+            try:
+                from src.market.market_state import MarketMonitor
+                from src.market.beta_calculator import BetaCalculator
+
+                self.market_monitor = MarketMonitor(self.config_manager)
+                self.beta_calculator = BetaCalculator(self.config_manager)
+                self.logger.info("✅ 市场监控组件初始化成功")
+            except ImportError as e:
+                self.logger.warning(f"⚠️ 市场监控组件初始化失败: {e}，相关因子将使用降级模式")
+
+        # 市场数据缓存（在批量分析时使用，所有股票共享）
+        # 改为字典结构支持多市场指数：{'hs300': DataFrame, 'sh_index': DataFrame}
+        self.market_data_cache = {}  # 市场日线数据字典
+        self.market_state_cache = {}  # 市场状态字典
+        self.market_intraday_cache = {}  # 市场5分钟数据字典
         
         # 线程本地存储，用于为每个线程创建独立的组件实例
         self._thread_local = threading.local()
-        
-        self.logger.info(f"A股TradingAgents系统初始化完成，支持 {self.max_workers} 个并行线程")
-    
+
+        # 初始化输出管理器
+        self.output_manager = AnalysisOutputManager()
+
+        # 计算初始化耗时
+        init_time = time.time() - self.system_start_time
+        self.logger.info(f"✅ A股TradingAgents系统初始化完成，耗时: {init_time:.2f}秒")
+        self.logger.info(f"📊 系统配置: {self.max_workers}个并行线程, AI因子{'已启用' if self.ai_factor_enabled else '已禁用'}")
+
+
     def _get_thread_components(self):
-        """获取线程本地组件实例（确保线程安全）"""
+        """获取线程本地组件实例(确保线程安全)"""
         if not hasattr(self._thread_local, 'components'):
             # 为每个线程创建独立的组件实例
             self._thread_local.components = {
                 'data_provider': AShareDataProvider(),
-                'fundamental_analyst': FundamentalAnalyst(),
-                'technical_analyst': TechnicalAnalyst(),
-                'sentiment_analyst': SentimentAnalyst(),
                 'risk_manager': RiskManager(),
                 'portfolio_manager': PortfolioManager()
             }
@@ -131,29 +230,36 @@ class AShareTradingAgentsSystem:
             components = self._get_thread_components()
             return {k: v for k, v in components.items() if k != 'data_provider'}
         
-    def analyze_stock(self, symbol: str, stock_name: str = None, price_limit_min: float = None, 
+    def analyze_stock(self, symbol: str, stock_name: str = None, price_limit_min: float = None,
                      price_limit_max: float = None, use_thread_safe: bool = False) -> TradingDecision:
         """分析单只股票"""
         # 选择使用主线程组件还是线程安全组件
         if use_thread_safe:
             components = self._get_thread_components()
             data_provider = components['data_provider']
-            fundamental_analyst = components['fundamental_analyst']
-            technical_analyst = components['technical_analyst']
-            sentiment_analyst = components['sentiment_analyst']
             risk_manager = components['risk_manager']
             portfolio_manager = components['portfolio_manager']
         else:
             data_provider = self.data_provider
-            fundamental_analyst = self.fundamental_analyst
-            technical_analyst = self.technical_analyst
-            sentiment_analyst = self.sentiment_analyst
             risk_manager = self.risk_manager
             portfolio_manager = self.portfolio_manager
 
+        # 0. 初始化TradingDecision记录分析状态
+        from datetime import datetime
+        initial_decision = TradingDecision(
+            action="分析中",
+            confidence=0.0,
+            reason="正在分析...",
+            risk_level="未知",
+            timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            analysis_status="initialized"
+        )
+        self.logger.info(f"🔍 已初始化TradingDecision，开始分析: {symbol}")
+
         # 1. 数据获取
-        data, info, indicators, price_info = data_provider.get_stock_data(symbol)
-        
+        initial_decision.analysis_status = "in_progress"
+        data, info, indicators, price_info, intraday_data, fundamental_data = data_provider.get_stock_data(symbol)
+
         if data is None or data.empty:
             self.logger.error(f"无法获取股票数据: {symbol}")
             return TradingDecision(
@@ -212,7 +318,7 @@ class AShareTradingAgentsSystem:
                     daily_change_percent=price_info.get("daily_change_percent", 0.0)
                 )
         
-        # 4. 多智能体分析
+        # 4. AI因子分析
         analyses = []
         analysis_failures = []
 
@@ -227,56 +333,47 @@ class AShareTradingAgentsSystem:
             "analysis_timestamp": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         }
 
-        # 基本面分析
-        fundamental_analysis = fundamental_analyst.analyze(symbol, data, info, indicators)
-        if fundamental_analysis.get("recommendation") == "无法分析":
-            analysis_failures.append("基本面分析失败")
-        fundamental_analysis["analyst_inputs"] = analyst_inputs.copy()
-        analyses.append(fundamental_analysis)
-
-        # 技术面分析
-        technical_analysis = technical_analyst.analyze(symbol, data, info, indicators)
-        if technical_analysis.get("recommendation") == "无法分析":
-            analysis_failures.append("技术面分析失败")
-        technical_analysis["analyst_inputs"] = analyst_inputs.copy()
-        analyses.append(technical_analysis)
-        
-        # 情感面分析（使用不包含网络请求的方法）
-        sentiment_analysis = sentiment_analyst.analyze_with_data(symbol, data, {})
-        if sentiment_analysis.get("recommendation") == "无法分析":
-            analysis_failures.append("情感面分析失败")
-        sentiment_analysis["analyst_inputs"] = analyst_inputs.copy()  # 保持一致性
-        analyses.append(sentiment_analysis)
-        
-        # AI因子分析（如果启用）
+        # AI因子分析
         ai_factor_analysis = None
         if self.ai_factor_enabled and self.factor_manager:
             try:
-                ai_factor_analysis = self._ai_factor_analysis(symbol, data, indicators)
+                ai_factor_analysis = self._ai_factor_analysis(symbol, data, indicators, intraday_data, fundamental_data)
                 if ai_factor_analysis:
+                    ai_factor_analysis["analyst_inputs"] = analyst_inputs.copy()
                     analyses.append(ai_factor_analysis)
                     self.logger.info(f"AI因子分析完成: {symbol}")
             except Exception as e:
                 self.logger.error(f"AI因子分析失败 {symbol}: {e}")
                 analysis_failures.append("AI因子分析失败")
-        
-        # 检查是否有分析失败
-        if len(analysis_failures) >= 2:  # 如果2个或以上分析失败
-            self.logger.warning(f"多个分析模块失败 {symbol}: {', '.join(analysis_failures)}")
-            from utils.decision import TradingDecision
+
+        # 检查AI因子分析是否失败
+        if len(analysis_failures) > 0 or len(analyses) == 0:
+            self.logger.warning(f"AI因子分析失败 {symbol}: {', '.join(analysis_failures) if analysis_failures else '无分析结果'}")
             return TradingDecision(
                 action="分析失败",
                 confidence=0.0,
-                reason=f"多个分析模块失败: {', '.join(analysis_failures)}。建议检查AI模型配置、网络连接或数据源",
+                reason=f"AI因子分析失败: {', '.join(analysis_failures) if analysis_failures else '无分析结果'}。建议检查AI模型配置、网络连接或数据源",
                 risk_level="未知",
                 timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             )
         
         # 3. 风险评估
-        risk_assessment = risk_manager.assess_risk(symbol, data, indicators, analyses)
-        
-        # 4. 最终决策
-        decision = portfolio_manager.make_decision(symbol, analyses, risk_assessment, price_info)
+        risk_assessment = risk_manager.assess_risk(
+            data=data,
+            indicators=indicators,
+            symbol=symbol,
+            analyses=analyses
+        )
+
+        # 4. 最终决策 (应用信号过滤)
+        self.logger.info(f"🔍 开始最终决策，分析师数量: {len(analyses)}")
+        decision = portfolio_manager.make_decision(
+            symbol, analyses, risk_assessment, price_info,
+            data=data,  # 【新增】传入历史数据用于信号过滤
+            position_info=None  # 正常预测无持仓信息
+        )
+        self.logger.info(f"🔍 最终决策完成: {symbol}, action={decision.action}")
+        self.logger.info(f"🔍 决策对象中是否包含多轮辩论结果: {hasattr(decision, 'multi_round_debate_result') and decision.multi_round_debate_result is not None}")
         
         # 检查决策是否失败
         if decision.action in ["无法决策", "分析失败"]:
@@ -382,9 +479,22 @@ class AShareTradingAgentsSystem:
         progress_percent = (completed / total) * 100
         print(f"  分析进度: [{completed}/{total}] {current_stock_name} ({progress_percent:.1f}%)")
     
-    def _analyze_stock_with_cache(self, symbol: str, name: str, price_limit_min: Optional[float], 
+    def _analyze_stock_with_cache(self, symbol: str, name: str, price_limit_min: Optional[float],
                                  price_limit_max: Optional[float], data_cache: Dict[str, Dict]) -> Dict:
         """使用缓存数据进行线程安全的股票分析（分离版本）"""
+        import time
+        start_time = time.time()
+
+        # 初始化TradingDecision跟踪分析状态
+        from datetime import datetime
+        analysis_status = {
+            "symbol": symbol,
+            "start_time": start_time,
+            "status": "initialized",
+            "multi_round_debate_checked": False
+        }
+        self.logger.info(f"🔍 [缓存分析] 开始分析股票: {symbol}, 初始化状态跟踪")
+
         try:
             # 从缓存中获取数据
             cached_data = data_cache.get(symbol)
@@ -407,7 +517,9 @@ class AShareTradingAgentsSystem:
             info = cached_data['info']
             indicators = cached_data['indicators']
             price_info = cached_data['price_info']
-            
+            intraday_data = cached_data.get('intraday_data', pd.DataFrame())  # 获取5分钟数据（如果可用）
+            fundamental_data = cached_data.get('fundamental_data', {})  # 获取基本面数据（如果可用）
+
             # 创业板过滤检查
             if self.config_manager.get_exclude_chinext():
                 if self._is_chinext_stock(symbol):
@@ -454,13 +566,10 @@ class AShareTradingAgentsSystem:
             
             # 获取缓存数据分析的轻量级组件（避免重复初始化数据源）
             components = self._get_cached_analysis_components()
-            fundamental_analyst = components['fundamental_analyst']
-            technical_analyst = components['technical_analyst']
-            sentiment_analyst = components['sentiment_analyst']
             risk_manager = components['risk_manager']
             portfolio_manager = components['portfolio_manager']
-            
-            # 多智能体分析
+
+            # AI因子分析
             analyses = []
 
             # 准备分析师输入信息
@@ -474,35 +583,10 @@ class AShareTradingAgentsSystem:
                 "analysis_timestamp": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             }
 
-            # 基本面分析
-            fundamental_analysis = fundamental_analyst.analyze(symbol, data, info, indicators)
-            fundamental_analysis["analyst_inputs"] = analyst_inputs.copy()
-            analyses.append(fundamental_analysis)
-
-            # 技术面分析
-            technical_analysis = technical_analyst.analyze(symbol, data, info, indicators)
-            technical_analysis["analyst_inputs"] = analyst_inputs.copy()
-            analyses.append(technical_analysis)
-
-            # 情感面分析（使用预收集的新闻数据和市场数据）
-            news_data = cached_data.get('news_data', [])
-            market_data = cached_data.get('market_data', {})
-            if news_data:
-                # 使用带新闻数据的分析方法
-                sentiment_analysis = sentiment_analyst.analyze_with_news_data(symbol, data, {}, news_data, market_data)
-                print(f"    情感分析使用了 {len(news_data)} 条预收集新闻和市场数据")
-            else:
-                # 使用普通分析方法
-                sentiment_analysis = sentiment_analyst.analyze_with_data(symbol, data, {}, market_data)
-                print(f"    情感分析：无新闻数据，使用基础分析和市场数据")
-
-            sentiment_analysis["analyst_inputs"] = analyst_inputs.copy()
-            analyses.append(sentiment_analysis)
-            
-            # AI因子分析（如果启用）
+            # AI因子分析
             if self.ai_factor_enabled and self.factor_manager:
                 try:
-                    ai_factor_analysis = self._ai_factor_analysis(symbol, data, indicators)
+                    ai_factor_analysis = self._ai_factor_analysis(symbol, data, indicators, intraday_data, fundamental_data)
                     if ai_factor_analysis:
                         ai_factor_analysis["analyst_inputs"] = analyst_inputs.copy()
                         analyses.append(ai_factor_analysis)
@@ -511,100 +595,40 @@ class AShareTradingAgentsSystem:
                     self.logger.error(f"AI因子分析失败 {symbol}: {e}")
             
             # 风险评估
-            risk_assessment = risk_manager.assess_risk(symbol, data, indicators, analyses)
-            
-            # 最终决策
-            decision = portfolio_manager.make_decision(symbol, analyses, risk_assessment, price_info)
+            risk_assessment = risk_manager.assess_risk(
+                data=data,
+                indicators=indicators,
+                symbol=symbol,
+                analyses=analyses
+            )
+
+            # 最终决策 (应用信号过滤)
+            analysis_status["status"] = "making_decision"
+            self.logger.info(f"🔍 [缓存分析] 开始最终决策: {symbol}, 分析师数量: {len(analyses)}")
+            decision = portfolio_manager.make_decision(
+                symbol, analyses, risk_assessment, price_info,
+                data=data,  # 【新增】传入历史数据用于信号过滤
+                position_info=None  # 正常预测无持仓信息
+            )
+            analysis_status["multi_round_debate_checked"] = True
+            execution_time = time.time() - start_time
+            self.logger.info(f"🔍 [缓存分析] 最终决策完成: {symbol}, 用时: {execution_time:.2f}秒")
+            self.logger.info(f"🔍 [缓存分析] 决策对象中是否包含多轮辩论结果: {hasattr(decision, 'multi_round_debate_result') and decision.multi_round_debate_result is not None}")
             
             # 记录决策到记忆系统
             if self.enable_learning and self.memory_system:
                 self.record_trading_decision(symbol, decision, analyses)
-            
-            # 格式化涨跌幅显示
-            change_display = ""
-            if decision.daily_change_percent != 0:
-                change_sign = "+" if decision.daily_change_percent > 0 else ""
-                change_display = f"{change_sign}{decision.daily_change_percent:.2f}%"
-            else:
-                change_display = "0.00%"
-            
-            result = {
-                "股票代码": symbol,
-                "股票名称": name,
-                "操作建议": decision.action,
-                "信心度": f"{decision.confidence:.2%}",
-                "风险等级": decision.risk_level,
-                "当前价格": f"{decision.current_price:.2f}元",
-                "当日最高": f"{decision.daily_high:.2f}元",
-                "当日最低": f"{decision.daily_low:.2f}元",
-                "当日涨跌": change_display,
-                "分析时间": decision.timestamp,
-                "决策理由": decision.reason,
-                "分析师详情": {
-                    "基本面分析师": {
-                        "输入信息": fundamental_analysis.get("analyst_inputs", {}),
-                        "输出结果": {
-                            "推荐操作": fundamental_analysis.get("recommendation", "持有"),
-                            "信心度": f"{fundamental_analysis.get('confidence', 0.5):.2%}",
-                            "推理过程": fundamental_analysis.get("reasoning", []),
-                            "估值状况": fundamental_analysis.get("valuation_status", "N/A"),
-                            "财务健康": fundamental_analysis.get("financial_health", "N/A"),
-                            "目标价格区间": fundamental_analysis.get("target_price_range", {"low": 0, "high": 0})
-                        }
-                    },
-                    "技术面分析师": {
-                        "输入信息": technical_analysis.get("analyst_inputs", {}),
-                        "输出结果": {
-                            "推荐操作": technical_analysis.get("recommendation", "持有"),
-                            "信心度": f"{technical_analysis.get('confidence', 0.5):.2%}",
-                            "推理过程": technical_analysis.get("reasoning", []),
-                            "技术指标": technical_analysis.get("technical_indicators", {}),
-                            "趋势分析": technical_analysis.get("trend_analysis", "N/A")
-                        }
-                    },
-                    "情感面分析师": {
-                        "输入信息": sentiment_analysis.get("analyst_inputs", {}),
-                        "输出结果": {
-                            "推荐操作": sentiment_analysis.get("recommendation", "持有"),
-                            "信心度": f"{sentiment_analysis.get('confidence', 0.5):.2%}",
-                            "推理过程": sentiment_analysis.get("reasoning", []),
-                            "市场情绪": sentiment_analysis.get("market_sentiment", "中性"),
-                            "新闻分析": sentiment_analysis.get("news_analysis", {})
-                        }
-                    },
-                    "AI因子分析师": {
-                        "输入信息": next((analysis.get("analyst_inputs", {}) for analysis in analyses if analysis.get("analyst_type") == "AI因子分析"), {}),
-                        "输出结果": {
-                            "推荐操作": next((analysis.get("recommendation", "N/A") for analysis in analyses if analysis.get("analyst_type") == "AI因子分析"), "N/A"),
-                            "信心度": f"{next((analysis.get('confidence', 0.5) for analysis in analyses if analysis.get('analyst_type') == 'AI因子分析'), 0.5):.2%}",
-                            "推理过程": next((analysis.get("reasoning", []) for analysis in analyses if analysis.get("analyst_type") == "AI因子分析"), []),
-                            "因子详情": next((analysis.get("factor_details", {}) for analysis in analyses if analysis.get("analyst_type") == "AI因子分析"), {}),
-                            "因子总结": next((analysis.get("factor_summary", {}) for analysis in analyses if analysis.get("analyst_type") == "AI因子分析"), {})
-                        }
-                    } if any(analysis.get("analyst_type") == "AI因子分析" for analysis in analyses) else None
-                }
-            }
 
-            # 清理AI因子分析师为None的情况
-            if result["分析师详情"]["AI因子分析师"] is None:
-                del result["分析师详情"]["AI因子分析师"]
-            
-            # 添加目标价格信息（仅在有有效数据时）
-            if hasattr(decision, 'target_price_medium') and decision.target_price_medium > 0:
-                price_targets = {}
-                if decision.target_price_short > 0:
-                    price_targets["短期目标(0-14天)"] = f"{decision.target_price_short:.2f}元"
-                if decision.target_price_medium > 0:
-                    price_targets["中期目标(15-30天)"] = f"{decision.target_price_medium:.2f}元"
-                if decision.target_price_long > 0:
-                    price_targets["长期目标(90天)"] = f"{decision.target_price_long:.2f}元"
-                if decision.upside_potential != 0:
-                    price_targets["上涨空间"] = f"{decision.upside_potential:.2%}"
-                if decision.price_range_low > 0 and decision.price_range_high > 0:
-                    price_targets["价格区间"] = f"{decision.price_range_low:.2f}-{decision.price_range_high:.2f}元"
+            # 使用输出管理器格式化结果
+            result = self.output_manager.format_analysis_result(
+                symbol=symbol,
+                name=name,
+                decision=decision,
+                data=data,
+                analyses=analyses,
+                include_analyst_details=True
+            )
 
-                result.update(price_targets)
-            
             return result
             
         except Exception as e:
@@ -675,109 +699,193 @@ class AShareTradingAgentsSystem:
                 "决策理由": f"分析出错: {str(e)}"
             }
 
-    def _collect_market_data(self) -> Dict:
-        """收集全局市场数据（行业轮动、社交媒体数据）"""
-        market_data = {
-            'sector_rotation_data': {},
-            'social_media_data': {}
-        }
+    def _get_market_state_for_index(self, key: str, name: str) -> Dict:
+        """获取指定市场指数的状态
 
+        Args:
+            key: 指数键名（如'hs300', 'sh_index'）
+            name: 指数名称（用于日志）
+
+        Returns:
+            市场状态字典
+        """
         try:
-            # 直接使用网络助手获取资金流数据，避免依赖DynamicStockSelector缓存逻辑
-            from src.utils.network_helper import safe_akshare_call
-            print("    获取资金流数据...")
+            data = self.market_data_cache.get(key)
+            if data is None or data.empty:
+                return {}
 
-            fund_flow_df = safe_akshare_call("stock_individual_fund_flow_rank", indicator="今日")
+            # 简化版市场状态计算
+            latest_close = data['Close'].iloc[-1]
+            prev_close = data['Close'].iloc[-2] if len(data) > 1 else latest_close
+            daily_return = (latest_close - prev_close) / prev_close if prev_close != 0 else 0
 
-            longhu_data = []
-            if fund_flow_df is not None and not fund_flow_df.empty:
-                # 转换为简化的数据格式
-                for _, row in fund_flow_df.head(100).iterrows():
-                    try:
-                        longhu_data.append({
-                            'symbol': row.get('代码', ''),
-                            'name': row.get('名称', ''),
-                            'change_pct': row.get('今日涨跌幅', 0),
-                            'net_inflow': row.get('今日主力净流入-净额', 0)
-                        })
-                    except Exception:
-                        continue
+            # 计算趋势（基于均线）
+            ma5 = data['Close'].rolling(5).mean().iloc[-1] if len(data) >= 5 else latest_close
+            ma20 = data['Close'].rolling(20).mean().iloc[-1] if len(data) >= 20 else latest_close
 
-            # 构造行业轮动数据
-            market_data['sector_rotation_data'] = {
-                'longhu_data': longhu_data,
-                'sector_flow_data': {
-                    'net_flow_status': '资金净流入' if longhu_data else 'N/A',
-                    'rotation_stage': '轮动活跃期' if longhu_data else 'N/A'
-                }
+            if ma5 > ma20 * 1.01:  # 5日线高于20日线1%以上
+                trend = 'uptrend'
+            elif ma5 < ma20 * 0.99:  # 5日线低于20日线1%以上
+                trend = 'downtrend'
+            else:
+                trend = 'neutral'
+
+            # 计算波动率（20日标准差）
+            volatility = data['Close'].pct_change().rolling(20).std().iloc[-1] if len(data) >= 20 else 0
+
+            # 风险等级评估
+            if abs(daily_return) > 0.03 or volatility > 0.025:
+                risk_level = '高'
+            elif abs(daily_return) > 0.015 or volatility > 0.015:
+                risk_level = '中'
+            else:
+                risk_level = '低'
+
+            return {
+                'trend': trend,
+                'daily_return': daily_return,
+                'risk_level': risk_level,
+                'volatility': volatility,
+                'ma5': ma5,
+                'ma20': ma20,
+                'index_name': name,
+                'index_key': key
             }
-
-            # 构造社交媒体数据
-            market_data['social_media_data'] = {
-                'longhu_data': longhu_data,
-                'social_mentions': '高' if longhu_data else 'N/A',
-                'institutional_attention': '关注' if longhu_data else 'N/A',
-                'retail_discussion': '活跃' if longhu_data else 'N/A'
-            }
-
-            print(f"    获取到 {len(longhu_data)} 条资金流数据")
 
         except Exception as e:
-            print(f"    市场数据获取失败: {e}")
-            # 返回默认的空数据结构
-            market_data = {
-                'sector_rotation_data': {
-                    'longhu_data': [],
-                    'sector_flow_data': {
-                        'net_flow_status': 'N/A',
-                        'rotation_stage': 'N/A'
-                    }
-                },
-                'social_media_data': {
-                    'longhu_data': [],
-                    'social_mentions': 'N/A',
-                    'institutional_attention': 'N/A',
-                    'retail_discussion': 'N/A'
-                }
-            }
+            self.logger.error(f"计算{name}状态失败: {e}")
+            return {}
 
-        return market_data
+    def _collect_market_data(self):
+        """收集市场基准数据（沪深300 + 上证指数）"""
+        if not self.ai_factor_enabled or not self.market_monitor:
+            self.logger.debug("市场监控未启用，跳过市场数据收集")
+            return
+
+        try:
+            print("\n[第0阶段] 收集市场基准数据...")
+            self.logger.info("========== 开始收集市场基准数据 ==========")
+
+            # 定义要收集的市场指数（硬编码）
+            benchmarks = [
+                {'key': 'hs300', 'symbol': '000300.SH', 'name': '沪深300'},
+                {'key': 'sh_index', 'symbol': '000001.SH', 'name': '上证指数'}
+            ]
+
+            # 初始化缓存字典
+            market_data = {}
+            market_intraday = {}
+            market_state = {}
+
+            # 依次收集每个指数的数据
+            for benchmark in benchmarks:
+                key = benchmark['key']
+                symbol = benchmark['symbol']
+                name = benchmark['name']
+
+                print(f"  正在获取市场基准: {name} ({symbol})")
+                self.logger.info(f"正在获取基准指数: {name} ({symbol})")
+
+                try:
+                    # 获取指数数据（日线 + 5分钟）
+                    result = self.data_provider.get_stock_data(symbol, period="1y")
+
+                    # 解包数据（新版本返回6个值：日线、info、indicators、price_info、5分钟、基本面）
+                    if isinstance(result, tuple) and len(result) >= 6:
+                        data, info, indicators, price_info, intraday, fundamental = result
+                        self.logger.debug(f"{name}: 成功解包数据元组（含基本面）")
+                    elif isinstance(result, tuple) and len(result) >= 5:
+                        # 兼容旧版本（没有基本面数据）
+                        data, info, indicators, price_info, intraday = result
+                        self.logger.debug(f"{name}: 成功解包数据元组")
+                    elif isinstance(result, tuple) and len(result) >= 1:
+                        # 兼容旧版本（没有5分钟数据）
+                        data = result[0]
+                        intraday = pd.DataFrame()
+                        self.logger.warning(f"{name}: 数据格式为旧版本，没有5分钟数据")
+                    else:
+                        data = result if result is not None else None
+                        intraday = pd.DataFrame()
+                        self.logger.warning(f"{name}: 数据不是预期的元组格式: {type(result)}")
+
+                    # 验证并存储
+                    if data is not None and not data.empty:
+                        market_data[key] = data
+                        market_intraday[key] = intraday if not intraday.empty else pd.DataFrame()
+
+                        intraday_count = len(intraday) if not intraday.empty else 0
+                        self.logger.info(f"✅ {name}数据已收集: 日线{len(data)}条, 5分钟{intraday_count}条")
+                        print(f"  [OK] {name}: 日线{len(data)}条, 5分钟{intraday_count}条")
+                    else:
+                        market_data[key] = None
+                        market_intraday[key] = None
+                        self.logger.warning(f"⚠️ {name}数据为空")
+                        print(f"  [WARN] {name}数据为空")
+
+                except Exception as e:
+                    self.logger.warning(f"⚠️ {name}数据获取失败: {e}")
+                    print(f"  [WARN] {name}数据获取失败: {e}")
+                    market_data[key] = None
+                    market_intraday[key] = None
+
+            # 存储到实例变量
+            self.market_data_cache = market_data
+            self.market_intraday_cache = market_intraday
+
+            # 获取市场状态（针对每个指数）
+            for benchmark in benchmarks:
+                key = benchmark['key']
+                name = benchmark['name']
+
+                if market_data.get(key) is not None:
+                    try:
+                        state = self._get_market_state_for_index(key, name)
+                        market_state[key] = state
+
+                        trend_str = state.get('trend', '未知')
+                        daily_return = state.get('daily_return', 0)
+                        risk_level = state.get('risk_level', '未知')
+
+                        self.logger.info(f"✅ {name}状态: {trend_str}, 今日涨跌: {daily_return:.2%}, 风险: {risk_level}")
+                        print(f"  [OK] {name}状态: {trend_str}, 涨跌: {daily_return:.2%}, 风险: {risk_level}")
+
+                    except Exception as e:
+                        self.logger.warning(f"⚠️ {name}状态获取失败: {e}")
+                        print(f"  [WARN] {name}状态获取失败: {e}")
+                        market_state[key] = None
+                else:
+                    market_state[key] = None
+
+            self.market_state_cache = market_state
+
+            # 统计
+            success_count = sum(1 for v in market_data.values() if v is not None)
+            self.logger.info(f"📊 市场数据收集完成: {success_count}/{len(benchmarks)} 个指数成功")
+            print(f"[第0阶段] 市场数据收集完成: {success_count}/{len(benchmarks)} 个指数\n")
+
+        except Exception as e:
+            self.logger.error(f"❌ 市场数据收集异常: {e}", exc_info=True)
+            print(f"  [ERROR] 市场数据收集异常: {e}")
+            # 发生异常时初始化为空字典
+            self.market_data_cache = {}
+            self.market_intraday_cache = {}
+            self.market_state_cache = {}
 
     def _collect_data_batch(self, stock_list: List[Tuple[str, str]]) -> Dict[str, Dict]:
-        """批量收集股票数据和新闻数据（单线程，避免并发问题）"""
+        """批量收集股票数据(单线程,避免并发问题)"""
+        # 【新增】首先收集市场数据（所有股票共享）
+        self._collect_market_data()
+
         data_cache = {}
 
-        print(f"第1阶段: 批量收集 {len(stock_list)} 只股票的数据和新闻...")
-
-        # 收集全局市场数据（行业轮动、社交媒体数据）
-        print("  🌍 收集全局市场数据...")
-        market_data = self._collect_market_data()
-        print(f"  市场数据收集完成")
+        print(f"第1阶段: 批量收集 {len(stock_list)} 只股票的数据...")
 
         for i, (symbol, name) in enumerate(stock_list, 1):
             try:
                 print(f"  收集进度: [{i}/{len(stock_list)}] {name}({symbol})")
 
-                # 获取股票数据
-                data, info, indicators, price_info = self.data_provider.get_stock_data(symbol)
-
-                # 获取新闻数据（集成到数据收集阶段）
-                news_data = []
-                company_name = info.get('longName', '') or info.get('shortName', '') or name
-
-                if (hasattr(self.sentiment_analyst, 'news_fetcher') and
-                    self.sentiment_analyst.news_fetcher is not None and
-                    self.sentiment_analyst.use_real_news):
-                    try:
-                        print(f"    正在获取新闻: {name}")
-                        news_data = self.sentiment_analyst.news_fetcher.fetch_stock_news(symbol, company_name)
-                        print(f"    获取到 {len(news_data)} 条新闻")
-                    except Exception as e:
-                        print(f"    新闻获取失败: {e}")
-                        news_data = []
-                else:
-                    if hasattr(self.sentiment_analyst, 'use_real_news') and self.sentiment_analyst.use_real_news:
-                        print(f"    新闻获取器未配置，跳过 {name} 的新闻获取")
+                # 获取股票数据（包含5分钟数据和基本面数据）
+                data, info, indicators, price_info, intraday_data, fundamental_data = self.data_provider.get_stock_data(symbol)
 
                 if data is not None and not data.empty:
                     data_cache[symbol] = {
@@ -786,37 +894,32 @@ class AShareTradingAgentsSystem:
                         'info': info,
                         'indicators': indicators,
                         'price_info': price_info,
-                        'news_data': news_data,  # 添加新闻数据
-                        'market_data': market_data,  # 添加市场数据
+                        'intraday_data': intraday_data,  # 添加5分钟数据
+                        'fundamental_data': fundamental_data,  # 添加基本面数据
                         'name': name
                     }
-                    print(f"    {name} 数据收集成功（包含{len(news_data)}条新闻）")
+                    print(f"    {name} 数据收集成功")
                 else:
                     data_cache[symbol] = {
                         'success': False,
                         'error': '数据为空或获取失败',
-                        'news_data': news_data,  # 即使股价数据失败也保留新闻
-                        'market_data': market_data,  # 添加市场数据
                         'name': name
                     }
                     print(f"    {name} 数据收集失败")
 
                 # 添加小延迟避免请求过快
-                time.sleep(0.2)  # 增加延迟以适应新闻请求
+                time.sleep(0.2)
 
             except Exception as e:
                 print(f"    {name} 数据收集异常: {e}")
                 data_cache[symbol] = {
                     'success': False,
                     'error': str(e),
-                    'news_data': [],
                     'name': name
                 }
 
         successful_count = sum(1 for v in data_cache.values() if v.get('success'))
-        total_news_count = sum(len(v.get('news_data', [])) for v in data_cache.values())
         print(f"数据收集完成: {successful_count}/{len(stock_list)} 只股票成功")
-        print(f"新闻收集完成: 共获取 {total_news_count} 条新闻")
 
         return data_cache
 
@@ -875,6 +978,25 @@ class AShareTradingAgentsSystem:
 
                     try:
                         result = future.result()
+
+                        # 【新增】立即打印单只股票的分析结果,不用等到全部完成
+                        action = result.get("操作建议", "未知")
+                        confidence = result.get("信心度", "N/A")
+                        price = result.get("当前价格", "N/A")
+                        change = result.get("当日涨跌", "N/A")
+
+                        # 根据操作建议使用不同的emoji
+                        action_emoji = {"买入": "📈", "卖出": "📉", "持有": "➡️", "跳过": "⏭️", "错误": "❌"}
+                        emoji = action_emoji.get(action, "❓")
+
+                        print(f"\n{emoji} [{completed_count}/{len(stock_list)}] {name}({symbol}) 分析完成:")
+                        print(f"    操作: {action} | 信心度: {confidence} | 价格: {price} | 涨跌: {change}")
+
+                        # 可选:打印决策理由的前50个字符
+                        reason = result.get("决策理由", "")
+                        if reason and len(reason) > 0:
+                            reason_preview = reason[:50] + "..." if len(reason) > 50 else reason
+                            print(f"    理由: {reason_preview}")
 
                         # 模拟AnalysisResult结构
                         class MockResult:
@@ -1045,204 +1167,255 @@ class AShareTradingAgentsSystem:
     
     def print_analysis_results(self, results: List[Dict]):
         """打印分析结果"""
-        print("\n" + "="*80)
-        print("A股量化交易系统 - TradingAgents多智能体分析结果")
-        print("="*80)
-        
-        # 统计各种操作建议
-        actions = [r["操作建议"] for r in results if r["操作建议"] not in ["错误", "跳过"]]
-        skipped_actions = [r for r in results if r["操作建议"] == "跳过"]
-        error_actions = [r for r in results if r["操作建议"] == "错误"]
-        
-        if actions:
-            action_counts = {}
-            for action in set(actions):
-                action_counts[action] = actions.count(action)
-            
-            print(f"\n操作建议统计 (已分析股票):")
-            for action, count in action_counts.items():
-                percentage = count / len(actions) * 100
-                print(f"  {action}: {count} 只股票 ({percentage:.1f}%)")
-        
-        if skipped_actions:
-            print(f"\n跳过统计: {len(skipped_actions)} 只股票 (价格过高)")
-        if error_actions:
-            print(f"\n错误统计: {len(error_actions)} 只股票 (分析失败)")
-        
-        # 详细结果表格
-        print(f"\n详细分析结果:")
-        print("-" * 200)
-        print(f"{'股票名称':<8} {'代码':<12} {'建议':<6} {'信心度':<8} {'当前价格':<10} {'中期目标(15-30天)':<15} {'上涨空间':<10} {'涨跌幅':<10} {'风险':<6} {'决策理由':<30}")
-        print("-" * 200)
-        
-        for result in results:
-            reason = result['决策理由'][:25] + "..." if len(result['决策理由']) > 25 else result['决策理由']
-            target_price = result.get('中期目标(15-30天)', 'N/A')
-            upside = result.get('上涨空间', 'N/A')
-            
-            print(f"{result['股票名称']:<8} {result['股票代码']:<12} {result['操作建议']:<6} "
-                  f"{result['信心度']:<8} {result['当前价格']:<10} {target_price:<15} "
-                  f"{upside:<10} {result['当日涨跌']:<10} {result['风险等级']:<6} {reason:<30}")
-        
-        print("-" * 200)
-        print(f"共分析 {len(results)} 只股票，分析时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        
+        self.output_manager.print_analysis_results(results)
+
         # 保存结果
         self.save_results(results)
-    
+
     def save_results(self, results: List[Dict]):
         """保存分析结果到时间戳文件夹"""
-        try:
-            # 创建时间戳文件夹
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            base_output_dir = Path("outputs")
-            base_output_dir.mkdir(exist_ok=True)
+        self.output_manager.save_results(results)
 
-            # 创建本次分析的专用文件夹
-            session_dir = base_output_dir / timestamp
-            session_dir.mkdir(exist_ok=True)
+    def _build_enhanced_data_dict(self, symbol: str, data: pd.DataFrame,
+                                  intraday_data: pd.DataFrame = None,
+                                  fundamental_data: Dict = None) -> Dict[str, Any]:
+        """
+        构建包含所有因子依赖的增强数据字典
 
-            print(f"\n本次分析结果将保存到: {session_dir}")
+        Args:
+            symbol: 股票代码
+            data: 股票数据DataFrame
+            intraday_data: 5分钟K线数据（可选）
+            fundamental_data: 基本面数据字典（可选）
 
-            # 1. 保存简化版本到CSV（不包含分析师详情）
-            csv_results = []
-            for result in results:
-                csv_result = {k: v for k, v in result.items() if k != "分析师详情"}
-                csv_results.append(csv_result)
+        Returns:
+            增强的数据字典，包含：
+            - price: 基础价格数据
+            - price_daily: 日线价格数据（多时间框架因子需要）
+            - price_5min: 5分钟价格数据（多时间框架因子需要）
+            - volume: 成交量数据
+            - market_data: 市场基准数据（如果可用）
+            - market_state: 市场状态（如果可用）
+            - stock_beta: 股票Beta系数（如果可用）
+            - fundamental: 基本面数据（PE/PB/ROE/营收增长等）
+        """
+        # 基础数据字典
+        symbol_data = {
+            'price': data[['Open', 'High', 'Low', 'Close']].copy(),
+            'price_daily': data[['Open', 'High', 'Low', 'Close']].copy(),  # 多时间框架因子需要
+            'volume': data[['Volume']].copy(),
+        }
 
-            df = pd.DataFrame(csv_results)
-            csv_filename = session_dir / "analysis_summary.csv"
-            df.to_csv(csv_filename, index=False, encoding='utf-8-sig')
-            print(f"CSV汇总结果: {csv_filename}")
+        # === 沪深300数据（向后兼容，保持原有键名） ===
+        hs300_data = self.market_data_cache.get('hs300')
+        hs300_intraday = self.market_intraday_cache.get('hs300')
+        hs300_state = self.market_state_cache.get('hs300')
 
-            # 2. 保存完整版本到JSON（包含分析师详情）
-            json_filename = session_dir / "analysis_detailed.json"
-            with open(json_filename, 'w', encoding='utf-8') as f:
-                json.dump(results, f, ensure_ascii=False, indent=2)
-            print(f"详细JSON结果: {json_filename}")
+        if hs300_data is not None and not hs300_data.empty:
+            symbol_data['market_data'] = hs300_data
+            self.logger.debug(f"{symbol}: 使用沪深300数据（{len(hs300_data)}条）")
+        else:
+            symbol_data['market_data'] = None
+            self.logger.debug(f"{symbol}: 沪深300数据不可用，相关因子将降级")
 
-            # 3. 单独保存分析师详情到专用文件
-            analyst_details = []
-            for result in results:
-                if "分析师详情" in result:
-                    analyst_detail = {
-                        "股票代码": result["股票代码"],
-                        "股票名称": result["股票名称"],
-                        "分析时间": result["分析时间"],
-                        "分析师详情": result["分析师详情"]
-                    }
-                    analyst_details.append(analyst_detail)
+        if hs300_intraday is not None and not hs300_intraday.empty:
+            symbol_data['market_5min'] = hs300_intraday
+        else:
+            symbol_data['market_5min'] = None
 
-            if analyst_details:
-                analyst_filename = session_dir / "analyst_details.json"
-                with open(analyst_filename, 'w', encoding='utf-8') as f:
-                    json.dump(analyst_details, f, ensure_ascii=False, indent=2)
-                print(f"分析师详情: {analyst_filename}")
+        symbol_data['market_state'] = hs300_state
 
-                # 生成分析师总结报告
-                self._generate_analyst_summary_report(analyst_details, session_dir, timestamp)
+        # 计算相对沪深300的Beta
+        if hs300_data is not None and self.beta_calculator and len(data) >= 60:
+            try:
+                beta_hs300 = self.beta_calculator.calculate_beta(
+                    data, hs300_data, window=60
+                )
+                symbol_data['stock_beta'] = beta_hs300
+                self.logger.debug(f"{symbol}: Beta(vs沪深300) = {beta_hs300:.3f}")
+            except Exception as e:
+                self.logger.debug(f"{symbol}: Beta(vs沪深300)计算失败: {e}")
+                symbol_data['stock_beta'] = None
+        else:
+            symbol_data['stock_beta'] = None
 
-            # 4. 保存兼容性JSON（与原格式相同）
-            legacy_json_filename = session_dir / "analysis_legacy.json"
-            with open(legacy_json_filename, 'w', encoding='utf-8') as f:
-                json.dump(csv_results, f, ensure_ascii=False, indent=2)
-            print(f"兼容格式JSON: {legacy_json_filename}")
+        # === 上证指数数据（新增） ===
+        sh_data = self.market_data_cache.get('sh_index')
+        sh_intraday = self.market_intraday_cache.get('sh_index')
+        sh_state = self.market_state_cache.get('sh_index')
 
-            # 5. 创建本次分析的说明文件
-            readme_content = self._generate_session_readme(results, timestamp)
-            readme_filename = session_dir / "README.md"
-            with open(readme_filename, 'w', encoding='utf-8') as f:
-                f.write(readme_content)
-            print(f"分析说明文档: {readme_filename}")
+        if sh_data is not None and not sh_data.empty:
+            symbol_data['market_data_sh'] = sh_data
+            self.logger.debug(f"{symbol}: 使用上证指数数据（{len(sh_data)}条）")
+        else:
+            symbol_data['market_data_sh'] = None
+            self.logger.debug(f"{symbol}: 上证指数数据不可用")
 
-            print(f"\n本次分析完成，所有结果已保存到: {session_dir}")
-            print(f"文件夹包含: CSV汇总、详细JSON、分析师详情、兼容格式、说明文档")
+        if sh_intraday is not None and not sh_intraday.empty:
+            symbol_data['market_5min_sh'] = sh_intraday
+        else:
+            symbol_data['market_5min_sh'] = None
 
-        except Exception as e:
-            print(f"保存结果失败: {e}")
-            import traceback
-            traceback.print_exc()
-    
-    def _ai_factor_analysis(self, symbol: str, data: pd.DataFrame, indicators: Dict) -> Optional[Dict]:
+        symbol_data['market_state_sh'] = sh_state
+
+        # 计算相对上证指数的Beta
+        if sh_data is not None and self.beta_calculator and len(data) >= 60:
+            try:
+                beta_sh = self.beta_calculator.calculate_beta(
+                    data, sh_data, window=60
+                )
+                symbol_data['stock_beta_sh'] = beta_sh
+                self.logger.debug(f"{symbol}: Beta(vs上证) = {beta_sh:.3f}")
+            except Exception as e:
+                self.logger.debug(f"{symbol}: Beta(vs上证)计算失败: {e}")
+                symbol_data['stock_beta_sh'] = None
+        else:
+            symbol_data['stock_beta_sh'] = None
+
+        # === 个股5分钟数据 ===
+        if intraday_data is not None and not intraday_data.empty:
+            symbol_data['price_5min'] = intraday_data[['Open', 'High', 'Low', 'Close']].copy()
+            self.logger.debug(f"{symbol}: 使用5分钟数据（{len(intraday_data)}条）")
+        else:
+            # 即使不可用也添加键，因子会自动降级到仅日线模式
+            symbol_data['price_5min'] = None
+            self.logger.debug(f"{symbol}: 5分钟数据不可用，多时间框架因子将降级到仅日线模式")
+
+        # === 基本面数据（新增） ===
+        if fundamental_data and isinstance(fundamental_data, dict):
+            # 验证至少有一些关键指标
+            has_data = any(fundamental_data.get(key) is not None
+                          for key in ['pe_ratio', 'pb_ratio', 'roe', 'revenue_yoy'])
+            if has_data:
+                symbol_data['fundamental'] = fundamental_data
+                self.logger.debug(f"{symbol}: 使用基本面数据（PE={fundamental_data.get('pe_ratio', 'N/A')}, "
+                                f"PB={fundamental_data.get('pb_ratio', 'N/A')}, ROE={fundamental_data.get('roe', 'N/A')}）")
+            else:
+                symbol_data['fundamental'] = {}
+                self.logger.debug(f"{symbol}: 基本面数据为空或无有效指标")
+        else:
+            symbol_data['fundamental'] = {}
+            self.logger.debug(f"{symbol}: 基本面数据不可用，基本面因子将不参与计算")
+
+        return symbol_data
+
+    def _ai_factor_analysis(self, symbol: str, data: pd.DataFrame, indicators: Dict,
+                           intraday_data: pd.DataFrame = None,
+                           fundamental_data: Dict = None) -> Optional[Dict]:
         """
         AI因子分析
-        
+
         Args:
             symbol: 股票代码
             data: 股票数据
             indicators: 技术指标数据
-            
+            intraday_data: 5分钟K线数据（可选）
+            fundamental_data: 基本面数据字典（可选）
+
         Returns:
             AI因子分析结果
         """
         try:
             if not self.ai_factor_enabled or not self.factor_manager:
                 return None
-                
-            # 准备因子计算所需的数据格式
-            # 因子期望的数据格式是 Dict[str, pd.DataFrame]，其中键是依赖名称
-            symbol_data = {
-                'price': data[['Open', 'High', 'Low', 'Close']].copy(),  # 价格数据
-                'volume': data[['Volume']].copy()  # 成交量数据
-            }
+
+            # 【改进】使用增强数据字典（包含市场数据、Beta、5分钟数据、基本面数据等）
+            symbol_data = self._build_enhanced_data_dict(symbol, data, intraday_data, fundamental_data)
             
-            # 计算所有AI因子
+            # 【新方法】使用加权因子信号（自动IC评估）
+            # 这个方法会：
+            # 1. 计算所有因子
+            # 2. 自动记录因子值（用于IC计算）
+            # 3. 应用IC评估后的权重
+            # 4. 每50次分析或每7天自动触发IC评估和权重调整
+            weighted_signal = self.factor_manager.calculate_weighted_signal(symbol, symbol_data)
+
+            # 同时获取详细因子值（用于显示）
             factors = self.factor_manager.calculate_all_factors(symbol, symbol_data)
-            
+
             if not factors:
                 return None
-            
+
             # 分析因子结果并给出投资建议
             factor_scores = []
             factor_details = {}
-            
+
             for factor_name, factor_value in factors.items():
                 score = factor_value.value
-                factor_scores.append(score)
-                
-                # 获取因子描述（从因子管理器中获取）
+
+                # 过滤 NaN 值，只添加有效分数
+                if not np.isnan(score) and np.isfinite(score):
+                    factor_scores.append(score)
+
+                # 获取因子描述和权重信息（从因子管理器中获取）
                 factor_description = ''
+                factor_weight = 1.0
+                is_disabled = False
+
                 if self.factor_manager and factor_name in self.factor_manager.factors:
                     factor_description = self.factor_manager.factors[factor_name].description
-                
+
+                    # 获取IC评估后的权重
+                    if self.factor_manager.enable_auto_evaluation:
+                        factor_weight = self.factor_manager.factor_weights.get(factor_name, 1.0)
+                        is_disabled = factor_name in self.factor_manager.disabled_factors
+
                 factor_details[factor_name] = {
-                    'value': score,
+                    'value': score if not np.isnan(score) else None,
                     'timestamp': factor_value.timestamp.strftime('%Y-%m-%d %H:%M:%S'),
-                    'description': factor_description
+                    'description': factor_description,
+                    'weight': factor_weight,  # IC评估后的权重
+                    'disabled': is_disabled    # 是否被禁用
                 }
-            
-            # 计算综合因子评分
-            if factor_scores:
-                avg_score = np.mean(factor_scores)
+
+            # 【改进】使用加权信号而非简单平均
+            if factor_scores and len(factor_scores) > 0:
+                # 使用IC评估后的加权信号
+                avg_score = weighted_signal
                 std_score = np.std(factor_scores) if len(factor_scores) > 1 else 0
                 
-                # 基于因子评分给出建议
-                if avg_score > 0.6:
+                # 0.5~0.7 温和看多→买入, 0.7~0.85 偏热→持有(热), >0.85 过热→卖出(热), -0.1~0.5 中性→持有(冷), <-0.1 弱势→卖出(冷)
+                if 0.5 <= avg_score <= 0.7:
                     recommendation = "买入"
-                    confidence = min(0.9, 0.5 + avg_score * 0.4)
-                elif avg_score > 0.3:
-                    recommendation = "持有"
-                    confidence = min(0.7, 0.3 + avg_score * 0.4)
-                elif avg_score > -0.3:
-                    recommendation = "持有"
-                    confidence = min(0.6, 0.2 + abs(avg_score) * 0.4)
+                    confidence = min(0.85, 0.55 + (1 - abs(avg_score - 0.6) / 0.1) * 0.3)
+                elif 0.7 < avg_score <= 0.85:
+                    recommendation = "持有(热)"
+                    confidence = max(0.4, 0.6 - (avg_score - 0.7) / 0.15 * 0.2)
+                elif avg_score > 0.85:
+                    recommendation = "卖出(热)"
+                    confidence = min(0.9, 0.55 + (avg_score - 0.85) * 2.33)
+                elif -0.1 <= avg_score < 0.5:
+                    recommendation = "持有(冷)"
+                    confidence = min(0.7, 0.4 + (avg_score + 0.1) * 0.5)
                 else:
-                    recommendation = "卖出"
-                    confidence = min(0.8, 0.4 + abs(avg_score) * 0.4)
-                
+                    recommendation = "卖出(冷)"
+                    confidence = min(0.9, 0.55 + abs(avg_score + 0.1) * 0.39)
+
                 reasoning = [
-                    f"AI因子综合评分: {avg_score:.4f}",
+                    f"AI因子加权评分: {avg_score:.4f} (已应用IC评估权重)",
                     f"因子评分标准差: {std_score:.4f}",
-                    f"参与计算的因子数量: {len(factor_scores)}"
+                    f"有效因子数量: {len(factor_scores)}/{len(factors)}"
                 ]
-                
-                # 添加主要因子的贡献说明
-                sorted_factors = sorted(factor_details.items(), 
-                                      key=lambda x: abs(x[1]['value']), reverse=True)
-                
+
+                # 【新增】显示IC评估状态
+                if self.factor_manager.enable_auto_evaluation:
+                    reasoning.append(f"已分析次数: {self.factor_manager.analysis_count} 次")
+                    if self.factor_manager.disabled_factors:
+                        reasoning.append(f"已禁用因子: {len(self.factor_manager.disabled_factors)} 个")
+
+                # 添加主要因子的贡献说明（只包含有效且启用的因子）
+                sorted_factors = sorted(
+                    [(name, info) for name, info in factor_details.items()
+                     if info['value'] is not None and not info.get('disabled', False)],
+                    key=lambda x: abs(x[1]['value']) * x[1].get('weight', 1.0),  # 按加权贡献排序
+                    reverse=True
+                )
+
                 for i, (factor_name, factor_info) in enumerate(sorted_factors[:3]):
                     contribution = "正面" if factor_info['value'] > 0 else "负面"
-                    reasoning.append(f"{factor_name}: {factor_info['value']:.4f} ({contribution}贡献)")
+                    weight = factor_info.get('weight', 1.0)
+                    weight_str = f", 权重={weight:.2f}" if self.factor_manager.enable_auto_evaluation else ""
+                    reasoning.append(f"{factor_name}: {factor_info['value']:.4f} ({contribution}贡献{weight_str})")
                 
                 return {
                     "analyst_type": "AI因子分析",
@@ -1257,9 +1430,29 @@ class AShareTradingAgentsSystem:
                     },
                     "timestamp": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                 }
-            
-            return None
-            
+
+            # 如果没有有效因子，返回降级建议
+            else:
+                self.logger.warning(f"股票 {symbol} 所有AI因子计算结果无效，返回保守建议")
+                return {
+                    "analyst_type": "AI因子分析",
+                    "recommendation": "持有",
+                    "confidence": 0.3,
+                    "reasoning": [
+                        "AI因子综合评分: 数据不足",
+                        "因子评分标准差: 数据不足",
+                        f"有效因子数量: 0/{len(factors)}",
+                        "建议: 数据不足，保守持有观望"
+                    ],
+                    "factor_details": factor_details,
+                    "factor_summary": {
+                        "avg_score": None,
+                        "std_score": None,
+                        "factor_count": 0
+                    },
+                    "timestamp": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                }
+
         except Exception as e:
             self.logger.error(f"AI因子分析计算失败 {symbol}: {e}")
             return None
@@ -1287,142 +1480,52 @@ class AShareTradingAgentsSystem:
 
         return False
 
-    def _generate_analyst_summary_report(self, analyst_details: List[Dict], output_dir: Path, timestamp: str):
-        """生成分析师总结报告"""
-        try:
-            summary = {
-                "报告标题": "多智能体分析师详细报告",
-                "生成时间": timestamp,
-                "分析股票数量": len(analyst_details),
-                "分析师统计": {}
-            }
-
-            # 统计各分析师的推荐情况
-            analyst_types = ["基本面分析师", "技术面分析师", "情感面分析师", "AI因子分析师"]
-
-            for analyst_type in analyst_types:
-                recommendations = {}
-                confidences = []
-
-                for detail in analyst_details:
-                    analyst_info = detail["分析师详情"].get(analyst_type)
-                    if analyst_info:
-                        output_result = analyst_info.get("输出结果", {})
-                        rec = output_result.get("推荐操作", "N/A")
-                        conf_str = output_result.get("信心度", "50.00%")
-
-                        # 统计推荐
-                        recommendations[rec] = recommendations.get(rec, 0) + 1
-
-                        # 提取信心度数值
-                        try:
-                            conf_value = float(conf_str.replace("%", "")) / 100
-                            confidences.append(conf_value)
-                        except:
-                            confidences.append(0.5)
-
-                summary["分析师统计"][analyst_type] = {
-                    "推荐分布": recommendations,
-                    "平均信心度": f"{np.mean(confidences):.2%}" if confidences else "N/A",
-                    "信心度范围": f"{np.min(confidences):.2%} - {np.max(confidences):.2%}" if confidences else "N/A",
-                    "参与分析数": len(confidences)
-                }
-
-            # 保存总结报告
-            summary_filename = output_dir / "analyst_summary_report.json"
-            with open(summary_filename, 'w', encoding='utf-8') as f:
-                json.dump(summary, f, ensure_ascii=False, indent=2)
-            print(f"分析师总结报告: {summary_filename}")
-
-        except Exception as e:
-            print(f"生成分析师总结报告失败: {e}")
-
-    def _generate_session_readme(self, results: List[Dict], timestamp: str) -> str:
-        """生成本次分析会话的README文档"""
-        try:
-            # 统计信息
-            total_stocks = len(results)
-            successful_analyses = sum(1 for r in results if r["操作建议"] not in ["错误", "跳过"])
-            action_counts = {}
-            for result in results:
-                action = result["操作建议"]
-                if action not in ["错误", "跳过"]:
-                    action_counts[action] = action_counts.get(action, 0) + 1
-
-            # 生成README内容
-            readme_content = f"""# 股票分析报告 - {timestamp}
-
-## 📊 分析概览
-
-- **分析时间**: {datetime.now().strftime('%Y年%m月%d日 %H:%M:%S')}
-- **分析股票数量**: {total_stocks} 只
-- **成功分析**: {successful_analyses} 只
-- **分析系统**: A股TradingAgents多智能体系统
-
-## 🎯 操作建议分布
-
-"""
-
-            if action_counts:
-                for action, count in sorted(action_counts.items(), key=lambda x: x[1], reverse=True):
-                    percentage = (count / successful_analyses) * 100 if successful_analyses > 0 else 0
-                    readme_content += f"- **{action}**: {count} 只股票 ({percentage:.1f}%)\n"
-
-            readme_content += f"""
-
-## 📁 文件说明
-
-### 主要结果文件
-- `analysis_summary.csv` - 📊 Excel可打开的汇总结果表格
-- `analysis_detailed.json` - 📋 包含分析师详情的完整JSON数据
-- `analysis_legacy.json` - 🔄 兼容旧版本格式的JSON数据
-
-### 详细分析文件
-- `analyst_details.json` - 👥 四个智能分析师的详细分析过程
-- `analyst_summary_report.json` - 📊 分析师表现统计报告
-- `README.md` - 📄 本分析会话说明文档（当前文件）
-
-## 🤖 智能分析师说明
-
-本次分析使用了四个AI智能分析师：
-
-1. **📊 基本面分析师** - 财务数据、估值分析、行业对比
-2. **📈 技术面分析师** - 技术指标、图表形态、趋势分析
-3. **📰 情感面分析师** - 新闻舆情、市场情绪、政策影响
-4. **🤖 AI因子分析师** - 量化因子、模式识别、智能评分
-
-## 💡 使用建议
-
-1. **快速查看**: 打开 `analysis_summary.csv` 查看所有股票的操作建议
-2. **详细分析**: 查看 `analysis_detailed.json` 了解具体分析理由
-3. **分析师视角**: 查看 `analyst_details.json` 了解每个分析师的详细观点
-4. **Excel分析**: 将CSV文件导入Excel进行进一步的数据分析和筛选
-
-## ⚠️ 免责声明
-
-本分析结果仅供参考，不构成投资建议。投资有风险，决策需谨慎。
-
----
-
-*本报告由A股TradingAgents智能交易系统自动生成*
-"""
-
-            return readme_content
-
-        except Exception as e:
-            return f"# 分析报告生成失败\n\n错误信息: {str(e)}"
 
 def main():
     """主函数"""
-    # 设置控制台输出编码
-    import sys
-    if hasattr(sys.stdout, 'reconfigure'):
-        try:
-            sys.stdout.reconfigure(encoding='utf-8')
-        except:
-            pass
-    
+    import argparse
+
+    # 解析命令行参数
+    parser = argparse.ArgumentParser(description='A股量化交易系统')
+    parser.add_argument('--mode', type=str, default='select',
+                       choices=['select', 'hold', 'both', 'backtest'],
+                       help='运行模式: select=选股分析, hold=持仓分析, both=两者都执行, backtest=历史回测')
+    parser.add_argument('--output-dir', type=str, default=None,
+                       help='输出目录路径，如果不指定则自动生成')
+    parser.add_argument('--start-date', type=str, default=None,
+                       help='回测开始日期 (YYYY-MM-DD)')
+    parser.add_argument('--end-date', type=str, default=None,
+                       help='回测结束日期 (YYYY-MM-DD)')
+    parser.add_argument('--months', type=int, default=3,
+                       help='回测向前月数（当未指定日期时使用）')
+    args = parser.parse_args()
+
+    # 总体耗时统计开始
+    total_start_time = time.time()
+    main_logger = logging.getLogger("AShareTradingSystem")
+    main_logger.info("🚀 ================ A股量化交易系统启动 ================")
+    main_logger.info(f"📋 运行模式: {args.mode}")
+
+    # 根据模式设置输出目录
+    if args.output_dir:
+        # 使用指定的输出目录（定时器传递的路径）
+        output_dir = args.output_dir
+        main_logger.info(f"📁 使用指定的输出目录: {output_dir}")
+    else:
+        # 自动生成输出目录（回测使用独立目录）
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        if args.mode == 'backtest':
+            output_dir = os.path.join("backtest_results", timestamp)
+        else:
+            output_dir = os.path.join("outputs", timestamp)
+        main_logger.info(f"📁 自动生成输出目录: {output_dir}")
+
+    os.makedirs(output_dir, exist_ok=True)
+    main_logger.info(f"📁 最终输出目录: {output_dir}")
+
     print("启动基于TradingAgents的A股量化交易系统")
+    print(f"运行模式: {args.mode}")
+    print(f"输出目录: {output_dir}")
     print("="*60)
     
     # 检查依赖
@@ -1437,78 +1540,340 @@ def main():
         return
     
     
-    # 初始化系统
+    # 第一阶段：系统初始化
+    phase1_start_time = time.time()
+    main_logger.info("📋 第一阶段：系统初始化开始...")
+
     try:
         system = AShareTradingAgentsSystem()
+        # 设置输出目录（统一输出路径）
+        system.output_manager.output_dir = output_dir
+        main_logger.info(f"📁 系统输出目录设置为: {output_dir}")
+
+  
+        phase1_init_time = time.time() - phase1_start_time
+        main_logger.info(f"✅ 系统初始化完成，耗时: {phase1_init_time:.2f}秒")
     except Exception as e:
         print(f"系统初始化失败: {e}")
+        main_logger.error(f"❌ 系统初始化失败: {e}")
         import traceback
         traceback.print_exc()
         return
-    
-    # 获取股票列表 - 使用新的股票选择管理器
-    try:
-        from config.config_manager import get_config
-        from src.stock.stock_selection_manager import StockSelectionManager
-        config = get_config()
-        print("正在使用股票选择管理器...")
 
-        # 初始化股票选择管理器
-        stock_manager = StockSelectionManager(config)
+    # ========== 回测模式：历史数据回测 ==========
+    if args.mode == 'backtest':
+        print("\n" + "="*60)
+        print("历史回测模式：对历史数据进行逐日分析和模拟交易")
+        print("="*60)
 
-        # 获取选股结果和元数据
-        stock_list, metadata = stock_manager.get_selected_stocks()
+        from src.backtest.historical_backtest_runner import HistoricalBacktestRunner
 
-        # 显示选股信息
-        selection_method = metadata.get('selection_method', 'unknown')
-        print(f"选股完成，方法: {selection_method}")
-        print(f"共选择 {len(stock_list)} 只股票")
+        # 创建历史回测运行器
+        backtest_runner = HistoricalBacktestRunner(system)
 
-        # 显示来源分布（如果有）
-        sources = metadata.get('sources', {})
-        if sources:
-            print("股票来源分布:")
-            for source, count in sources.items():
-                if count > 0:
-                    print(f"  - {source}: {count} 只")
-    except Exception as e:
-        print(f"动态股票选择失败: {e}")
-        print("使用传统配置文件股票列表...")
+        # 显示回测配置
+        if args.start_date and args.end_date:
+            print(f"回测时间范围: {args.start_date} 至 {args.end_date}")
+        else:
+            end_date = datetime.now().strftime("%Y-%m-%d")
+            start_date = (datetime.now() - timedelta(days=30 * args.months)).strftime("%Y-%m-%d")
+            print(f"回测时间范围: {start_date} 至 {end_date} (最近{args.months}个月)")
+
+        print("股票池: 使用选股系统自动选择（复用 config/dynamic_stock.json 或重新选股）")
+        print("\n开始历史回测...")
+
+        # 运行历史回测
+        backtest_results = backtest_runner.run_historical_backtest(
+            symbols=None,  # 使用选股系统
+            start_date=args.start_date,
+            end_date=args.end_date,
+            months_back=args.months
+        )
+
+        # 打印回测结果
+        if 'error' in backtest_results:
+            print(f"\n❌ 回测失败: {backtest_results['error']}")
+        else:
+            print("\n" + "="*60)
+            print("回测结果摘要")
+            print("="*60)
+
+            config_info = backtest_results.get('backtest_config', {})
+            print(f"回测时间范围: {config_info.get('start_date')} 至 {config_info.get('end_date')}")
+            print(f"回测股票数量: {config_info.get('stock_count')} 只")
+            print(f"交易日数量: {config_info.get('trading_days')} 天")
+            print(f"生成决策数: {config_info.get('decision_count')} 条")
+            print(f"初始资金: ¥{config_info.get('initial_capital', 0):,.0f}")
+
+            print(f"\n收益指标:")
+            print(f"  总收益率: {backtest_results.get('total_return', 0):.2%}")
+            print(f"  年化收益率: {backtest_results.get('annualized_return', 0):.2%}")
+            print(f"  最终资金: ¥{backtest_results.get('final_capital', 0):,.2f}")
+            print(f"  盈亏金额: ¥{backtest_results.get('profit', 0):,.2f}")
+
+            print(f"\n风险指标:")
+            print(f"  年化波动率: {backtest_results.get('volatility', 0):.2%}")
+            print(f"  夏普比率: {backtest_results.get('sharpe_ratio', 0):.2f}")
+            print(f"  最大回撤: {backtest_results.get('max_drawdown', 0):.2%}")
+
+            print(f"\n交易统计:")
+            print(f"  总交易次数: {backtest_results.get('total_trades', 0)} 笔")
+            print(f"  买入次数: {backtest_results.get('buy_trades', 0)} 笔")
+            print(f"  卖出次数: {backtest_results.get('sell_trades', 0)} 笔")
+            print(f"  胜率: {backtest_results.get('win_rate', 0):.2%}")
+            print(f"  平均持有天数: {backtest_results.get('avg_holding_days', 0):.1f} 天")
+
+            # 保存回测结果
+            backtest_output_file = os.path.join(output_dir, "backtest_results.json")
+            import json
+            with open(backtest_output_file, 'w', encoding='utf-8') as f:
+                # 简化结果（移除大数组和DataFrame）
+                simplified_results = {
+                    k: v for k, v in backtest_results.items()
+                    if k not in ['daily_returns', 'portfolio_values', 'trade_history', 'historical_data']
+                }
+                simplified_results['trade_summary'] = {
+                    'total_trades': len(backtest_results.get('trade_history', [])),
+                    'first_5_trades': backtest_results.get('trade_history', [])[:5]
+                }
+                json.dump(simplified_results, f, ensure_ascii=False, indent=2)
+
+            print(f"\n回测结果已保存至: {backtest_output_file}")
+
+            # 保存详细交易记录（添加股票名称）
+            trade_history = backtest_results.get('trade_history', [])
+            symbol_to_name = backtest_results.get('symbol_to_name', {})
+
+            # 为每条交易记录添加股票名称
+            enhanced_trade_history = []
+            for trade in trade_history:
+                enhanced_trade = trade.copy()
+                symbol = trade.get('symbol', '')
+                enhanced_trade['name'] = symbol_to_name.get(symbol, symbol)
+                enhanced_trade_history.append(enhanced_trade)
+
+            trade_history_file = os.path.join(output_dir, "backtest_trade_history.json")
+            with open(trade_history_file, 'w', encoding='utf-8') as f:
+                json.dump(enhanced_trade_history, f, ensure_ascii=False, indent=2)
+            print(f"详细交易记录已保存至: {trade_history_file}")
+
+            # 生成Markdown报告
+            try:
+                from src.backtest.backtest_report_generator import generate_backtest_markdown
+                markdown_file = os.path.join(output_dir, "backtest_result.md")
+                generate_backtest_markdown(backtest_results, markdown_file)
+                print(f"Markdown报告已保存至: {markdown_file}")
+            except Exception as e:
+                print(f"⚠️ Markdown报告生成失败: {e}")
+
+            # 生成K线图
+            try:
+                from src.backtest.backtest_chart_generator import generate_backtest_charts
+                print("\n正在生成K线图...")
+                historical_data = backtest_results.get('historical_data', {})
+                if historical_data:
+                    chart_files = generate_backtest_charts(backtest_results, historical_data, output_dir)
+                    if chart_files:
+                        print(f"✅ K线图生成完成，共 {len(chart_files)} 个文件")
+                        print(f"K线图保存在: {os.path.join(output_dir, 'charts')}")
+                    else:
+                        print("⚠️ 没有生成K线图")
+                else:
+                    print("⚠️ 没有历史数据，跳过K线图生成")
+            except Exception as e:
+                print(f"⚠️ K线图生成失败: {e}")
+                import traceback
+                traceback.print_exc()
+
+        print("\n回测模式执行完成")
+        return
+
+    # ========== 根据模式确定股票列表来源 ==========
+    # 获取通用配置（所有模式都需要）
+    from config.config_manager import get_config
+    config = get_config()
+
+    if args.mode == 'hold':
+        # hold 模式：只加载持仓股票
+        print("\n" + "="*60)
+        print("持仓模式：仅分析持仓股票")
+        print("="*60)
+
         try:
-            from src.stock import get_all_stocks
-            stock_list = get_all_stocks()[:20]  # 限制数量
-        except ImportError:
-            print("无法导入股票列表，使用默认列表")
-            stock_list = [
-                ("600519.SS", "贵州茅台"),
-                ("600036.SS", "招商银行"), 
-                ("000858.SZ", "五粮液"),
-                ("000333.SZ", "美的集团"),
-                ("002594.SZ", "比亚迪"),
-                ("300750.SZ", "宁德时代"),
-                ("601318.SS", "中国平安"),
-                ("600941.SS", "中国移动"),
-            ]
-    
+            import json
+            hold_config_path = os.path.join("config", "hold_stock.json")
+            if os.path.exists(hold_config_path):
+                with open(hold_config_path, 'r', encoding='utf-8') as f:
+                    hold_config = json.load(f)
+                    hold_stocks = hold_config.get('hold_stocks', [])
+
+                # 转换为 (symbol, name) 元组列表，只包含 buy_flag=True 的股票
+                stock_list = [(stock['symbol'], stock['name']) for stock in hold_stocks if stock.get('buy_flag', True)]
+                total_hold = len(hold_stocks)
+                actual_bought = len(stock_list)
+                watch_only = total_hold - actual_bought
+                print(f"✅ 加载 {actual_bought} 只实际持仓股票 (观察中: {watch_only}只)")
+                main_logger.info(f"📊 持仓模式加载{actual_bought}只实际持仓股票, {watch_only}只观察股票被过滤")
+            else:
+                print(f"❌ 未找到持仓配置文件: {hold_config_path}")
+                main_logger.error(f"未找到持仓配置文件: {hold_config_path}")
+                stock_list = []
+                metadata = {'selection_method': 'hold', 'sources': {}, 'selection_time': 0.0}
+        except Exception as e:
+            print(f"❌ 读取持仓股票失败: {e}")
+            main_logger.error(f"读取持仓股票失败: {e}")
+            stock_list = []
+            metadata = {'selection_method': 'hold', 'sources': {}, 'selection_time': 0.0}
+
+    elif args.mode in ['select', 'both']:
+        # select/both 模式：使用动态选股（both 模式会自动包含持仓股票）
+        stock_selection_start = time.time()  # 开始股票选择计时
+
+        if args.mode == 'both':
+            print("\n" + "="*60)
+            print("全分析模式：动态选股 + 持仓分析")
+            print("="*60)
+
+        try:
+            from src.stock.stock_selection_manager import StockSelectionManager
+            print("正在使用股票选择管理器（统一选股+过滤）...")
+
+            # 初始化股票选择管理器
+            stock_manager = StockSelectionManager(config)
+
+            # 【重要】使用统一的选股和过滤方法
+            # 这样确保预测和回测使用完全相同的选股逻辑和结果
+            stock_list, metadata = stock_manager.get_stocks_with_filter(
+                data_provider=system.data_provider,  # 传递数据提供者以应用前日涨幅过滤
+                force_refresh=False  # 使用当日缓存，避免重复选股
+            )
+
+            stock_selection_time = time.time() - stock_selection_start
+            main_logger.info(f"✅ 股票选择完成，耗时: {stock_selection_time:.2f}秒")
+
+            # 显示选股信息
+            selection_method = metadata.get('selection_method', 'unknown')
+            print(f"选股完成，方法: {selection_method}")
+            print(f"共选择 {len(stock_list)} 只股票")
+            main_logger.info(f"📊 选股结果: 方法={selection_method}, 数量={len(stock_list)}")
+
+            # 显示来源分布（如果有）
+            sources = metadata.get('sources', {})
+            if sources:
+                print("股票来源分布:")
+                source_info = []
+                for source, count in sources.items():
+                    if count > 0:
+                        print(f"  - {source}: {count} 只")
+                        source_info.append(f"{source}={count}")
+                main_logger.info(f"📊 股票来源分布: {', '.join(source_info)}")
+
+            # 显示过滤信息（如果有）
+            if metadata.get('filtering_applied', False):
+                original_count = metadata.get('original_count', 0)
+                filtered_count = metadata.get('filtered_count', 0)
+                filter_threshold = metadata.get('filter_threshold', 0)
+                print(f"前日涨幅过滤: 原{original_count}只 → 保留{len(stock_list)}只，过滤{filtered_count}只（阈值>{filter_threshold}%）")
+                main_logger.info(f"📊 前日涨幅过滤: 原{original_count}只 → 保留{len(stock_list)}只，过滤{filtered_count}只")
+
+            # both 模式：持仓股票已经包含在 stock_list 中
+            if args.mode == 'both':
+                print(f"📊 注意: 持仓股票已自动包含在选股列表中")
+                main_logger.info("📊 both模式：持仓股票已包含在选股列表中")
+
+        except Exception as e:
+            print(f"动态股票选择失败: {e}")
+            print("使用传统配置文件股票列表...")
+            try:
+                from src.stock import get_all_stocks
+                stock_list = get_all_stocks()[:20]  # 限制数量
+            except ImportError:
+                print("无法导入股票列表，使用默认列表")
+                stock_list = []
+
+    # 第一阶段总结（系统初始化 + 股票选择）
+    phase1_total_time = time.time() - phase1_start_time
+    main_logger.info(f"✅ 第一阶段完成（系统初始化 + 股票选择），总耗时: {phase1_total_time:.2f}秒")
+
+    # 第二阶段：股票分析（所有模式统一执行）
+    phase2_start_time = time.time()
+    main_logger.info("📈 第二阶段：股票分析开始...")
+
     # 从配置获取价格限制（如果启用的话）
     config = get_config()
     price_limit_min = config.get_price_limit_min()
     price_limit_max = config.get_price_limit_max()
     enable_price_limits = config.get('analysis_settings.filters.enable_price_limits', False)
-    
+
     print(f"\n准备分析 {len(stock_list)} 只A股股票...")
+    main_logger.info(f"📊 准备分析{len(stock_list)}只股票")
+
     if enable_price_limits:
         print(f"价格筛选条件: 只分析价格{price_limit_min}元到{price_limit_max}元的股票")
+        main_logger.info(f"💰 价格筛选: {price_limit_min}元-{price_limit_max}元")
     else:
         print("价格筛选: 已禁用，将分析所有价格区间的股票")
+        main_logger.info("💰 价格筛选: 已禁用")
 
     print("正在获取数据和分析，请稍候...\n")
-    
+
     # 执行批量分析（使用多线程版本）
+    results = []
+    holdings_summary = None  # 用于存储持仓概览
+
     try:
         results = system.batch_analyze_threaded(stock_list, price_limit_min, price_limit_max)
+
+        phase2_analysis_time = time.time() - phase2_start_time
+        main_logger.info(f"✅ 股票分析完成，耗时: {phase2_analysis_time:.2f}秒")
+        main_logger.info(f"📊 分析结果: 成功分析{len(results)}只股票")
+
+        # 打印分析结果
         system.print_analysis_results(results)
-        
+
+        # ========== 持仓分析（hold/both 模式）==========
+        if args.mode in ['hold', 'both']:
+            print("\n" + "="*60)
+            print("🔍 开始持仓股票分析")
+            print("="*60)
+            main_logger.info("🔍 ================ 持仓分析开始 ================")
+
+            hold_start_time = time.time()
+
+            try:
+                # 初始化持仓分析流程（传入输出目录）
+                from src.process.hold_stock_process import HoldStockProcess
+                hold_process = HoldStockProcess(system, config, output_dir=output_dir)
+
+                # 执行完整流程（使用已有的分析结果复用数据）
+                hold_result = hold_process.execute_full_process(analysis_results=results)
+
+                hold_elapsed = time.time() - hold_start_time
+                main_logger.info(f"✅ 持仓分析完成，耗时: {hold_elapsed:.2f}秒")
+
+                if hold_result.get('success'):
+                    print(f"\n✅ 持仓分析完成！")
+                    print(f"分析耗时: {hold_elapsed:.2f}秒")
+                    print(f"CSV文件: {hold_result.get('csv_file', 'N/A')}")
+                    print(f"💡 已复用选股分析结果，节省了AI调用")
+
+                    # 保存持仓概览用于 README 生成
+                    holdings_summary = hold_result.get('summary')
+                else:
+                    print(f"\n❌ 持仓分析失败: {hold_result.get('error', '未知错误')}")
+                    main_logger.error(f"❌ 持仓分析失败: {hold_result.get('error', '未知错误')}")
+
+            except Exception as e:
+                print(f"\n❌ 持仓分析出错: {e}")
+                main_logger.error(f"❌ 持仓分析出错: {e}")
+                import traceback
+                traceback.print_exc()
+
+            main_logger.info("🏁 ================ 持仓分析完成 ================")
+
+        # 保存结果（传入持仓概览以生成综合 README）
+        system.output_manager.save_results(results, holdings_summary=holdings_summary)
+
         # 分析完成后进行历史学习
         if system.enable_learning:
             print("\n正在从历史记录中学习...")
@@ -1517,13 +1882,23 @@ def main():
                 print("历史学习完成，已更新分析师权重")
             else:
                 print(f"历史学习失败: {learning_result.get('error', '未知错误')}")
-        
+
         print("\n分析完成！您可以查看输出的CSV和JSON文件获取详细结果。")
-        
+
     except Exception as e:
         print(f"系统执行出错: {e}")
+        main_logger.error(f"❌ 系统执行出错: {e}")
         import traceback
         traceback.print_exc()
+
+    finally:
+        # 总体耗时统计
+        total_execution_time = time.time() - total_start_time
+        main_logger.info(f"🏁 ================ 系统执行完成 ================")
+        main_logger.info(f"⏱️  总耗时: {total_execution_time:.2f}秒 ({total_execution_time/60:.1f}分钟)")
+        if len(stock_list) > 0:
+            main_logger.info(f"📊 效率统计: 平均每只股票 {total_execution_time/len(stock_list):.2f}秒")
+        print(f"\n系统总耗时: {total_execution_time:.2f}秒")
 
 if __name__ == "__main__":
     main()

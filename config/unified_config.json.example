@@ -1,0 +1,165 @@
+{
+  "system_settings": {
+    "execution": {
+      "max_workers": 5
+    },
+    "multi_timeframe_factors": {
+      "enabled": true,
+      "rsi_settings": {
+        "daily_period": 14,
+        "minute_5_long_period": 70,
+        "minute_5_short_period": 14,
+        "signal_weights": {
+          "daily": 0.5,
+          "minute_long": 0.3,
+          "minute_short": 0.2
+        }
+      },
+      "macd_settings": {
+        "daily": {
+          "fast": 12,
+          "slow": 26,
+          "signal": 9
+        },
+        "minute_5": {
+          "fast": 60,
+          "slow": 130,
+          "signal": 45
+        },
+        "signal_weights": {
+          "daily": 0.6,
+          "minute": 0.4
+        },
+        "divergence_detection": true
+      },
+      "cache_settings": {
+        "max_symbols": 50,
+        "max_memory_mb": 500,
+        "eviction_policy": "LRU"
+      }
+    },
+    "data_sources": {
+      "primary_source": "tushare",
+      "fallback_sources": [
+        "akshare",
+        "yfinance"
+      ],
+      "qlib": {
+        "enabled": true,
+        "data_dir": "./qlib_data",
+        "auto_sync": true
+      },
+      "akshare": {
+        "enabled": true
+      },
+      "tushare": {
+        "enabled": true,
+        "token": " tushare api key"
+      },
+      "yfinance": {
+        "enabled": true
+      }
+    },
+    "claude_sonnet": {
+      "name": "Claude Code SDK",
+      "type": "claude_sdk",
+      "config": {
+        "model": "deepseek-v4-pro[1m]",
+        "env": {
+          "ANTHROPIC_API_KEY": " deepseek api key",
+          "ANTHROPIC_BASE_URL": "https://api.deepseek.com/anthropic"
+        }
+      }
+    }
+  },
+  "stock_selection": {
+    "longhu_count": 10,
+    "social_count": 5,
+    "potential_count": 10,
+    "sector_rotation_count": 15,
+    "max_total_stocks": 100,
+    "enable_longhu": true,
+    "enable_social": true,
+    "enable_potential": true,
+    "enable_sector_rotation": true,
+    "score_threshold": 15,
+    "sector_rotation": {
+      "hot_sector_count": 5,
+      "stocks_per_sector": 3,
+      "total_sector_stocks": 15,
+      "lookback_days": 5,
+      "min_sector_change": 1.0,
+      "exclude_small_sectors": true,
+      "weights": {
+        "change_pct": 0.4,
+        "fund_flow": 0.3,
+        "volume_change": 0.2,
+        "active_ratio": 0.1
+      },
+      "stock_selection_weights": {
+        "market_cap": 0.3,
+        "recent_return": 0.25,
+        "fund_flow": 0.25,
+        "technical": 0.2
+      }
+    },
+    "filters": {
+      "max_daily_change": 30,
+      "min_daily_change": -3,
+      "max_rsi": 80,
+      "min_volume_ratio": 1.0,
+      "max_volume_ratio": 6
+    }
+  },
+  "analysis_settings": {
+    "web_scraping": {
+      "xueqiu_discussions": false,
+      "xueqiu_login": {
+        "enabled": true,
+        "phone": "18666662508",
+        "password": "cpurun100"
+      }
+    },
+    "filters": {
+      "enable_price_limits": true,
+      "price_limit_min": 0.0,
+      "price_limit_max": 10000.0,
+      "previous_day_change": {
+        "enabled": true,
+        "max_increase_percent": 8.0
+      },
+      "exclude_st": true,
+      "exclude_chinext": false
+    },
+    "risk_management": {
+      "max_position_size": 0.12,
+      "stop_loss_rate": -0.05,
+      "take_profit_rate": 0.08,
+      "max_holding_days": 7,
+      "trailing_stop_drawdown": 0.05,
+      "enable_forced_exit": false
+    },
+    "market_analysis": {
+      "enabled": true,
+      "beta_analysis": {
+        "enabled": true,
+        "beta_thresholds": {
+          "high_beta": 1.2,
+          "low_beta": 0.8
+        },
+        "rolling_window": 60
+      }
+    }
+  },
+  "backtest_settings": {
+    "capital_management": {
+      "initial_capital": 1000000,
+      "max_position_size": 0.15
+    },
+    "transaction_costs": {
+      "commission_rate": 0.0015,
+      "min_commission": 5.0,
+      "stamp_duty_rate": 0.001
+    }
+  }
+}

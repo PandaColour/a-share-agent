@@ -30,6 +30,7 @@ class StockSource(Enum):
     LONGHU_BANG = "longhu_bang"    # 龙虎榜
     SOCIAL_MEDIA = "social_media"  # 社交媒体热门
     AUTO_DISCOVERY = "auto_discovery"  # 自动发现
+    SECTOR_ROTATION = "sector_rotation"  # 板块轮动
 
 @dataclass
 class StockCandidate:
@@ -56,12 +57,12 @@ class DynamicStockSelector:
         self.cache = {}
         self.cache_timeout = 300  # 5分钟缓存
         
-    def select_stocks(self) -> List[Tuple[str, str]]:
+    def select_stocks(self) -> Tuple[List[Tuple[str, str]], Dict]:
         """
         根据配置动态选择股票
-        
+
         Returns:
-            List[Tuple[str, str]]: 股票代码和名称的列表
+            Tuple[List[Tuple[str, str]], Dict]: (股票代码和名称的列表, 详细统计数据)
         """
         logger.info("开始动态股票选择...")
         
@@ -102,7 +103,16 @@ class DynamicStockSelector:
                 logger.info(f"📱 社交媒体股票: {len(social_stocks)} 只 (第四优先级)")
             except Exception as e:
                 logger.warning(f"社交媒体股票获取失败: {e}")
-        
+
+        # 第五优先级：板块轮动股票（新增）
+        if selection_config.get('enable_sector_rotation', False):
+            try:
+                sector_stocks = self._get_sector_rotation_stocks(selection_config.get('sector_rotation_count', 15))
+                all_candidates.extend(sector_stocks)
+                logger.info(f"🔄 板块轮动股票: {len(sector_stocks)} 只 (第五优先级)")
+            except Exception as e:
+                logger.warning(f"板块轮动股票获取失败: {e}")
+
         # 4. 去重并按评分排序
         unique_candidates = self._deduplicate_and_rank(all_candidates)
         
@@ -113,11 +123,16 @@ class DynamicStockSelector:
         max_stocks = selection_config.get('max_total_stocks', 20)
         final_stocks = self._select_final_stocks(filtered_candidates, max_stocks)
         
+        # 生成详细统计数据
+        source_stats = self._generate_source_statistics(final_stocks)
+
         logger.info(f"动态选择完成: 共选择 {len(final_stocks)} 只股票")
         self._log_selection_summary(final_stocks)
-        
+
         # 转换为 (symbol, name) 格式
-        return [(stock.symbol, stock.name) for stock in final_stocks]
+        stock_tuples = [(stock.symbol, stock.name) for stock in final_stocks]
+
+        return stock_tuples, source_stats
     
     def _get_selection_config(self) -> Dict:
         """获取股票选择配置"""
@@ -144,27 +159,32 @@ class DynamicStockSelector:
             }
     
     def _get_config_stocks(self, count: int) -> List[StockCandidate]:
-        """获取配置文件中的固定股票"""
+        """
+        获取配置文件中的所有持仓股票
+
+        注意：count 参数保留用于向后兼容，但实际上会返回所有 hold_stock.json 中的股票。
+        这样确保所有持仓股票都参与分析，buy_flag 只影响持仓分析结果。
+        """
         try:
             from src.stock import get_all_stocks
             all_config_stocks = get_all_stocks()
-            
-            # 随机选择指定数量的股票，增加多样性
-            selected = random.sample(all_config_stocks, min(count, len(all_config_stocks)))
-            
+
+            # 返回所有配置股票，不进行随机采样
+            # 这样确保所有 hold_stock.json 中的股票都能被分析
             candidates = []
-            for symbol, name in selected:
+            for symbol, name in all_config_stocks:
                 candidate = StockCandidate(
                     symbol=symbol,
                     name=name,
                     source=StockSource.CONFIG,
                     score=70.0,  # 配置股票给固定高分
-                    reason="核心股票池配置"
+                    reason="持仓股票池"
                 )
                 candidates.append(candidate)
-            
+
+            logger.info(f"加载所有持仓股票: {len(candidates)} 只（忽略 config_count 配置）")
             return candidates
-            
+
         except Exception as e:
             logger.error(f"获取配置股票失败: {e}")
             return []
@@ -463,7 +483,49 @@ class DynamicStockSelector:
         except Exception as e:
             logger.error(f"潜力股获取失败: {e}")
             return []
-    
+
+    def _get_sector_rotation_stocks(self, count: int) -> List[StockCandidate]:
+        """
+        获取板块轮动股票
+
+        Args:
+            count: 需要获取的股票数量
+
+        Returns:
+            List[StockCandidate]: 板块轮动股票列表
+        """
+        try:
+            from .sector_rotation_picker import create_sector_rotation_picker
+
+            # 创建板块轮动选股器
+            picker = create_sector_rotation_picker(self.config_manager)
+
+            # 获取板块轮动股票
+            sector_stocks = picker.get_sector_rotation_stocks()
+
+            # 转换为候选股票格式
+            candidates = []
+            for stock in sector_stocks:
+                candidate = StockCandidate(
+                    symbol=stock['symbol'],
+                    name=stock['name'],
+                    source=StockSource.SECTOR_ROTATION,
+                    score=stock['score'],
+                    reason=stock['reason'],
+                    change_pct=stock.get('change_pct', 0.0),
+                    market_cap=stock.get('market_cap', 0.0)
+                )
+                candidates.append(candidate)
+
+            logger.info(f"板块轮动股票获取成功: {len(candidates)} 只")
+            return candidates
+
+        except Exception as e:
+            logger.error(f"板块轮动股票获取失败: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return []
+
     def _normalize_stock_symbol(self, symbol: str) -> str:
         """标准化股票代码"""
         if not symbol:
@@ -586,10 +648,11 @@ class DynamicStockSelector:
                 # 如果已存在，保留评分更高的或者来源更优的
                 existing = unique_stocks[symbol]
                 
-                # 来源优先级: CONFIG > AUTO_DISCOVERY(潜力股) > LONGHU_BANG > SOCIAL_MEDIA
+                # 来源优先级: CONFIG > AUTO_DISCOVERY(潜力股) > SECTOR_ROTATION > LONGHU_BANG > SOCIAL_MEDIA
                 source_priority = {
                     StockSource.CONFIG: 4,           # 最高优先级
                     StockSource.AUTO_DISCOVERY: 3,   # 潜力股第二优先级
+                    StockSource.SECTOR_ROTATION: 3,  # 板块轮动与潜力股同级
                     StockSource.LONGHU_BANG: 2,      # 龙虎榜第三优先级
                     StockSource.SOCIAL_MEDIA: 1      # 社交媒体最低优先级
                 }
@@ -610,6 +673,7 @@ class DynamicStockSelector:
             source_priority = {
                 StockSource.CONFIG: 4,           # 最高优先级
                 StockSource.AUTO_DISCOVERY: 3,   # 潜力股第二优先级
+                StockSource.SECTOR_ROTATION: 3,  # 板块轮动与潜力股同级
                 StockSource.LONGHU_BANG: 2,      # 龙虎榜第三优先级
                 StockSource.SOCIAL_MEDIA: 1      # 社交媒体最低优先级
             }
@@ -620,36 +684,71 @@ class DynamicStockSelector:
         return sorted(unique_stocks.values(), key=sort_key, reverse=True)
     
     def _apply_filters(self, candidates: List[StockCandidate]) -> List[StockCandidate]:
-        """应用过滤条件（包括新的波动率限制）"""
+        """
+        应用过滤条件
+        - analysis_settings.filters: 应用到所有股票（基础市场准入门槛）
+        - stock_selection.filters: 仅应用到潜力股（技术指标筛选）
+        """
         filtered = []
         selection_config = self._get_selection_config()
-        filters = selection_config.get('filters', {})
+
+        # 获取两套过滤器配置
+        potential_filters = selection_config.get('filters', {})  # stock_selection.filters - 仅潜力股
+        global_filters = {}
+        if self.config_manager:
+            global_filters = self.config_manager.get('analysis_settings.filters', {})  # 全局基础过滤器
 
         for candidate in candidates:
             # 基本检查
             if not candidate.symbol or not candidate.name:
                 continue
 
-            # ST股票过滤
-            if 'ST' in candidate.name or '*ST' in candidate.name:
+            # === 全局基础过滤器（应用到所有股票） ===
+
+            # ST股票过滤（全局）
+            exclude_st = global_filters.get('exclude_st', True)
+            if exclude_st and ('ST' in candidate.name or '*ST' in candidate.name):
                 logger.debug(f"过滤ST股票: {candidate.name}")
                 continue
 
-            # 涨跌幅过滤（避免已大涨或暴跌的股票）
-            max_change = filters.get('max_daily_change', 8)
-            min_change = filters.get('min_daily_change', -8)
-            if candidate.change_pct > max_change or candidate.change_pct < min_change:
-                logger.debug(f"过滤极端波动股票: {candidate.name} (涨跌幅: {candidate.change_pct}%)")
+            # 科创板和创业板过滤（全局）
+            exclude_chinext = global_filters.get('exclude_chinext', True)
+            if exclude_chinext and candidate.symbol.startswith('30'):
+                logger.debug(f"过滤创业板股票: {candidate.name}")
                 continue
 
-            # 科创板和创业板检查（根据配置决定是否排除）
-            if self.config_manager:
-                exclude_chinext = self.config_manager.get('analysis_settings.filters.exclude_chinext', True)
-                if exclude_chinext and candidate.symbol.startswith('30'):
-                    logger.debug(f"过滤创业板股票: {candidate.name}")
+            # 价格限制（全局）
+            if global_filters.get('enable_price_limits', False):
+                price_min = global_filters.get('price_limit_min', 0.0)
+                price_max = global_filters.get('price_limit_max', 100000.0)
+                if candidate.price > 0:  # 只有当有价格数据时才应用
+                    if candidate.price < price_min or candidate.price > price_max:
+                        logger.debug(f"过滤价格超限股票: {candidate.name} (价格: {candidate.price}元)")
+                        continue
+
+            # === 潜力股专用技术过滤器（仅应用到潜力股） ===
+            if candidate.source == StockSource.AUTO_DISCOVERY:
+                # 涨跌幅过滤（避免已大涨或暴跌的潜力股）
+                max_change = potential_filters.get('max_daily_change', 8)
+                min_change = potential_filters.get('min_daily_change', -8)
+                if candidate.change_pct > max_change or candidate.change_pct < min_change:
+                    logger.debug(f"过滤极端波动潜力股: {candidate.name} (涨跌幅: {candidate.change_pct}%)")
                     continue
 
-            # 评分阈值过滤
+                # RSI过滤（避免超买的潜力股）
+                max_rsi = potential_filters.get('max_rsi', 75)
+                if hasattr(candidate, 'rsi') and candidate.rsi and candidate.rsi > max_rsi:
+                    logger.debug(f"过滤超买潜力股: {candidate.name} (RSI: {candidate.rsi})")
+                    continue
+
+                # 量比过滤（潜力股需要适度的成交量）
+                min_volume_ratio = potential_filters.get('min_volume_ratio', 0.8)
+                max_volume_ratio = potential_filters.get('max_volume_ratio', 8)
+                if candidate.volume_ratio < min_volume_ratio or candidate.volume_ratio > max_volume_ratio:
+                    logger.debug(f"过滤量比异常潜力股: {candidate.name} (量比: {candidate.volume_ratio})")
+                    continue
+
+            # 评分阈值过滤（应用到所有股票）
             score_threshold = selection_config.get('score_threshold', 30)
             if candidate.score < score_threshold:
                 logger.debug(f"过滤低评分股票: {candidate.name} (评分: {candidate.score})")
@@ -668,6 +767,7 @@ class DynamicStockSelector:
         # 按新的优先级顺序分层选择
         config_stocks = [c for c in candidates if c.source == StockSource.CONFIG]
         potential_stocks = [c for c in candidates if c.source == StockSource.AUTO_DISCOVERY]
+        sector_stocks = [c for c in candidates if c.source == StockSource.SECTOR_ROTATION]
         longhu_stocks = [c for c in candidates if c.source == StockSource.LONGHU_BANG]
         social_stocks = [c for c in candidates if c.source == StockSource.SOCIAL_MEDIA]
 
@@ -680,10 +780,25 @@ class DynamicStockSelector:
 
         remaining_slots = max_count - len(final_stocks)
 
-        # 第二优先级：潜力股票（占剩余的50%）
-        potential_count = min(len(potential_stocks), int(remaining_slots * 0.5))
-        final_stocks.extend(potential_stocks[:potential_count])
-        logger.info(f"🔍 选入潜力股票: {potential_count} 只")
+        # 第二优先级：潜力股票+板块轮动（合计占剩余的50%）
+        combined_count = min(len(potential_stocks) + len(sector_stocks), int(remaining_slots * 0.5))
+
+        # 在潜力股和板块轮动之间平衡分配
+        if potential_stocks and sector_stocks:
+            potential_count = min(len(potential_stocks), combined_count // 2)
+            sector_count = min(len(sector_stocks), combined_count - potential_count)
+            final_stocks.extend(potential_stocks[:potential_count])
+            final_stocks.extend(sector_stocks[:sector_count])
+            logger.info(f"🔍 选入潜力股票: {potential_count} 只")
+            logger.info(f"🔄 选入板块轮动股票: {sector_count} 只")
+        elif potential_stocks:
+            potential_count = min(len(potential_stocks), combined_count)
+            final_stocks.extend(potential_stocks[:potential_count])
+            logger.info(f"🔍 选入潜力股票: {potential_count} 只")
+        elif sector_stocks:
+            sector_count = min(len(sector_stocks), combined_count)
+            final_stocks.extend(sector_stocks[:sector_count])
+            logger.info(f"🔄 选入板块轮动股票: {sector_count} 只")
 
         remaining_slots = max_count - len(final_stocks)
 
@@ -700,7 +815,59 @@ class DynamicStockSelector:
         logger.info(f"📱 选入社交媒体股票: {social_count} 只")
         
         return final_stocks
-    
+
+    def _generate_source_statistics(self, final_stocks: List[StockCandidate]) -> Dict:
+        """
+        生成详细的来源统计数据
+
+        Args:
+            final_stocks: 最终选择的股票列表
+
+        Returns:
+            包含详细统计信息的字典
+        """
+        from datetime import datetime
+
+        # 按来源统计
+        source_counts = {}
+        source_details = {}
+
+        for stock in final_stocks:
+            source = stock.source.value
+
+            # 统计数量
+            source_counts[source] = source_counts.get(source, 0) + 1
+
+            # 收集详细信息
+            if source not in source_details:
+                source_details[source] = []
+
+            source_details[source].append({
+                'symbol': stock.symbol,
+                'name': stock.name,
+                'score': stock.score,
+                'reason': stock.reason,
+                'change_pct': stock.change_pct
+            })
+
+        # 构建统计数据
+        stats = {
+            'selection_method': 'dynamic',
+            'total_selected': len(final_stocks),
+            'selection_time': datetime.now().isoformat(),
+            'sources': source_counts,
+            'source_details': source_details,
+            'summary': {
+                'config': source_counts.get('config', 0),
+                'longhu_bang': source_counts.get('longhu_bang', 0),
+                'social_media': source_counts.get('social_media', 0),
+                'auto_discovery': source_counts.get('auto_discovery', 0),
+                'sector_rotation': source_counts.get('sector_rotation', 0)
+            }
+        }
+
+        return stats
+
     def _is_cache_valid(self, cache_key: str) -> bool:
         """检查缓存是否有效"""
         if cache_key not in self.cache:
@@ -737,6 +904,12 @@ def create_dynamic_stock_selector(config_manager=None) -> DynamicStockSelector:
     return DynamicStockSelector(config_manager)
 
 def get_dynamic_stock_list(config_manager=None) -> List[Tuple[str, str]]:
-    """获取动态股票列表"""
+    """获取动态股票列表（兼容旧接口）"""
+    selector = create_dynamic_stock_selector(config_manager)
+    stock_list, _ = selector.select_stocks()  # 只返回股票列表，丢弃统计数据
+    return stock_list
+
+def get_dynamic_stock_list_with_stats(config_manager=None) -> Tuple[List[Tuple[str, str]], Dict]:
+    """获取动态股票列表和详细统计数据"""
     selector = create_dynamic_stock_selector(config_manager)
     return selector.select_stocks()

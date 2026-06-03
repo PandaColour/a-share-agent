@@ -141,7 +141,7 @@ class BacktestEngine:
                 net_return = gross_return - self.transaction_cost  # 扣除交易成本
                 success = net_return > 0
                 
-            elif recommendation_type == "卖出":
+            elif recommendation_type.startswith("卖出"):
                 # 卖出策略：反向计算收益（做空收益）
                 gross_return = (actual_entry_price - exit_price) / actual_entry_price
                 net_return = gross_return - self.transaction_cost
