@@ -122,6 +122,9 @@ cp config/unified_config.json.example config/unified_config.json
 
 ```bash
 # 确保虚拟环境已激活
+# ui界面
+python win_main.py
+
 # 全分析模式（推荐）
 python main.py --mode both
 
