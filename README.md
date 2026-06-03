@@ -150,3 +150,8 @@ python main.py --mode backtest --start-date 2025-01-01 --end-date 2025-06-01
 ## 免责声明
 
 本系统仅用于研究学习，不构成投资建议。投资有风险，请谨慎决策。
+
+## 感谢支持
+
+![谢谢支持](weixin.jpg)
+联系方式: <panda.colour@qq.com>
