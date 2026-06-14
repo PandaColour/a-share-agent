@@ -256,7 +256,7 @@ class SimpleBacktestEngine:
                 sell_reason = ""
 
                 # 情况1: 出现卖出建议
-                if action == "卖出":
+                if action.startswith("卖出"):
                     should_sell = True
                     sell_reason = "卖出信号"
 

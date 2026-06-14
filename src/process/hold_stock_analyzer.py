@@ -395,11 +395,11 @@ class HoldStockAnalyzer:
             next_action = "立即挂单卖出"
 
         # 【次高优先级】严重警告 + 系统建议卖出
-        elif warning_level == 2 or (warning_level == 1 and system_action == '卖出' and system_confidence >= 60):
+        elif warning_level == 2 or (warning_level == 1 and system_action.startswith('卖出') and system_confidence >= 60):
             action = "减仓-风险警告"
             reasons.append(f"接近追踪止损价{stop_loss_info['price']:.2f}元，距离{stop_loss_info['distance']}")
             reasons.append(f"持仓最高价{highest_price:.2f}元，当前回撤{drawdown_from_peak}")
-            if system_action == '卖出':
+            if system_action.startswith('卖出'):
                 reasons.append(f"系统建议卖出，信心度{system_analysis['confidence']}")
             reasons.append(f"当前收益率{profit_rate:+.2f}%")
             risk_warning = "⚠️ 风险较大，建议减仓观望"
@@ -435,7 +435,7 @@ class HoldStockAnalyzer:
             reasons.append(f"盈利{profit_rate:.2f}%，建议部分止盈")
             reasons.append(f"持仓最高价{highest_price:.2f}元，当前回撤{drawdown_from_peak}")
             reasons.append("可减仓30-50%锁定部分利润")
-            if system_action == '卖出':
+            if system_action.startswith('卖出'):
                 reasons.append(f"系统也建议卖出，信心度{system_analysis['confidence']}")
             risk_warning = "盈利可观，建议部分止盈"
             next_action = "考虑卖出30-50%仓位"

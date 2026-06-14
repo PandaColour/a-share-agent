@@ -215,8 +215,12 @@ class BacktestManager:
             performance_by_type = {}
             
             for rec_type in ["买入", "持有", "卖出"]:
-                type_results = [r for r in backtest_results 
-                              if r.get('recommendation') == rec_type]
+                if rec_type == "卖出":
+                    type_results = [r for r in backtest_results
+                                  if r.get('recommendation', '').startswith('卖出')]
+                else:
+                    type_results = [r for r in backtest_results
+                                  if r.get('recommendation') == rec_type]
                 
                 if type_results:
                     success_count = sum(1 for r in type_results if r.get('success'))

@@ -233,7 +233,7 @@ def _generate_mplfinance_chart(symbol: str, stock_name: str, data, trades: List[
             # 加仓：蓝色实心向上三角形
             add_position_dates.append(trade_date)
             add_position_prices.append(trade_price)
-        elif action == '卖出':
+        elif action.startswith('卖出'):
             # 根据卖出原因分类
             if reason == '主动卖出':
                 active_sell_dates.append(trade_date)
@@ -369,7 +369,7 @@ def _generate_matplotlib_chart(symbol: str, stock_name: str, data, trades: List[
                         xytext=(0, 12), textcoords='offset points',
                         ha='center', fontsize=10, color='blue', weight='bold')
 
-        elif action == '卖出':
+        elif action.startswith('卖出'):
             # 根据卖出原因分类标记
             if reason == '主动卖出':
                 # 主动卖出：红色实心向下三角形

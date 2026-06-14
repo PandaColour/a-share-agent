@@ -12,12 +12,9 @@ from .base import AIModelInterface
 
 logger = logging.getLogger(__name__)
 
-import os
-os.environ["ANTHROPIC_API_KEY"] = "f5f275eec89440e5aa281f77483bc35e.W1GrOLUDw08ZghSz"
-os.environ["ANTHROPIC_BASE_URL"] = "https://open.bigmodel.cn/api/anthropic"
-os.environ["ANTHROPIC_DEFAULT_HAIKU_MODEL"] = "glm-5"
-os.environ["ANTHROPIC_DEFAULT_SONNET_MODEL"] = "glm-5"
-os.environ["ANTHROPIC_DEFAULT_OPUS_MODEL"] = "glm-5"
+def _load_claude_env(config: dict) -> dict:
+    """从配置中提取 claude sdk env，回退到模块级默认值"""
+    return config.get('env')
 
 class ClaudeSDKClient(AIModelInterface):
     """Claude Code SDK 客户端实现"""
@@ -38,6 +35,7 @@ class ClaudeSDKClient(AIModelInterface):
         self.model = config.get('model')
         self.working_dir = config.get('working_dir', Path.cwd())
         self.system_prompt = config.get('system_prompt')
+        self.claude_env = _load_claude_env(config)
         self.client = None
 
         # 延迟导入，避免未安装时影响其他模块
@@ -67,28 +65,18 @@ class ClaudeSDKClient(AIModelInterface):
     async def _initialize_client(self):
         """初始化 Claude SDK 客户端"""
         if self.client:
-            return  # 已经初始化
+            return
 
         try:
-            # 确保工作目录存在
             working_dir = Path(self.working_dir)
             working_dir.mkdir(parents=True, exist_ok=True)
 
-            # 创建选项
-            options = self.ClaudeAgentOptions(
+            self.client = self.SDKClient(options=self.ClaudeAgentOptions(
                 cwd=str(working_dir),
-                system_prompt=self.system_prompt,
-                permission_mode="acceptEdits"  # 自动接受编辑，启用工具
-            )
-
-            # 如果配置了模型，设置模型
-            if self.model:
-                options.model = self.model
-
-            # 创建客户端
-            self.client = self.SDKClient(options=options)
-
-            # 连接
+                permission_mode="bypassPermissions",
+                model=self.model,
+                env=self.claude_env,
+            ))
             await self.client.connect()
             logger.info("Claude Code SDK 连接成功")
 

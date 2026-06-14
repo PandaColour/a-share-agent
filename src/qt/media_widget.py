@@ -179,20 +179,16 @@ class MediaWidget(QWidget):
         try:
             # 加载配置
             config = get_config()
-            ai_models_config = config.get('system_settings', {}).get('ai_models', {})
-            models = ai_models_config.get('models', {})
-
-            # 检查 Claude SDK 配置
-            claude_config = models.get('claude_sonnet')
+            claude_config = config.get('system_settings', {}).get('claude_sonnet')
             if not claude_config:
-                error_msg = "❌ 错误: 未找到 Claude SDK 配置！请在 config/unified_config.json 中配置 claude_sonnet 模型"
+                error_msg = "❌ 错误: 未找到 Claude SDK 配置！请在 config/unified_config.json 中配置 claude_sonnet"
                 self.append_output(error_msg)
                 logger.error(error_msg)
                 raise RuntimeError("Claude SDK 配置缺失")
 
             # 必须使用 Claude Code SDK（支持新闻搜索）
             self.append_output(f"🔍 初始化 Claude Agent SDK（支持新闻搜索）...")
-            self.ai_client = AIModelFactory.create_model('claude_sonnet', models)
+            self.ai_client = AIModelFactory.create_model_legacy(claude_config)
 
             if not self.ai_client or not self.ai_client.is_available():
                 error_msg = "❌ 错误: Claude Agent SDK 不可用！请确保已安装: pip install claude-agent-sdk"

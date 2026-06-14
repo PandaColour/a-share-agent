@@ -9,6 +9,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
 class PortfolioManager:
     def __init__(self):
         # 内部初始化配置管理器,简化依赖传递
@@ -144,7 +145,7 @@ class PortfolioManager:
             # 买入建议，设置较高的价格区间
             low = current_price * (1 - 0.05 * (1 - confidence))
             high = current_price * (1 + 0.15 * confidence)
-        elif recommendation == "卖出":
+        elif recommendation.startswith("卖出"):
             # 卖出建议，设置较低的价格区间
             low = current_price * (1 - 0.15 * confidence)
             high = current_price * (1 + 0.05 * (1 - confidence))

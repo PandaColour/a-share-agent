@@ -12,6 +12,7 @@ from src.qt.analysis_widget import AnalysisWidget
 from src.qt.holdings_widget import HoldingsWidget
 from src.qt.backtest_widget import BacktestWidget
 from src.qt.media_widget import MediaWidget
+from src.qt.stock_comparison_widget import StockComparisonWidget
 
 
 class MainWindow(QMainWindow):
@@ -42,17 +43,19 @@ class MainWindow(QMainWindow):
         # === 右侧工作区 ===
         self.stacked_widget = QStackedWidget()
 
-        # 创建四个页面
+        # 创建五个页面
         self.analysis_widget = AnalysisWidget()
         self.holdings_widget = HoldingsWidget()
         self.backtest_widget = BacktestWidget()
         self.media_widget = MediaWidget()
+        self.comparison_widget = StockComparisonWidget()
 
         # 添加到堆叠窗口
-        self.stacked_widget.addWidget(self.analysis_widget)  # index 0
-        self.stacked_widget.addWidget(self.holdings_widget)  # index 1
-        self.stacked_widget.addWidget(self.backtest_widget)  # index 2
-        self.stacked_widget.addWidget(self.media_widget)     # index 3
+        self.stacked_widget.addWidget(self.analysis_widget)   # index 0
+        self.stacked_widget.addWidget(self.holdings_widget)   # index 1
+        self.stacked_widget.addWidget(self.backtest_widget)   # index 2
+        self.stacked_widget.addWidget(self.media_widget)      # index 3
+        self.stacked_widget.addWidget(self.comparison_widget) # index 4
 
         main_layout.addWidget(self.stacked_widget)
 
@@ -151,6 +154,13 @@ class MainWindow(QMainWindow):
         self.media_btn.clicked.connect(lambda: self.switch_page(3))
         layout.addWidget(self.media_btn)
 
+        # 股票对比按钮
+        self.comparison_btn = QPushButton("🔄 股票对比")
+        self.comparison_btn.setCheckable(True)
+        self.comparison_btn.setStyleSheet(button_style)
+        self.comparison_btn.clicked.connect(lambda: self.switch_page(4))
+        layout.addWidget(self.comparison_btn)
+
         # 添加弹性空间
         layout.addStretch()
 
@@ -209,6 +219,12 @@ class MainWindow(QMainWindow):
         media_action.triggered.connect(lambda: self.switch_page(3))
         view_menu.addAction(media_action)
 
+        # 切换到股票对比
+        comparison_action = QAction("股票对比(&C)", self)
+        comparison_action.setShortcut("Ctrl+5")
+        comparison_action.triggered.connect(lambda: self.switch_page(4))
+        view_menu.addAction(comparison_action)
+
         view_menu.addSeparator()
 
         # 刷新
@@ -232,12 +248,13 @@ class MainWindow(QMainWindow):
         self.holdings_btn.setChecked(index == 1)
         self.backtest_btn.setChecked(index == 2)
         self.media_btn.setChecked(index == 3)
+        self.comparison_btn.setChecked(index == 4)
 
         # 切换页面
         self.stacked_widget.setCurrentIndex(index)
 
         # 更新状态栏
-        page_names = ["股票分析", "持股跟踪", "历史回测", "自媒体内容"]
+        page_names = ["股票分析", "持股跟踪", "历史回测", "自媒体内容", "股票对比"]
         self.statusBar.showMessage(f"当前页面: {page_names[index]}")
 
     def refresh_current(self):
@@ -251,6 +268,10 @@ class MainWindow(QMainWindow):
             # 刷新持股数据
             self.holdings_widget.refresh_holdings()
             self.statusBar.showMessage("已刷新持股数据")
+        elif current_index == 4:
+            # 刷新股票对比数据
+            self.comparison_widget.load_comparison_data()
+            self.statusBar.showMessage("已刷新股票对比数据")
 
     def show_about(self):
         """显示关于对话框"""
@@ -266,6 +287,7 @@ class MainWindow(QMainWindow):
             "<li>💼 持股跟踪 - 实时监控持仓 (Ctrl+2)</li>"
             "<li>📈 历史回测 - 策略回测验证 (Ctrl+3)</li>"
             "<li>📱 自媒体内容 - 小红书文案生成 (Ctrl+4)</li>"
+            "<li>🔄 股票对比 - 动态选股与持仓对比 (Ctrl+5)</li>"
             "</ul>"
             "<p>快捷键:</p>"
             "<ul>"
@@ -273,6 +295,7 @@ class MainWindow(QMainWindow):
             "<li>Ctrl+2: 切换到持股跟踪</li>"
             "<li>Ctrl+3: 切换到历史回测</li>"
             "<li>Ctrl+4: 切换到自媒体内容</li>"
+            "<li>Ctrl+5: 切换到股票对比</li>"
             "<li>F5: 刷新当前页</li>"
             "<li>Ctrl+Q: 退出程序</li>"
             "</ul>"

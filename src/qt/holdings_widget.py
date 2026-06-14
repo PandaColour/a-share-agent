@@ -3,7 +3,6 @@
 持股跟踪模块 - 显示持仓股票的实时状态
 """
 import os
-import json
 from datetime import datetime
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
                              QTableWidget, QTableWidgetItem, QGroupBox, QLabel,
@@ -12,22 +11,7 @@ from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QFont, QColor
 import akshare as ak
 from src.utils.trading_calendar import trading_calendar, calculate_position_metrics
-
-
-def load_holdings_config():
-    """加载持仓配置"""
-    try:
-        config_path = os.path.join("config", "hold_stock.json")
-        if not os.path.exists(config_path):
-            return []
-
-        with open(config_path, 'r', encoding='utf-8') as f:
-            config = json.load(f)
-
-        return config.get('hold_stocks', [])
-    except Exception as e:
-        print(f"加载持仓配置失败: {e}")
-        return []
+from src.utils.hold_stock_io import load_hold_stocks, update_stock_in_hold_config
 
 def get_stock_current_price(symbol: str):
     """获取股票当前价格"""
@@ -219,7 +203,7 @@ class HoldingsWidget(QWidget):
         # 直接在主线程中处理，避免线程问题
         try:
             # 加载持仓配置
-            hold_stocks = load_holdings_config()
+            hold_stocks = load_hold_stocks()
 
             if not hold_stocks:
                 self.show_error("未找到持仓配置或配置为空")
@@ -428,7 +412,7 @@ class HoldingsWidget(QWidget):
             # 更新 hold_stock.json
             if buy_flag:
                 # 卖出：设置 buy_flag = false
-                self.update_hold_stock_json(symbol, {'buy_flag': False})
+                update_stock_in_hold_config(symbol, {'buy_flag': False})
                 # 更新stock对象
                 stock['buy_flag'] = False
                 success_msg = f"已标记 {name} 为卖出状态"
@@ -441,7 +425,7 @@ class HoldingsWidget(QWidget):
                     'purchase_date': today,
                     'cost': current_price
                 }
-                self.update_hold_stock_json(symbol, updates)
+                update_stock_in_hold_config(symbol, updates)
                 # 更新stock对象
                 stock.update(updates)
                 success_msg = f"已标记 {name} 为买入状态\n买入日期: {today}\n买入价格: ¥{current_price:.2f}"
@@ -565,38 +549,3 @@ class HoldingsWidget(QWidget):
         elif '[错误]' in risk_warning:
             risk_item.setForeground(QColor(244, 67, 54))  # 红色错误
         self.holdings_table.setItem(row, 8, risk_item)
-
-    def update_hold_stock_json(self, symbol, updates):
-        """更新 hold_stock.json 文件中指定股票的字段"""
-        try:
-            config_path = os.path.join("config", "hold_stock.json")
-
-            # 读取配置文件
-            with open(config_path, 'r', encoding='utf-8') as f:
-                config = json.load(f)
-
-            # 查找并更新指定股票
-            hold_stocks = config.get('hold_stocks', [])
-            updated = False
-
-            for stock in hold_stocks:
-                if stock.get('symbol') == symbol:
-                    stock.update(updates)
-                    updated = True
-                    break
-
-            if not updated:
-                raise ValueError(f"未找到股票 {symbol}")
-
-            # 更新 last_updated 时间戳
-            config['last_updated'] = datetime.now().strftime('%Y-%m-%d')
-
-            # 写回配置文件
-            with open(config_path, 'w', encoding='utf-8') as f:
-                json.dump(config, f, ensure_ascii=False, indent=2)
-
-            print(f"已更新 {symbol} 的配置: {updates}")
-
-        except Exception as e:
-            print(f"更新配置文件失败: {e}")
-            raise

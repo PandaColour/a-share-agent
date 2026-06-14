@@ -1,27 +1,20 @@
 {
   "description": "持仓股票配置文件",
   "version": "1.1",
-  "last_updated": "2026-01-19",
+  "last_updated": "2026-05-21",
   "hold_stocks": [
     {
-      "symbol": "603122.SH",
-      "name": "合富中国",
-      "purchase_date": "2026-01-19",
-      "cost": 18.32,
+      "symbol": "600396.SH",
+      "name": "华电辽能",
+      "purchase_date": "2026-05-11",
+      "cost": 13.015,
       "buy_flag": false
     },
     {
-      "symbol": "000547.SZ",
-      "name": "航天发展",
-      "purchase_date": "2026-01-22",
-      "cost": 26.965,
-      "buy_flag": false
-    },
-    {
-      "symbol": "002361.SZ",
-      "name": "神剑股份",
-      "purchase_date": "2025-12-31",
-      "cost": 13.21,
+      "symbol": "002580.SZ",
+      "name": "圣阳股份",
+      "purchase_date": "2026-05-12",
+      "cost": 35.265,
       "buy_flag": false
     },
     {
@@ -46,45 +39,17 @@
       "buy_flag": false
     },
     {
-      "symbol": "001208.SZ",
-      "name": "华菱线缆",
+      "symbol": "600726.SH",
+      "name": "华电能源",
+      "purchase_date": "2026-03-20",
+      "cost": 5.054,
+      "buy_flag": false
+    },
+    {
+      "symbol": "600900.SH",
+      "name": "长江电力",
       "purchase_date": "2026-01-19",
-      "cost": 26.49,
-      "buy_flag": false
-    },
-    {
-      "symbol": "001267.SZ",
-      "name": "汇绿生态",
-      "purchase_date": "2026-03-12",
-      "cost": 11.42,
-      "buy_flag": false
-    },
-    {
-      "symbol": "002407.SZ",
-      "name": "多氟多",
-      "purchase_date": "2026-01-19",
-      "cost": 32.39,
-      "buy_flag": false
-    },
-    {
-      "symbol": "000630.SZ",
-      "name": "铜陵有色",
-      "purchase_date": "2026-01-27",
-      "cost": 7.524,
-      "buy_flag": false
-    },
-    {
-      "symbol": "600227.SH",
-      "name": "赤天化",
-      "purchase_date": "2026-03-18",
-      "cost": 5.308,
-      "buy_flag": false
-    },
-    {
-      "symbol": "688525.SH",
-      "name": "佰维存储",
-      "purchase_date": "2026-01-19",
-      "cost": 175.41,
+      "cost": 27.95,
       "buy_flag": false
     },
     {
@@ -102,53 +67,32 @@
       "buy_flag": false
     },
     {
-      "symbol": "000890.SZ",
-      "name": "法尔胜",
-      "purchase_date": "2026-03-16",
-      "cost": 11.098,
+      "symbol": "603629.SH",
+      "name": "利通电子",
+      "purchase_date": "2026-05-06",
+      "cost": 158.912,
       "buy_flag": false
     },
     {
-      "symbol": "002054.SZ",
-      "name": "德美化工",
-      "purchase_date": "2026-02-11",
-      "cost": 10.69,
+      "symbol": "600938.SH",
+      "name": "中国海油",
+      "purchase_date": "2026-04-20",
+      "cost": 36.08,
       "buy_flag": false
     },
     {
-      "symbol": "300302.SZ",
-      "name": "同有科技",
-      "purchase_date": "2026-01-19",
-      "cost": 20.8,
-      "buy_flag": false
-    },
-    {
-      "symbol": "001896.SZ",
-      "name": "豫能控股",
-      "purchase_date": "2026-03-17",
-      "cost": 14.23,
+      "symbol": "601061.SH",
+      "name": "中信金属",
+      "purchase_date": "2026-05-29",
+      "cost": 13.480,
       "buy_flag": true
     },
     {
-      "symbol": "002506.SZ",
-      "name": "协鑫集成",
-      "purchase_date": "2026-02-10",
-      "cost": 5.174,
-      "buy_flag": false
-    },
-    {
-      "symbol": "603466.SH",
-      "name": "风语筑",
-      "purchase_date": "2026-02-25",
-      "cost": 12.440,
-      "buy_flag": false
-    },
-    {
-      "symbol": "002283.SZ",
-      "name": "天润工业",
-      "purchase_date": "2026-02-25",
-      "cost": 10.108,
-      "buy_flag": false
+      "symbol": "000811.SZ",
+      "name": "冰轮环境",
+      "purchase_date": "2026-05-21",
+      "cost": 37.55,
+      "buy_flag": true
     }
   ],
   "config": {

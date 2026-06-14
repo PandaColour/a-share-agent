@@ -9,7 +9,6 @@ import numpy as np
 from typing import Dict, Tuple, Optional, List
 import logging
 from datetime import datetime, timedelta
-import json
 import os
 import sys
 
@@ -56,38 +55,37 @@ class MultiSourceDataProvider:
         logger.info(f"多数据源提供者初始化完成，主数据源: {self.primary_source}")
     
     def _load_config(self, config_file: str = None) -> Dict:
-        """加载配置文件"""
+        """加载配置文件，通过ConfigManager统一管理（含环境变量覆盖）"""
         default_config = {
-            "primary_source": "akshare",
-            "fallback_sources": ["yfinance"],
-            "tushare": {
-                "token": "",
-                "enabled": False
-            },
-            "akshare": {
-                "enabled": True
-            },
-            "yfinance": {
-                "enabled": True
+            "system_settings": {
+                "data_sources": {
+                    "primary_source": "akshare",
+                    "fallback_sources": ["yfinance"],
+                    "akshare": {"enabled": True},
+                    "yfinance": {"enabled": True}
+                }
             }
         }
-        
-        if config_file and os.path.exists(config_file):
-            try:
-                with open(config_file, 'r', encoding='utf-8') as f:
-                    file_config = json.load(f)
-                default_config.update(file_config)
+
+        if not config_file or not os.path.exists(config_file):
+            logger.warning("配置文件不存在，使用默认配置")
+            return default_config
+
+        try:
+            config_dir = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                'config'
+            )
+            if config_dir not in sys.path:
+                sys.path.insert(0, config_dir)
+            from config_manager import ConfigManager
+            mgr = ConfigManager(str(config_file))
+            if mgr.is_valid():
                 logger.info(f"已加载配置文件: {config_file}")
-            except Exception as e:
-                logger.error(f"加载配置文件失败: {e}，使用默认配置")
-        
-        # 检查环境变量中的Tushare token
-        tushare_token = os.getenv('TUSHARE_TOKEN')
-        if tushare_token:
-            default_config['tushare']['token'] = tushare_token
-            default_config['tushare']['enabled'] = True
-            logger.info("从环境变量获取Tushare token")
-        
+                return mgr._config
+        except Exception as e:
+            logger.error(f"ConfigManager加载失败: {e}，使用默认配置")
+
         return default_config
     
     def _init_data_sources(self):

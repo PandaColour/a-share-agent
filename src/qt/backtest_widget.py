@@ -10,75 +10,42 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
                              QPushButton, QTextEdit, QGroupBox, QLabel,
                              QSpinBox, QMessageBox, QDateEdit, QRadioButton,
                              QButtonGroup, QComboBox)
-from PyQt6.QtCore import Qt, QThread, pyqtSignal, QDate
+from PyQt6.QtCore import Qt, QDate
 from PyQt6.QtGui import QFont
 
+from src.qt.base_thread import SubprocessThread
 
-class BacktestThread(QThread):
+
+class BacktestThread(SubprocessThread):
     """后台回测线程，避免阻塞UI"""
-    output_signal = pyqtSignal(str)  # 输出信号
-    finished_signal = pyqtSignal(bool, str, str)  # 完成信号(成功与否, 消息, 输出目录)
 
     def __init__(self, params):
         super().__init__()
         self.params = params
-        self.process = None
         self.output_dir = None
 
-    def run(self):
-        """执行回测"""
-        try:
-            # 获取main.py路径
-            main_py = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'main.py')
+    def build_command(self):
+        main_py = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'main.py')
+        cmd = [sys.executable, main_py, '--mode', 'backtest']
+        if self.params['mode'] == 'months':
+            cmd.extend(['--months', str(self.params['months'])])
+        else:
+            cmd.extend(['--start-date', self.params['start_date']])
+            cmd.extend(['--end-date', self.params['end_date']])
+        return cmd
 
-            # 构建命令
-            cmd = [sys.executable, main_py, '--mode', 'backtest']
+    def _on_output_line(self, line):
+        if "输出目录:" in line:
+            try:
+                self.output_dir = line.split("输出目录:")[-1].strip()
+            except Exception:
+                pass
 
-            # 添加参数
-            if self.params['mode'] == 'months':
-                cmd.extend(['--months', str(self.params['months'])])
-            else:  # date_range
-                cmd.extend(['--start-date', self.params['start_date']])
-                cmd.extend(['--end-date', self.params['end_date']])
-
-            # 执行命令并实时获取输出
-            self.process = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                encoding='utf-8',
-                bufsize=1,
-                universal_newlines=True
-            )
-
-            # 实时读取输出
-            for line in self.process.stdout:
-                line_stripped = line.rstrip()
-                self.output_signal.emit(line_stripped)
-
-                # 尝试捕获输出目录
-                if "输出目录:" in line_stripped:
-                    try:
-                        self.output_dir = line_stripped.split("输出目录:")[-1].strip()
-                    except:
-                        pass
-
-            # 等待进程完成
-            return_code = self.process.wait()
-
-            if return_code == 0:
-                self.finished_signal.emit(True, "回测完成", self.output_dir or "")
-            else:
-                self.finished_signal.emit(False, f"回测失败，返回码: {return_code}", "")
-
-        except Exception as e:
-            self.finished_signal.emit(False, f"执行出错: {str(e)}", "")
-
-    def stop(self):
-        """停止回测"""
-        if self.process:
-            self.process.terminate()
+    def _on_completion(self, return_code):
+        if return_code == 0:
+            self.finished_signal.emit(True, "回测完成")
+        else:
+            self.finished_signal.emit(False, f"回测失败，返回码: {return_code}")
 
 
 class BacktestWidget(QWidget):
@@ -389,13 +356,14 @@ class BacktestWidget(QWidget):
             self.log_output.verticalScrollBar().maximum()
         )
 
-    def on_backtest_finished(self, success, message, output_dir):
+    def on_backtest_finished(self, success, message):
         """回测完成回调"""
         self.start_btn.setEnabled(True)
         self.stop_btn.setEnabled(False)
 
         if success:
             self.log_output.append(f"\n✅ {message}")
+            output_dir = self.backtest_thread.output_dir if self.backtest_thread else None
             if output_dir:
                 self.latest_output_dir = output_dir
                 self.log_output.append(f"结果保存在: {output_dir}")

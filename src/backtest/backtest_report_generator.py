@@ -90,7 +90,7 @@ def generate_backtest_markdown(results: Dict, output_file: str) -> None:
 
                     # 计算该股票的统计数据
                     buy_trades = [t for t in symbol_trades if t.get('action') == '买入']
-                    sell_trades = [t for t in symbol_trades if t.get('action') == '卖出']
+                    sell_trades = [t for t in symbol_trades if t.get('action', '').startswith('卖出')]
 
                     total_profit = sum(t.get('profit', 0) for t in sell_trades)
                     total_trades = len(buy_trades) + len(sell_trades)

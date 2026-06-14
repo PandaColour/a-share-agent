@@ -7,6 +7,15 @@
 import os
 import sys
 
+# Windows 控制台编码设置 — 必须在 logging.StreamHandler 创建之前执行，
+# 否则 StreamHandler 会捕获 GBK 编码的 stdout 引用，导致中文输出乱码或报错
+if hasattr(sys.stdout, 'reconfigure'):
+    try:
+        sys.stdout.reconfigure(encoding='utf-8')
+        sys.stderr.reconfigure(encoding='utf-8')
+    except Exception:
+        pass
+
 # 禁用 scikit-learn/joblib 的并行功能，避免 Windows 兼容性问题
 # 我们使用自己的 ThreadPoolExecutor 来实现并行
 os.environ['LOKY_MAX_CPU_COUNT'] = '1'  # 禁用 joblib 并行
@@ -1365,19 +1374,22 @@ class AShareTradingAgentsSystem:
                 avg_score = weighted_signal
                 std_score = np.std(factor_scores) if len(factor_scores) > 1 else 0
                 
-                # 基于因子评分给出建议
-                if avg_score > 0.6:
+                # 0.5~0.7 温和看多→买入, 0.7~0.85 偏热→持有(热), >0.85 过热→卖出(热), -0.1~0.5 中性→持有(冷), <-0.1 弱势→卖出(冷)
+                if 0.5 <= avg_score <= 0.7:
                     recommendation = "买入"
-                    confidence = min(0.9, 0.5 + avg_score * 0.4)
-                elif avg_score > 0.3:
-                    recommendation = "持有"
-                    confidence = min(0.7, 0.3 + avg_score * 0.4)
-                elif avg_score > -0.3:
-                    recommendation = "持有"
-                    confidence = min(0.6, 0.2 + abs(avg_score) * 0.4)
+                    confidence = min(0.85, 0.55 + (1 - abs(avg_score - 0.6) / 0.1) * 0.3)
+                elif 0.7 < avg_score <= 0.85:
+                    recommendation = "持有(热)"
+                    confidence = max(0.4, 0.6 - (avg_score - 0.7) / 0.15 * 0.2)
+                elif avg_score > 0.85:
+                    recommendation = "卖出(热)"
+                    confidence = min(0.9, 0.55 + (avg_score - 0.85) * 2.33)
+                elif -0.1 <= avg_score < 0.5:
+                    recommendation = "持有(冷)"
+                    confidence = min(0.7, 0.4 + (avg_score + 0.1) * 0.5)
                 else:
-                    recommendation = "卖出"
-                    confidence = min(0.8, 0.4 + abs(avg_score) * 0.4)
+                    recommendation = "卖出(冷)"
+                    confidence = min(0.9, 0.55 + abs(avg_score + 0.1) * 0.39)
 
                 reasoning = [
                     f"AI因子加权评分: {avg_score:.4f} (已应用IC评估权重)",
@@ -1471,14 +1483,7 @@ class AShareTradingAgentsSystem:
 
 def main():
     """主函数"""
-    # 设置控制台输出编码
-    import sys
     import argparse
-    if hasattr(sys.stdout, 'reconfigure'):
-        try:
-            sys.stdout.reconfigure(encoding='utf-8')
-        except:
-            pass
 
     # 解析命令行参数
     parser = argparse.ArgumentParser(description='A股量化交易系统')

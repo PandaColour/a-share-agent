@@ -256,7 +256,7 @@ class XiaohongshuContentGenerator:
 
         # 筛选卖出预警（排除持仓中已处理的）
         sell_df = analysis_df[
-            (analysis_df['操作建议'] == '卖出') &
+            (analysis_df['操作建议'].str.startswith('卖出')) &
             (~analysis_df['股票代码'].isin(selling_symbols))
         ]
 
@@ -340,7 +340,7 @@ class XiaohongshuContentGenerator:
                 has_strategy_sell = False
                 for i in range(last_buy_idx + 1, len(sorted_trades)):
                     trade = sorted_trades[i]
-                    if (trade.get('action') == '卖出' and
+                    if (trade.get('action', '').startswith('卖出') and
                         trade.get('reason') == '主动卖出'):
                         has_strategy_sell = True
                         break

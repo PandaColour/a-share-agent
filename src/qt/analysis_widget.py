@@ -4,15 +4,15 @@
 """
 import os
 import sys
-import subprocess
 import logging
 from datetime import datetime
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout,
                              QPushButton, QTextEdit, QGroupBox, QLabel, QSpinBox, QMessageBox, QLineEdit)
-from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer, QTime
+from PyQt6.QtCore import Qt, QTimer, QTime
 from PyQt6.QtGui import QFont
 
 from src.qt.stock_validator import StockValidator
+from src.qt.base_thread import SubprocessThread
 from src.content.xiaohongshu_generator import XiaohongshuContentGenerator
 from src.ai_models.factory import AIModelFactory
 from config.config_manager import get_config
@@ -20,60 +20,26 @@ from config.config_manager import get_config
 logger = logging.getLogger(__name__)
 
 
-class AnalysisThread(QThread):
+class AnalysisThread(SubprocessThread):
     """后台分析线程，避免阻塞UI"""
-    output_signal = pyqtSignal(str)  # 输出信号
-    finished_signal = pyqtSignal(bool, str)  # 完成信号(成功与否, 消息)
 
     def __init__(self, mode, output_dir=None):
         super().__init__()
         self.mode = mode
-        self.output_dir = output_dir  # 可选的输出目录
-        self.process = None
+        self.output_dir = output_dir
 
-    def run(self):
-        """执行分析"""
-        try:
-            # 获取main.py路径
-            main_py = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'main.py')
+    def build_command(self):
+        main_py = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'main.py')
+        cmd = [sys.executable, main_py, '--mode', self.mode]
+        if self.output_dir:
+            cmd.extend(['--output-dir', self.output_dir])
+        return cmd
 
-            # 构建命令
-            cmd = [sys.executable, main_py, '--mode', self.mode]
-
-            # 如果指定了输出目录，添加到命令行参数
-            if self.output_dir:
-                cmd.extend(['--output-dir', self.output_dir])
-
-            # 执行命令并实时获取输出
-            self.process = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                encoding='utf-8',
-                bufsize=1,
-                universal_newlines=True
-            )
-
-            # 实时读取输出
-            for line in self.process.stdout:
-                self.output_signal.emit(line.rstrip())
-
-            # 等待进程完成
-            return_code = self.process.wait()
-
-            if return_code == 0:
-                self.finished_signal.emit(True, f"{self.mode}模式分析完成")
-            else:
-                self.finished_signal.emit(False, f"{self.mode}模式分析失败，返回码: {return_code}")
-
-        except Exception as e:
-            self.finished_signal.emit(False, f"执行出错: {str(e)}")
-
-    def stop(self):
-        """停止分析"""
-        if self.process:
-            self.process.terminate()
+    def _on_completion(self, return_code):
+        if return_code == 0:
+            self.finished_signal.emit(True, f"{self.mode}模式分析完成")
+        else:
+            self.finished_signal.emit(False, f"{self.mode}模式分析失败，返回码: {return_code}")
 
 
 class AnalysisWidget(QWidget):
@@ -224,7 +190,7 @@ class AnalysisWidget(QWidget):
         # 时
         self.hour_spin = QSpinBox()
         self.hour_spin.setRange(0, 23)
-        self.hour_spin.setValue(8)
+        self.hour_spin.setValue(7)
         self.hour_spin.setSuffix(" 时")
         self.hour_spin.setMinimumWidth(80)
         time_layout.addWidget(self.hour_spin)
@@ -232,7 +198,7 @@ class AnalysisWidget(QWidget):
         # 分
         self.minute_spin = QSpinBox()
         self.minute_spin.setRange(0, 59)
-        self.minute_spin.setValue(10)
+        self.minute_spin.setValue(30)
         self.minute_spin.setSuffix(" 分")
         self.minute_spin.setMinimumWidth(80)
         time_layout.addWidget(self.minute_spin)
@@ -680,25 +646,21 @@ class AnalysisWidget(QWidget):
             # 加载配置
             config = get_config()
 
-            # 初始化AI客户端（尝试使用Claude SDK）
+            # 初始化AI客户端（使用 claude_sonnet）
             ai_client = None
             try:
-                ai_models_config = config.get('system_settings', {}).get('ai_models', {})
-                models = ai_models_config.get('models', {})
+                claude_config = config.get('system_settings', {}).get('claude_sonnet')
+                if not claude_config:
+                    raise RuntimeError("未找到 claude_sonnet 配置，请在 config/unified_config.json 中配置")
 
-                # 优先使用 claude_sonnet，如果没有则使用默认模型
-                model_name = 'claude_sonnet'
-                if model_name not in models:
-                    # 回退到默认模型
-                    model_name = ai_models_config.get('default_model', 'deepseek-v3.2-exp')
-                    self.append_output(f"[小红书文案] Claude SDK未配置，使用默认模型: {model_name}")
-                else:
-                    self.append_output(f"[小红书文案] 使用Claude SDK生成文案")
+                self.append_output(f"[小红书文案] 使用 claude_sonnet 生成文案")
+                ai_client = AIModelFactory.create_model_legacy(claude_config)
 
-                ai_client = AIModelFactory.create_model(model_name, models)
+                if not ai_client or not ai_client.is_available():
+                    raise RuntimeError("claude_sonnet 客户端不可用，请确保已安装: pip install claude-agent-sdk")
             except Exception as e:
-                logger.warning(f"AI客户端初始化失败: {e}，将使用模板生成")
-                self.append_output(f"[小红书文案] AI客户端初始化失败，将使用模板生成")
+                logger.warning(f"AI客户端初始化失败: {e}")
+                self.append_output(f"[小红书文案] AI客户端初始化失败: {e}")
 
             # 初始化小红书文案生成器
             generator = XiaohongshuContentGenerator(ai_client=ai_client)
@@ -726,46 +688,18 @@ class AnalysisWidget(QWidget):
             self.append_output(f"{'='*60}\n")
 
 
-class BacktestThread(QThread):
+class BacktestThread(SubprocessThread):
     """回测线程"""
-    output_signal = pyqtSignal(str)
-    finished_signal = pyqtSignal(bool, str)
 
     def __init__(self, cmd):
         super().__init__()
         self.cmd = cmd
-        self.process = None
 
-    def run(self):
-        """执行回测"""
-        try:
-            # 执行回测命令
-            self.process = subprocess.Popen(
-                self.cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                encoding='utf-8',
-                bufsize=1,
-                universal_newlines=True
-            )
+    def build_command(self):
+        return self.cmd
 
-            # 实时读取输出
-            for line in self.process.stdout:
-                self.output_signal.emit(line.rstrip())
-
-            # 等待进程完成
-            return_code = self.process.wait()
-
-            if return_code == 0:
-                self.finished_signal.emit(True, "回测完成")
-            else:
-                self.finished_signal.emit(False, f"回测失败，返回码: {return_code}")
-
-        except Exception as e:
-            self.finished_signal.emit(False, f"回测出错: {str(e)}")
-
-    def stop(self):
-        """停止回测"""
-        if self.process:
-            self.process.terminate()
+    def _on_completion(self, return_code):
+        if return_code == 0:
+            self.finished_signal.emit(True, "回测完成")
+        else:
+            self.finished_signal.emit(False, f"回测失败，返回码: {return_code}")

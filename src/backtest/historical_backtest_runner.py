@@ -384,7 +384,7 @@ class HistoricalBacktestRunner:
                 )
 
                 # 只记录买入和卖出信号（持有信号不生成交易）
-                if decision.action in ["买入", "卖出"]:
+                if decision.action == "买入" or decision.action.startswith("卖出"):
                     daily_recommendations.append({
                         "symbol": symbol,
                         "recommendation": decision.action,

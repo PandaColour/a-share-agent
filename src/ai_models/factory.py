@@ -39,7 +39,7 @@ class AIModelFactory:
         elif model_type == "ml_prediction":
             return MLPredictionClient(model_config)
         elif model_type == "claude_sdk":
-            return ClaudeSDKClient(model_config)
+            return ClaudeSDKClient(model_config.get("config", {}))
         elif model_type == "mock":
             return MockAIClient(model_config)
         else:
@@ -59,7 +59,7 @@ class AIModelFactory:
         elif model_type == "ml_prediction":
             return MLPredictionClient(model_config)
         elif model_type == "claude_sdk":
-            return ClaudeSDKClient(model_config)
+            return ClaudeSDKClient(model_config.get("config", {}))
         elif model_type == "mock":
             return MockAIClient(model_config)
         else:

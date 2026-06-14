@@ -231,7 +231,11 @@ class AnalysisOutputManager:
         # 定义操作建议的优先级顺序
         action_priority = {
             '买入': 1,
+            '卖出(热)': 2,
+            '卖出(冷)': 2,
             '卖出': 2,
+            '持有(热)': 3,
+            '持有(冷)': 3,
             '持有': 3,
             '跳过': 4,
             '错误': 5
@@ -274,13 +278,23 @@ class AnalysisOutputManager:
                 action_counts[action] = actions.count(action)
 
             print(f"\n操作建议统计 (已分析股票):")
-            # 按优先级顺序显示统计
-            action_priority = ['买入', '卖出', '持有']
-            for action in action_priority:
-                if action in action_counts:
-                    count = action_counts[action]
+            # 按优先级顺序显示统计，合并冷热变体
+            display_order = [
+                ('买入', ['买入']),
+                ('卖出', ['卖出(热)', '卖出(冷)', '卖出']),
+                ('持有', ['持有(热)', '持有(冷)', '持有']),
+            ]
+            for label, variants in display_order:
+                count = sum(action_counts.get(v, 0) for v in variants)
+                if count > 0:
                     percentage = count / len(actions) * 100
-                    print(f"  {action}: {count} 只股票 ({percentage:.1f}%)")
+                    # 显示各变体明细
+                    detail_parts = []
+                    for v in variants:
+                        if v in action_counts:
+                            detail_parts.append(f"{v}={action_counts[v]}只")
+                    detail = f" ({', '.join(detail_parts)})" if detail_parts else ""
+                    print(f"  {label}: {count} 只股票 ({percentage:.1f}%){detail}")
 
         if skipped_actions:
             print(f"\n跳过统计: {len(skipped_actions)} 只股票 (价格过高)")

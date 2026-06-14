@@ -255,7 +255,7 @@ class AdvancedBacktestEngine:
             self._execute_buy_signal(
                 symbol, current_price, current_date, confidence, recommendation
             )
-        elif rec_type == "卖出" and symbol in self.positions:
+        elif rec_type.startswith("卖出") and symbol in self.positions:
             self._execute_sell_signal(
                 symbol, current_price, current_date, "主动卖出"
             )
@@ -564,7 +564,7 @@ class AdvancedBacktestEngine:
         # 交易统计
         total_trades = len(self.trade_history)
         buy_trades = [t for t in self.trade_history if t['action'] == '买入']
-        sell_trades = [t for t in self.trade_history if t['action'] == '卖出']
+        sell_trades = [t for t in self.trade_history if t['action'].startswith('卖出')]
         
         successful_trades = [t for t in sell_trades if t.get('profit', 0) > 0]
         win_rate = len(successful_trades) / len(sell_trades) if sell_trades else 0

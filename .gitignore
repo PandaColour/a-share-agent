@@ -118,3 +118,4 @@ Pipfile.lock
 /config/dynamic_stock.json
 /factor_cache/
 /qlib_data/
+/config/unified_config.json
