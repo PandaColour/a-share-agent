@@ -76,7 +76,8 @@
       "Bash(ls:*)",
       "Bash(pip uninstall:*)",
       "Bash(.venv/Scripts/pip.exe list:*)",
-      "Bash(claude auth:*)"
+      "Bash(claude auth:*)",
+      "Bash(git config:*)"
     ],
     "deny": [],
     "ask": []

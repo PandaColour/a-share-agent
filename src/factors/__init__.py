@@ -5,7 +5,7 @@ AI因子模块
 """
 
 from .factor_manager import FactorManager, BaseFactor, FactorValue, FactorDefinition, get_factor_manager
-from .technical_ai_factors import PatternRecognitionFactor, VolumePatternFactor, register_technical_ai_factors
+from .technical_ai_factors import PatternRecognitionFactor, VolumePatternFactor, OBVFactor, register_technical_ai_factors
 from .price_prediction_factors import PricePredictionFactor, ReturnPredictionFactor, register_prediction_factors
 from .market_enhanced_factors import MarketBetaAdjustedFactor, MarketRelativeStrengthFactor
 from .multi_timeframe_factors import MultiTimeframeRSIFactor, MultiTimeframeMACDFactor, create_multi_timeframe_rsi_factor, create_multi_timeframe_macd_factor

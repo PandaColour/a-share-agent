@@ -523,6 +523,126 @@ class VolumePatternFactor(BaseFactor):
         return np.clip(enhanced_score, -1.0, 1.0)
 
 
+class OBVFactor(BaseFactor):
+    """OBV能量潮因子"""
+
+    def __init__(self):
+        super().__init__(
+            name="obv",
+            category="technical",
+            description="OBV(On-Balance Volume)能量潮指标，衡量累积买卖压力"
+        )
+        self.dependencies = ["price", "volume"]
+        self.lookback_days = 30
+
+    def calculate(self, data: Dict[str, pd.DataFrame], symbol: str, **kwargs) -> FactorValue:
+        """计算OBV因子"""
+        price_df = data["price"].tail(self.lookback_days).copy()
+        volume_df = data["volume"].tail(self.lookback_days).copy()
+
+        min_len = min(len(price_df), len(volume_df))
+        if min_len < 10:
+            return FactorValue(symbol, self.name, 0.0, datetime.now(), 0.5)
+
+        price_df = price_df.tail(min_len).reset_index(drop=True)
+        volume_df = volume_df.tail(min_len).reset_index(drop=True)
+
+        closes = price_df['Close'].values
+        volumes = volume_df['Volume'].values
+
+        obv = self._calculate_obv(closes, volumes)
+
+        obv_scores = {
+            'obv_trend': self._calculate_obv_trend(obv),
+            'obv_divergence': self._detect_obv_divergence(closes, obv),
+            'obv_momentum': self._calculate_obv_momentum(obv),
+            'obv_vs_ma': self._calculate_obv_vs_ma(obv)
+        }
+
+        weights = {
+            'obv_trend': 0.35,
+            'obv_divergence': 0.30,
+            'obv_momentum': 0.20,
+            'obv_vs_ma': 0.15
+        }
+
+        final_score = sum(obv_scores[key] * weights[key] for key in obv_scores)
+        final_score = np.tanh(final_score)
+
+        return FactorValue(
+            symbol=symbol,
+            factor_name=self.name,
+            value=final_score,
+            timestamp=datetime.now(),
+            confidence=0.80,
+            raw_data=obv_scores
+        )
+
+    def _calculate_obv(self, closes: np.ndarray, volumes: np.ndarray) -> np.ndarray:
+        """计算OBV值，优先使用TA-Lib"""
+        if TALIB_AVAILABLE:
+            return talib.OBV(closes, volumes.astype(float))
+        else:
+            obv = np.zeros(len(closes))
+            obv[0] = volumes[0]
+            for i in range(1, len(closes)):
+                if closes[i] > closes[i - 1]:
+                    obv[i] = obv[i - 1] + volumes[i]
+                elif closes[i] < closes[i - 1]:
+                    obv[i] = obv[i - 1] - volumes[i]
+                else:
+                    obv[i] = obv[i - 1]
+            return obv
+
+    def _calculate_obv_trend(self, obv: np.ndarray) -> float:
+        """计算OBV趋势强度"""
+        x = np.arange(len(obv))
+        slope, _, r_value, _, _ = stats.linregress(x, obv)
+        slope_norm = np.tanh(slope / (np.std(obv) + 1e-8) * len(obv) * 0.1)
+        return slope_norm * (r_value ** 2)
+
+    def _detect_obv_divergence(self, closes: np.ndarray, obv: np.ndarray) -> float:
+        """检测价格与OBV的背离"""
+        half = len(closes) // 2
+        price_first = closes[:half]
+        price_second = closes[half:]
+        obv_first = obv[:half]
+        obv_second = obv[half:]
+
+        price_change = np.mean(price_second) - np.mean(price_first)
+        obv_change = np.mean(obv_second) - np.mean(obv_first)
+
+        # 顶背离：价格涨但OBV不跟 → 看跌
+        if price_change > 0 and obv_change <= 0:
+            return -0.5 - min(abs(price_change / (np.mean(closes) + 1e-8)), 0.5)
+        # 底背离：价格跌但OBV不跟 → 看涨
+        elif price_change < 0 and obv_change >= 0:
+            return 0.5 + min(abs(price_change / (np.mean(closes) + 1e-8)), 0.5)
+        # 同向确认
+        elif price_change > 0 and obv_change > 0:
+            return 0.3
+        elif price_change < 0 and obv_change < 0:
+            return -0.3
+        return 0.0
+
+    def _calculate_obv_momentum(self, obv: np.ndarray) -> float:
+        """计算OBV动量（5日变化率）"""
+        if len(obv) < 6:
+            return 0.0
+        roc = (obv[-1] - obv[-6]) / (abs(obv[-6]) + 1e-8)
+        return np.tanh(roc * 5)
+
+    def _calculate_obv_vs_ma(self, obv: np.ndarray) -> float:
+        """计算OBV相对其均线的位置"""
+        if len(obv) < 10:
+            return 0.0
+        ma = np.mean(obv[-10:])
+        if ma == 0:
+            return 0.0
+        ratio = (obv[-1] - ma) / (abs(ma) + 1e-8)
+        return np.tanh(ratio * 5)
+
+
 # 注册因子的函数
 def register_technical_ai_factors():
     """注册所有技术面AI因子"""
@@ -535,5 +655,8 @@ def register_technical_ai_factors():
     
     # 注册量价关系因子
     factor_manager.register_factor(VolumePatternFactor())
-    
+
+    # 注册OBV能量潮因子
+    factor_manager.register_factor(OBVFactor())
+
     logger.info("技术面AI因子注册完成")

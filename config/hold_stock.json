@@ -85,7 +85,7 @@
       "name": "中信金属",
       "purchase_date": "2026-05-29",
       "cost": 13.480,
-      "buy_flag": true
+      "buy_flag": false
     },
     {
       "symbol": "000811.SZ",
