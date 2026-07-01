@@ -93,6 +93,13 @@
       "purchase_date": "2026-05-21",
       "cost": 37.55,
       "buy_flag": true
+    },
+    {
+      "symbol": "000021.SZ",
+      "name": "深科技",
+      "purchase_date": "2026-07-01",
+      "cost": 65.5,
+      "buy_flag": true
     }
   ],
   "config": {
