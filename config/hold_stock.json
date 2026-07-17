@@ -46,13 +46,6 @@
       "buy_flag": false
     },
     {
-      "symbol": "600900.SH",
-      "name": "长江电力",
-      "purchase_date": "2026-01-19",
-      "cost": 27.95,
-      "buy_flag": false
-    },
-    {
       "symbol": "000603.SZ",
       "name": "盛达资源",
       "purchase_date": "2026-01-29",
@@ -74,13 +67,6 @@
       "buy_flag": false
     },
     {
-      "symbol": "600938.SH",
-      "name": "中国海油",
-      "purchase_date": "2026-04-20",
-      "cost": 36.08,
-      "buy_flag": false
-    },
-    {
       "symbol": "601061.SH",
       "name": "中信金属",
       "purchase_date": "2026-05-29",
@@ -92,13 +78,27 @@
       "name": "冰轮环境",
       "purchase_date": "2026-05-21",
       "cost": 37.55,
-      "buy_flag": true
+      "buy_flag": false
     },
     {
       "symbol": "000021.SZ",
       "name": "深科技",
       "purchase_date": "2026-07-01",
       "cost": 65.5,
+      "buy_flag": true
+    },
+    {
+      "symbol": "000977.SZ",
+      "name": "浪潮信息",
+      "purchase_date": "2026-07-10",
+      "cost": 91.348,
+      "buy_flag": true
+    },
+    {
+      "symbol": "000938.SZ",
+      "name": "紫光股份",
+      "purchase_date": "2026-07-13",
+      "cost": 39.40,
       "buy_flag": true
     }
   ],

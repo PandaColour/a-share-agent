@@ -471,7 +471,8 @@ class MultiSourceDataProvider:
         logger.error(f"所有数据源都无法获取 {normalized_symbol} 的分钟级数据")
         return pd.DataFrame()
 
-    def get_complete_stock_data(self, symbol: str, start_date: str = None, end_date: str = None, period: str = "1y", include_intraday: bool = True) -> Tuple[pd.DataFrame, Dict, Dict, Dict, pd.DataFrame, Dict]:
+    def get_complete_stock_data(self, symbol: str, start_date: str = None, end_date: str = None,
+                                period: str = "1y", include_intraday: Optional[bool] = None) -> Tuple[pd.DataFrame, Dict, Dict, Dict, pd.DataFrame, Dict]:
         """
         获取完整的股票数据（支持双重时间框架 + 基本面数据）
 
@@ -480,7 +481,7 @@ class MultiSourceDataProvider:
             start_date: 开始日期
             end_date: 结束日期
             period: 日线数据时间周期
-            include_intraday: 是否包含5分钟数据
+            include_intraday: 是否包含5分钟数据，None时读取统一配置
 
         Returns:
             Tuple[daily_data, info, indicators, price_info, intraday_data, fundamental_data]
@@ -506,6 +507,9 @@ class MultiSourceDataProvider:
 
             # 获取5分钟数据（如果需要）
             intraday_data = pd.DataFrame()
+            if include_intraday is None:
+                include_intraday = self._get_include_intraday_default()
+
             if include_intraday:
                 try:
                     intraday_data = self.get_minute_data(symbol, period="5", days=10)
@@ -528,6 +532,11 @@ class MultiSourceDataProvider:
         except Exception as e:
             logger.error(f"获取完整股票数据失败 {symbol}: {e}")
             return pd.DataFrame(), {}, {}, {}, pd.DataFrame(), {}
+
+    def _get_include_intraday_default(self) -> bool:
+        """读取盘中数据开关，生产日批默认关闭"""
+        data_usage_config = self.config.get('system_settings', {}).get('data_usage', {})
+        return bool(data_usage_config.get('include_intraday', False))
     
     def get_current_price_info(self, data: pd.DataFrame) -> Dict:
         """获取当前价格信息（复用原有逻辑）"""

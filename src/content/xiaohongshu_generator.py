@@ -7,6 +7,7 @@
 import os
 import json
 import logging
+import re
 import pandas as pd
 from datetime import datetime
 from pathlib import Path
@@ -18,14 +19,16 @@ logger = logging.getLogger(__name__)
 class XiaohongshuContentGenerator:
     """小红书文案生成器"""
 
-    def __init__(self, ai_client=None):
+    def __init__(self, agent_type: str = "codex", agent_factory=None):
         """
         初始化文案生成器
 
         Args:
-            ai_client: AI客户端（支持 generate 方法）
+            agent_type: CLI Agent 类型，当前默认使用 codex
+            agent_factory: Agent 工厂，测试时可注入
         """
-        self.ai_client = ai_client
+        self.agent_type = agent_type
+        self.agent_factory = agent_factory
         self.prompt_template = self._load_prompt_template()
 
     def _load_prompt_template(self) -> str:
@@ -107,14 +110,9 @@ class XiaohongshuContentGenerator:
             # 3. 构建 AI 输入
             ai_input = self._build_ai_input(holdings_list, buy_recommendations, sell_warnings)
 
-            # 4. 必须使用 Claude Code SDK 生成文案（支持新闻搜索）
-            if not self.ai_client:
-                error_msg = "Claude Agent SDK 不可用，无法生成文案"
-                logger.error(error_msg)
-                raise RuntimeError(error_msg)
-
-            logger.info("使用 Claude Agent SDK 生成文案（将自动搜索相关新闻）")
-            content = self._generate_with_ai(ai_input)
+            # 4. 使用 CLI Agent 生成文案，工作目录固定为当天输出目录
+            logger.info(f"使用 {self.agent_type} CLI Agent 生成文案")
+            content = self._generate_with_agent(ai_input, output_dir)
 
             # 5. 保存文案
             if content:
@@ -407,19 +405,33 @@ class XiaohongshuContentGenerator:
         ai_input = f"{self.prompt_template}\n\n## 输入数据\n\n```json\n{json.dumps(data_json, ensure_ascii=False, indent=2)}\n```\n\n请生成小红书文案："
         return ai_input
 
-    def _generate_with_ai(self, ai_input: str) -> Optional[str]:
-        """使用 AI 生成文案"""
+    def _create_agent(self, output_dir: str):
+        """创建用于生成文案的 CLI Agent"""
+        agent_factory = self.agent_factory
+        if agent_factory is None:
+            from src.agents import Agent
+            agent_factory = Agent
+
+        return agent_factory(
+            name="小红书文案生成器",
+            system_prompt_file=None,
+            work_dir=str(output_dir),
+            agent_type=self.agent_type,
+        )
+
+    def _generate_with_agent(self, ai_input: str, output_dir: str) -> Optional[str]:
+        """使用 CLI Agent 生成文案"""
         try:
-            logger.info("调用 AI 生成小红书文案...")
-            content = self.ai_client.generate(ai_input, max_tokens=2000, temperature=0.7)
+            logger.info("调用 CLI Agent 生成小红书文案...")
+            content = self._create_agent(output_dir).send_message(ai_input)
             if content:
-                logger.info(f"AI 生成文案成功，长度: {len(content)}")
+                logger.info(f"CLI Agent 生成文案成功，长度: {len(content)}")
                 return content
             else:
-                logger.warning("AI 返回空内容")
+                logger.warning("CLI Agent 返回空内容")
                 return None
         except Exception as e:
-            logger.error(f"AI 生成文案失败: {e}")
+            logger.error(f"CLI Agent 生成文案失败: {e}")
             return None
 
     def _generate_with_template(
@@ -461,6 +473,24 @@ class XiaohongshuContentGenerator:
 
         return '\n'.join(lines)
 
+    def _convert_markdown_to_plain_text(self, content: str) -> str:
+        """生成适合直接粘贴到微信原生编辑器的纯文本副本"""
+        text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", content)
+        text = text.replace("**", "").replace("__", "").replace("`", "")
+
+        plain_lines = []
+        for line in text.splitlines():
+            stripped = line.strip()
+            if not stripped:
+                plain_lines.append("")
+                continue
+            stripped = re.sub(r"^#{1,6}\s*", "", stripped)
+            stripped = re.sub(r"^[-*+]\s+", "", stripped)
+            stripped = re.sub(r"^\d+\.\s+", "", stripped)
+            plain_lines.append(stripped)
+
+        return "\n".join(plain_lines)
+
     def _save_content(self, output_dir: str, content: str):
         """保存文案到文件"""
         try:
@@ -476,7 +506,7 @@ class XiaohongshuContentGenerator:
             # 保存为 TXT 文件（方便复制）
             txt_file = output_path / "xiaohongshu_content.txt"
             with open(txt_file, 'w', encoding='utf-8') as f:
-                f.write(content)
+                f.write(self._convert_markdown_to_plain_text(content))
             logger.info(f"小红书文案已保存: {txt_file}")
 
         except Exception as e:

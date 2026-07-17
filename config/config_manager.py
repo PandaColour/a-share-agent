@@ -89,6 +89,21 @@ class ConfigManager:
         """获取是否排除创业板股票"""
         return self.get('analysis_settings.filters.exclude_chinext', True)
 
+    def get_factor_system_config(self) -> Dict[str, Any]:
+        """获取因子系统配置"""
+        return self.get('system_settings.factor_system', {})
+
+    def is_factor_auto_generation_enabled(self) -> bool:
+        """生产默认关闭自动因子生成，仅研究模式允许启用"""
+        factor_config = self.get_factor_system_config()
+        mode = str(factor_config.get('mode', 'production')).lower()
+        auto_enabled = bool(factor_config.get('auto_generation_enabled', False))
+        return mode == 'research' and auto_enabled
+
+    def get_include_intraday(self) -> bool:
+        """获取是否拉取盘中5分钟数据，日批默认关闭"""
+        return bool(self.get('system_settings.data_usage.include_intraday', False))
+
     def is_valid(self) -> bool:
         """检查配置是否有效"""
         return self._config is not None and len(self._config) > 0

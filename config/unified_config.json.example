@@ -3,6 +3,15 @@
     "execution": {
       "max_workers": 5
     },
+    "factor_system": {
+      "mode": "production",
+      "auto_generation_enabled": false,
+      "factor_registry_path": "config/factor_registry.json",
+      "random_seed": 42
+    },
+    "data_usage": {
+      "include_intraday": false
+    },
     "multi_timeframe_factors": {
       "enabled": true,
       "rsi_settings": {
@@ -58,17 +67,6 @@
       },
       "yfinance": {
         "enabled": true
-      }
-    },
-    "claude_sonnet": {
-      "name": "Claude Code SDK",
-      "type": "claude_sdk",
-      "config": {
-        "model": "deepseek-v4-pro[1m]",
-        "env": {
-          "ANTHROPIC_API_KEY": " deepseek api key",
-          "ANTHROPIC_BASE_URL": "https://api.deepseek.com/anthropic"
-        }
       }
     }
   },

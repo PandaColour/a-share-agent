@@ -125,7 +125,7 @@ except ImportError as e:
 class AShareTradingAgentsSystem:
     """A股TradingAgents系统主类"""
     
-    def __init__(self, config_manager=None):
+    def __init__(self, config_manager=None, auto_generate_factors: Optional[bool] = None):
         """初始化系统"""
         self.logger = logging.getLogger("AShareTradingSystem")
 
@@ -137,6 +137,8 @@ class AShareTradingAgentsSystem:
         self.config = config_manager or get_config()
         self.config_manager = self.config  # 兼容性别名
         self.max_workers = self.config.get_max_workers()
+        if auto_generate_factors is None:
+            auto_generate_factors = self.config.is_factor_auto_generation_enabled()
 
         # 主线程组件
         self.data_provider = AShareDataProvider()
@@ -153,7 +155,7 @@ class AShareTradingAgentsSystem:
         self.factor_manager = None
         try:
             from src.factors import initialize_factors, get_factor_manager, get_auto_factor_summary
-            initialize_factors(enable_auto_generation=True)  # 启用自动因子生成
+            initialize_factors(enable_auto_generation=auto_generate_factors)
             self.factor_manager = get_factor_manager()
             self.ai_factor_enabled = True
 
@@ -163,6 +165,10 @@ class AShareTradingAgentsSystem:
 
             self.logger.info(f"AI因子系统初始化成功，已注册 {total_factors} 个因子")
             self.logger.info(f"因子列表: {', '.join(factor_names)}")
+            if auto_generate_factors:
+                self.logger.info("研究模式: 本次启动启用自动因子生成")
+            else:
+                self.logger.info("生产模式: 自动因子生成已关闭，使用稳定因子库")
 
             # 显示自动生成因子的摘要
             try:
@@ -1488,8 +1494,8 @@ def main():
     # 解析命令行参数
     parser = argparse.ArgumentParser(description='A股量化交易系统')
     parser.add_argument('--mode', type=str, default='select',
-                       choices=['select', 'hold', 'both', 'backtest'],
-                       help='运行模式: select=选股分析, hold=持仓分析, both=两者都执行, backtest=历史回测')
+                       choices=['select', 'hold', 'both', 'backtest', 'research'],
+                       help='运行模式: select=选股分析, hold=持仓分析, both=两者都执行, backtest=历史回测, research=因子研究')
     parser.add_argument('--output-dir', type=str, default=None,
                        help='输出目录路径，如果不指定则自动生成')
     parser.add_argument('--start-date', type=str, default=None,
@@ -1498,6 +1504,8 @@ def main():
                        help='回测结束日期 (YYYY-MM-DD)')
     parser.add_argument('--months', type=int, default=3,
                        help='回测向前月数（当未指定日期时使用）')
+    parser.add_argument('--research-generate-factors', action='store_true',
+                       help='研究模式：启动时生成候选自动因子；生产日批默认不要使用')
     args = parser.parse_args()
 
     # 总体耗时统计开始
@@ -1545,7 +1553,8 @@ def main():
     main_logger.info("📋 第一阶段：系统初始化开始...")
 
     try:
-        system = AShareTradingAgentsSystem()
+        auto_generate_factors = True if args.research_generate_factors or args.mode == 'research' else None
+        system = AShareTradingAgentsSystem(auto_generate_factors=auto_generate_factors)
         # 设置输出目录（统一输出路径）
         system.output_manager.output_dir = output_dir
         main_logger.info(f"📁 系统输出目录设置为: {output_dir}")
@@ -1558,6 +1567,20 @@ def main():
         main_logger.error(f"❌ 系统初始化失败: {e}")
         import traceback
         traceback.print_exc()
+        return
+
+    # ========== 研究模式：只初始化并生成候选因子，不执行选股/交易分析 ==========
+    if args.mode == 'research':
+        print("\n" + "="*60)
+        print("因子研究模式：已通过 main.py 独立入口生成候选自动因子")
+        print("="*60)
+        if system.factor_manager:
+            factor_names = list(system.factor_manager.factors.keys())
+            print(f"当前注册因子数量: {len(factor_names)}")
+            print("提示: 自动生成因子仅用于离线研究，经过IC和回测验证后再纳入生产稳定因子库。")
+        else:
+            print("AI因子系统不可用，请检查依赖和配置。")
+        main_logger.info("因子研究模式执行完成，未进入选股/持仓/回测流程")
         return
 
     # ========== 回测模式：历史数据回测 ==========

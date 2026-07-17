@@ -13,6 +13,7 @@ from src.qt.holdings_widget import HoldingsWidget
 from src.qt.backtest_widget import BacktestWidget
 from src.qt.media_widget import MediaWidget
 from src.qt.stock_comparison_widget import StockComparisonWidget
+from src.qt.research_mode_widget import ResearchModeWidget
 
 
 class MainWindow(QMainWindow):
@@ -43,12 +44,13 @@ class MainWindow(QMainWindow):
         # === 右侧工作区 ===
         self.stacked_widget = QStackedWidget()
 
-        # 创建五个页面
+        # 创建页面
         self.analysis_widget = AnalysisWidget()
         self.holdings_widget = HoldingsWidget()
         self.backtest_widget = BacktestWidget()
         self.media_widget = MediaWidget()
         self.comparison_widget = StockComparisonWidget()
+        self.research_widget = ResearchModeWidget()
 
         # 添加到堆叠窗口
         self.stacked_widget.addWidget(self.analysis_widget)   # index 0
@@ -56,6 +58,7 @@ class MainWindow(QMainWindow):
         self.stacked_widget.addWidget(self.backtest_widget)   # index 2
         self.stacked_widget.addWidget(self.media_widget)      # index 3
         self.stacked_widget.addWidget(self.comparison_widget) # index 4
+        self.stacked_widget.addWidget(self.research_widget)   # index 5
 
         main_layout.addWidget(self.stacked_widget)
 
@@ -147,6 +150,13 @@ class MainWindow(QMainWindow):
         self.backtest_btn.clicked.connect(lambda: self.switch_page(2))
         layout.addWidget(self.backtest_btn)
 
+        # 因子研究按钮
+        self.research_btn = QPushButton("🔬 因子研究")
+        self.research_btn.setCheckable(True)
+        self.research_btn.setStyleSheet(button_style)
+        self.research_btn.clicked.connect(lambda: self.switch_page(5))
+        layout.addWidget(self.research_btn)
+
         # 自媒体内容按钮
         self.media_btn = QPushButton("📱 自媒体")
         self.media_btn.setCheckable(True)
@@ -213,6 +223,12 @@ class MainWindow(QMainWindow):
         backtest_action.triggered.connect(lambda: self.switch_page(2))
         view_menu.addAction(backtest_action)
 
+        # 切换到因子研究
+        research_action = QAction("因子研究(&R)", self)
+        research_action.setShortcut("Ctrl+6")
+        research_action.triggered.connect(lambda: self.switch_page(5))
+        view_menu.addAction(research_action)
+
         # 切换到自媒体
         media_action = QAction("自媒体内容(&M)", self)
         media_action.setShortcut("Ctrl+4")
@@ -249,12 +265,13 @@ class MainWindow(QMainWindow):
         self.backtest_btn.setChecked(index == 2)
         self.media_btn.setChecked(index == 3)
         self.comparison_btn.setChecked(index == 4)
+        self.research_btn.setChecked(index == 5)
 
         # 切换页面
         self.stacked_widget.setCurrentIndex(index)
 
         # 更新状态栏
-        page_names = ["股票分析", "持股跟踪", "历史回测", "自媒体内容", "股票对比"]
+        page_names = ["股票分析", "持股跟踪", "历史回测", "自媒体内容", "股票对比", "因子研究"]
         self.statusBar.showMessage(f"当前页面: {page_names[index]}")
 
     def refresh_current(self):
@@ -288,6 +305,7 @@ class MainWindow(QMainWindow):
             "<li>📈 历史回测 - 策略回测验证 (Ctrl+3)</li>"
             "<li>📱 自媒体内容 - 小红书文案生成 (Ctrl+4)</li>"
             "<li>🔄 股票对比 - 动态选股与持仓对比 (Ctrl+5)</li>"
+            "<li>🔬 因子研究 - 研究模式说明和启用方式 (Ctrl+6)</li>"
             "</ul>"
             "<p>快捷键:</p>"
             "<ul>"
@@ -296,6 +314,7 @@ class MainWindow(QMainWindow):
             "<li>Ctrl+3: 切换到历史回测</li>"
             "<li>Ctrl+4: 切换到自媒体内容</li>"
             "<li>Ctrl+5: 切换到股票对比</li>"
+            "<li>Ctrl+6: 切换到因子研究</li>"
             "<li>F5: 刷新当前页</li>"
             "<li>Ctrl+Q: 退出程序</li>"
             "</ul>"

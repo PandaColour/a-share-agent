@@ -11,8 +11,6 @@ from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QFont
 
 from src.content.xiaohongshu_generator import XiaohongshuContentGenerator
-from src.ai_models.factory import AIModelFactory
-from config.config_manager import get_config
 
 logger = logging.getLogger(__name__)
 
@@ -22,10 +20,10 @@ class ContentGenerationThread(QThread):
     output_signal = pyqtSignal(str)
     finished_signal = pyqtSignal(bool, str)
 
-    def __init__(self, output_dir, ai_client=None):
+    def __init__(self, output_dir, agent_type="codex"):
         super().__init__()
         self.output_dir = output_dir
-        self.ai_client = ai_client
+        self.agent_type = agent_type
 
     def run(self):
         """执行内容生成"""
@@ -33,7 +31,7 @@ class ContentGenerationThread(QThread):
             self.output_signal.emit("开始生成小红书文案...")
 
             # 初始化生成器
-            generator = XiaohongshuContentGenerator(ai_client=self.ai_client)
+            generator = XiaohongshuContentGenerator(agent_type=self.agent_type)
 
             # 生成文案
             content = generator.generate_content(
@@ -65,9 +63,9 @@ class MediaWidget(QWidget):
     def __init__(self):
         super().__init__()
         self.generation_thread = None
-        self.ai_client = None
+        self.agent_type = "codex"
         self.init_ui()
-        self.init_ai_client()
+        self.init_agent_config()
 
     def init_ui(self):
         """初始化UI"""
@@ -174,39 +172,10 @@ class MediaWidget(QWidget):
 
         self.setLayout(layout)
 
-    def init_ai_client(self):
-        """初始化AI客户端 - 必须使用 Claude Code SDK"""
-        try:
-            # 加载配置
-            config = get_config()
-            claude_config = config.get('system_settings', {}).get('claude_sonnet')
-            if not claude_config:
-                error_msg = "❌ 错误: 未找到 Claude SDK 配置！请在 config/unified_config.json 中配置 claude_sonnet"
-                self.append_output(error_msg)
-                logger.error(error_msg)
-                raise RuntimeError("Claude SDK 配置缺失")
-
-            # 必须使用 Claude Code SDK（支持新闻搜索）
-            self.append_output(f"🔍 初始化 Claude Agent SDK（支持新闻搜索）...")
-            self.ai_client = AIModelFactory.create_model_legacy(claude_config)
-
-            if not self.ai_client or not self.ai_client.is_available():
-                error_msg = "❌ 错误: Claude Agent SDK 不可用！请确保已安装: pip install claude-agent-sdk"
-                self.append_output(error_msg)
-                logger.error(error_msg)
-                raise RuntimeError("Claude Agent SDK 初始化失败")
-
-            self.append_output(f"✅ Claude Agent SDK 初始化成功")
-            self.append_output(f"💡 Claude 将自动搜索最新新闻来生成高质量文案")
-
-        except Exception as e:
-            error_msg = f"❌ Claude Agent SDK 初始化失败: {str(e)}"
-            self.append_output(error_msg)
-            logger.error(error_msg)
-            self.ai_client = None
-            # 禁用生成按钮
-            self.generate_btn.setEnabled(False)
-            self.generate_btn.setText("Claude SDK 不可用")
+    def init_agent_config(self):
+        """初始化文案生成 Agent 配置"""
+        self.append_output(f"🔍 小红书文案将使用 {self.agent_type} CLI Agent 生成")
+        self.append_output("💡 Agent 工作目录将设置为所选输出目录")
 
     def browse_directory(self):
         """浏览选择目录"""
@@ -248,12 +217,6 @@ class MediaWidget(QWidget):
             self.append_output("❌ 所选目录不存在")
             return
 
-        # 必须有可用的 Claude SDK
-        if not self.ai_client:
-            self.append_output("❌ Claude Agent SDK 不可用，无法生成文案")
-            self.append_output("💡 请确保已安装: pip install claude-agent-sdk")
-            return
-
         # 禁用按钮
         self.generate_btn.setEnabled(False)
         self.browse_btn.setEnabled(False)
@@ -264,11 +227,11 @@ class MediaWidget(QWidget):
 
         # 清空部分输出（保留初始化日志）
         self.append_output("\n" + "=" * 60)
-        self.append_output("开始生成小红书文案（使用 Claude Agent SDK）")
+        self.append_output(f"开始生成小红书文案（使用 {self.agent_type} CLI Agent）")
         self.append_output("=" * 60)
 
         # 创建并启动线程
-        self.generation_thread = ContentGenerationThread(output_dir, self.ai_client)
+        self.generation_thread = ContentGenerationThread(output_dir, self.agent_type)
         self.generation_thread.output_signal.connect(self.append_output)
         self.generation_thread.finished_signal.connect(self.generation_finished)
         self.generation_thread.start()

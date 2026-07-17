@@ -1,10 +1,10 @@
 {
-  "last_update": "2026-07-01 09:21:12",
-  "num_factors": 518,
-  "num_dates": 340,
+  "last_update": "2026-07-14 06:44:56",
+  "num_factors": 521,
+  "num_dates": 349,
   "num_stocks": 0,
   "date_range": {
     "start": "2025-01-20",
-    "end": "2026-06-29"
+    "end": "2026-07-10"
   }
 }

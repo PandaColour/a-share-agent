@@ -14,8 +14,6 @@ from PyQt6.QtGui import QFont
 from src.qt.stock_validator import StockValidator
 from src.qt.base_thread import SubprocessThread
 from src.content.xiaohongshu_generator import XiaohongshuContentGenerator
-from src.ai_models.factory import AIModelFactory
-from config.config_manager import get_config
 
 logger = logging.getLogger(__name__)
 
@@ -643,27 +641,9 @@ class AnalysisWidget(QWidget):
     def generate_xiaohongshu_content(self):
         """生成小红书文案"""
         try:
-            # 加载配置
-            config = get_config()
-
-            # 初始化AI客户端（使用 claude_sonnet）
-            ai_client = None
-            try:
-                claude_config = config.get('system_settings', {}).get('claude_sonnet')
-                if not claude_config:
-                    raise RuntimeError("未找到 claude_sonnet 配置，请在 config/unified_config.json 中配置")
-
-                self.append_output(f"[小红书文案] 使用 claude_sonnet 生成文案")
-                ai_client = AIModelFactory.create_model_legacy(claude_config)
-
-                if not ai_client or not ai_client.is_available():
-                    raise RuntimeError("claude_sonnet 客户端不可用，请确保已安装: pip install claude-agent-sdk")
-            except Exception as e:
-                logger.warning(f"AI客户端初始化失败: {e}")
-                self.append_output(f"[小红书文案] AI客户端初始化失败: {e}")
-
             # 初始化小红书文案生成器
-            generator = XiaohongshuContentGenerator(ai_client=ai_client)
+            self.append_output(f"[小红书文案] 使用 codex CLI Agent 生成文案")
+            generator = XiaohongshuContentGenerator(agent_type="codex")
 
             # 生成文案
             content = generator.generate_content(
