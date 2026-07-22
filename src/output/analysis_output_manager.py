@@ -19,11 +19,10 @@ logger = logging.getLogger(__name__)
 class AnalysisOutputManager:
     """分析输出管理器"""
 
-    def __init__(self, config_manager=None):
+    def __init__(self):
         """初始化输出管理器"""
         self.logger = logging.getLogger(__name__)
         self.output_dir = None  # 输出目录，可在系统初始化后设置
-        self.config_manager = config_manager
 
     def format_analysis_result(
         self,
@@ -379,33 +378,6 @@ class AnalysisOutputManager:
 
             print(f"\n本次分析结果将保存到: {session_dir}")
 
-            buy_confirmation_process = None
-            try:
-                config_manager = self.config_manager
-                if config_manager is None:
-                    try:
-                        from config.config_manager import get_config
-                    except ImportError:
-                        from config_manager import get_config
-                    config_manager = get_config()
-
-                try:
-                    from src.process.buy_confirmation_process import BuyConfirmationProcess
-                except ImportError:
-                    from process.buy_confirmation_process import BuyConfirmationProcess
-
-                buy_confirmation_process = BuyConfirmationProcess(
-                    config=config_manager,
-                    output_dir=session_dir,
-                )
-                confirmation_result = buy_confirmation_process.execute(sorted_results)
-                print(f"买入/持有二次确认: 已复核 {confirmation_result.get('processed_count', 0)} 只候选")
-            except Exception as e:
-                self.logger.error(f"买入二次确认流程失败: {e}", exc_info=True)
-                print(f"买入二次确认流程失败，保留原始分析结果: {e}")
-
-            sorted_results = self._sort_results(sorted_results)
-
             # 1. 保存简化版本到CSV（只包含AI因子分析师，使用排序后的结果）
             csv_results = []
             for result in sorted_results:
@@ -441,9 +413,6 @@ class AnalysisOutputManager:
             column_order = [
                 "股票代码", "股票名称", "操作建议", "信心度",
                 "AI因子_策略", "AI因子_信心度",
-                "原操作建议", "Agent复核建议", "Agent复核信心度",
-                "Agent基本面观点", "Agent情绪面观点", "Agent风险提示",
-                "Agent复核理由", "Agent数据质量", "Agent解析状态",
                 "风险等级", "当前价格", "当日最高", "当日最低", "当日涨跌",
                 "连续涨跌日", "连续涨跌幅度", "决策理由"
             ]
@@ -453,8 +422,6 @@ class AnalysisOutputManager:
             df = df[existing_columns]
 
             csv_filename = session_dir / "analysis_summary.csv"
-            if buy_confirmation_process:
-                buy_confirmation_process.backup_csv_if_needed(csv_filename)
             df.to_csv(csv_filename, index=False, encoding='utf-8-sig')
             print(f"CSV汇总结果: {csv_filename}")
 
