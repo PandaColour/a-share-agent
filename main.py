@@ -205,7 +205,7 @@ class AShareTradingAgentsSystem:
         self._thread_local = threading.local()
 
         # 初始化输出管理器
-        self.output_manager = AnalysisOutputManager()
+        self.output_manager = AnalysisOutputManager(self.config_manager)
 
         # 计算初始化耗时
         init_time = time.time() - self.system_start_time
