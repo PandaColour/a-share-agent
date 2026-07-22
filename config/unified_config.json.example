@@ -12,6 +12,9 @@
     "data_usage": {
       "include_intraday": false
     },
+    "ai_models": {
+      "models": {}
+    },
     "multi_timeframe_factors": {
       "enabled": true,
       "rsi_settings": {
@@ -63,7 +66,7 @@
       },
       "tushare": {
         "enabled": true,
-        "token": " tushare api key"
+        "token": "YOUR_TUSHARE_TOKEN_HERE"
       },
       "yfinance": {
         "enabled": true
@@ -114,8 +117,8 @@
       "xueqiu_discussions": false,
       "xueqiu_login": {
         "enabled": true,
-        "phone": "18666662508",
-        "password": "cpurun100"
+        "phone": "YOUR_XUEQIU_PHONE_HERE",
+        "password": "YOUR_XUEQIU_PASSWORD_HERE"
       }
     },
     "filters": {

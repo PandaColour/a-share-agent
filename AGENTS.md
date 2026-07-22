@@ -445,6 +445,25 @@ python -c "from config.config_manager import get_config; import json; print(json
 - 所有分析结果包含置信度评分和贡献度分解
 - 回测系统计算真实的交易成本和风险指标
 
+## Review Checklist
+
+### Agent Architecture
+
+When adding or modifying `src/agents/*agent*.py`, `src/process/*agent*.py`, or
+`src/ai_models/*`, reviewers must check whether an existing abstraction should
+be reused.
+
+- New `*Agent` classes must explicitly state one of these choices in code or
+  design notes: reuse `src.agents.Agent`, reuse `AIModelInterface`, or keep an
+  independent implementation with a clear exemption reason.
+- `src.agents.Agent` is currently the public conversational CLI facade for
+  Claude, Codex, and Cursor subprocess backends.
+- Structured business decision components, such as buy confirmation, may use
+  `AIModelInterface` directly when they own JSON schema parsing, validation,
+  domain fallback behavior, or result merging.
+- Review records must include a conclusion for why `src.agents.Agent` was or
+  was not reused. Missing conclusions should block merge until clarified.
+
 ## 安全和生产环境考虑
 
 ### 🔒 安全要求
