@@ -85,6 +85,53 @@ class HoldStockStatusTest(unittest.TestCase):
         self.assertEqual(stocks["000002.SZ"]["cost"], 12.34)
         self.assertNotIn("000003.SZ", stocks)
 
+    def test_add_buy_recommendations_to_watch_updates_existing_sell_signal(self):
+        path = self._write_config([
+            {
+                "symbol": "000002.SZ",
+                "name": "万科A",
+                "purchase_date": "2026-07-01",
+                "cost": 10.0,
+                "buy_flag": "sell",
+            },
+            {
+                "symbol": "000003.SZ",
+                "name": "观察股",
+                "purchase_date": "2026-07-01",
+                "cost": 9.0,
+                "buy_flag": "watch",
+            },
+        ])
+
+        summary = hold_stock_io.add_buy_recommendations_to_watch(
+            [
+                {
+                    "股票代码": "000002.SZ",
+                    "股票名称": "万科A",
+                    "操作建议": "买入",
+                    "当前价格": "12.34元",
+                },
+                {
+                    "股票代码": "000003.SZ",
+                    "股票名称": "观察股",
+                    "操作建议": "买入",
+                    "当前价格": "10.01元",
+                },
+            ],
+            as_of_date="2026-07-23",
+            hold_stock_path=path,
+        )
+
+        config = json.loads(path.read_text(encoding="utf-8"))
+        stocks = {stock["symbol"]: stock for stock in config["hold_stocks"]}
+
+        self.assertEqual(summary["updated_symbols"], ["000002.SZ"])
+        self.assertEqual(stocks["000002.SZ"]["buy_flag"], "watch")
+        self.assertEqual(stocks["000002.SZ"]["purchase_date"], "2026-07-23")
+        self.assertEqual(stocks["000002.SZ"]["cost"], 12.34)
+        self.assertEqual(stocks["000003.SZ"]["buy_flag"], "watch")
+        self.assertEqual(stocks["000003.SZ"]["purchase_date"], "2026-07-01")
+
 
 if __name__ == "__main__":
     unittest.main()

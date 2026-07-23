@@ -106,10 +106,12 @@ def add_buy_recommendations_to_watch(analysis_results: List[Dict],
     """把分析结果中新增的买入推荐加入 hold_stock.json 的 watch 状态。"""
     config = _read_config(hold_stock_path)
     hold_stocks = config.setdefault('hold_stocks', [])
-    existing_symbols = {stock.get('symbol') for stock in hold_stocks}
+    hold_stocks[:] = normalize_hold_stocks(hold_stocks)
+    stock_by_symbol = {stock.get('symbol'): stock for stock in hold_stocks}
     watch_date = as_of_date or date.today().strftime('%Y-%m-%d')
 
     added_symbols = []
+    updated_symbols = []
     skipped_symbols = []
 
     for result in analysis_results:
@@ -120,11 +122,22 @@ def add_buy_recommendations_to_watch(analysis_results: List[Dict],
         if result.get('操作建议') != '买入':
             continue
 
-        if symbol in existing_symbols:
+        current_price = _parse_price(result.get('当前价格'))
+
+        existing_stock = stock_by_symbol.get(symbol)
+        if existing_stock:
+            if is_sell_status(existing_stock.get('buy_flag')):
+                existing_stock.update({
+                    'purchase_date': watch_date,
+                    'cost': current_price,
+                    'buy_flag': WATCH_STATUS
+                })
+                updated_symbols.append(symbol)
+                continue
+
             skipped_symbols.append(symbol)
             continue
 
-        current_price = _parse_price(result.get('当前价格'))
         stock = {
             'symbol': symbol,
             'name': result.get('股票名称') or result.get('name') or symbol,
@@ -134,10 +147,10 @@ def add_buy_recommendations_to_watch(analysis_results: List[Dict],
         }
 
         hold_stocks.append(stock)
-        existing_symbols.add(symbol)
+        stock_by_symbol[symbol] = stock
         added_symbols.append(symbol)
 
-    if added_symbols:
+    if added_symbols or updated_symbols:
         _write_config(config, hold_stock_path)
     else:
         config['hold_stocks'] = normalize_hold_stocks(config.get('hold_stocks', []))
@@ -145,6 +158,8 @@ def add_buy_recommendations_to_watch(analysis_results: List[Dict],
     return {
         'added_count': len(added_symbols),
         'added_symbols': added_symbols,
+        'updated_count': len(updated_symbols),
+        'updated_symbols': updated_symbols,
         'skipped_count': len(skipped_symbols),
         'skipped_symbols': skipped_symbols
     }

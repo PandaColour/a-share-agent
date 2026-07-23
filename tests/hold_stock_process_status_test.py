@@ -31,7 +31,7 @@ class HoldStockProcessStatusTest(unittest.TestCase):
         }), encoding="utf-8")
         return path
 
-    def test_load_hold_stocks_includes_buy_sell_and_watch_statuses(self):
+    def test_load_hold_stocks_excludes_sell_status_from_holdings_analysis(self):
         directory = self._temp_dir()
         path = self._write_config(directory)
         process = HoldStockProcess(hold_stock_path=path)
@@ -40,12 +40,10 @@ class HoldStockProcessStatusTest(unittest.TestCase):
 
         self.assertEqual([stock["symbol"] for stock in stocks], [
             "000001.SZ",
-            "000002.SZ",
             "000003.SZ",
         ])
         self.assertEqual([stock["buy_flag"] for stock in stocks], [
             "buy",
-            "sell",
             "watch",
         ])
 

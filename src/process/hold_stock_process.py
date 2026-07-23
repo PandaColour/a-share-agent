@@ -56,17 +56,21 @@ class HoldStockProcess:
             持仓股票列表（包含 buy/sell/watch 三种状态）
         """
         try:
-            hold_stocks = load_hold_stocks(self.hold_stock_path)
+            all_hold_stocks = load_hold_stocks(self.hold_stock_path)
+            hold_stocks = [
+                stock for stock in all_hold_stocks
+                if normalize_buy_flag(stock.get('buy_flag')) != SELL_STATUS
+            ]
             status_counts = {BUY_STATUS: 0, SELL_STATUS: 0, WATCH_STATUS: 0}
-            for stock in hold_stocks:
+            for stock in all_hold_stocks:
                 status_counts[normalize_buy_flag(stock.get('buy_flag'))] += 1
 
             self.logger.info(
-                "加载持仓股票: %s 只 (buy=%s, sell=%s, watch=%s)",
+                "加载持仓分析股票: %s 只 (buy=%s, watch=%s, sell排除=%s)",
                 len(hold_stocks),
                 status_counts[BUY_STATUS],
-                status_counts[SELL_STATUS],
-                status_counts[WATCH_STATUS]
+                status_counts[WATCH_STATUS],
+                status_counts[SELL_STATUS]
             )
 
             return hold_stocks
