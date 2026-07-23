@@ -8,6 +8,12 @@ import logging
 from typing import Dict, List, Optional, Tuple
 from datetime import datetime, date
 import pandas as pd
+from src.utils.hold_stock_io import (
+    BUY_STATUS,
+    SELL_STATUS,
+    WATCH_STATUS,
+    normalize_buy_flag,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -75,8 +81,9 @@ class HoldStockAnalyzer:
         try:
             symbol = stock['symbol']
             name = stock['name']
-            cost = stock['cost']
-            purchase_date = stock['purchase_date']
+            cost = float(stock.get('cost', 0) or 0)
+            purchase_date = stock.get('purchase_date', '未知')
+            holding_status = normalize_buy_flag(stock.get('buy_flag', BUY_STATUS))
 
             self.logger.info(f"开始分析持仓股票: {name}({symbol})")
 
@@ -90,8 +97,9 @@ class HoldStockAnalyzer:
             holding_days = self._calculate_holding_days(purchase_date)
 
             # 3. 计算收益
-            profit_loss = current_price - cost
-            profit_loss_rate = (profit_loss / cost) * 100  # 百分比
+            cost_basis = cost if cost > 0 else current_price
+            profit_loss = current_price - cost_basis
+            profit_loss_rate = (profit_loss / cost_basis) * 100 if cost_basis > 0 else 0
 
             # 4. 确定收益状态
             profit_status = self._determine_profit_status(profit_loss_rate)
@@ -122,7 +130,10 @@ class HoldStockAnalyzer:
                 profit_loss_rate,
                 stop_loss_info,
                 system_analysis,
-                holding_days
+                holding_days,
+                holding_status=holding_status,
+                current_price=current_price,
+                cost=cost_basis
             )
 
             # 8. 构建完整分析结果
@@ -134,6 +145,7 @@ class HoldStockAnalyzer:
                 "当前价格": current_price,
                 "持仓天数": holding_days,
                 "购买日期": purchase_date,
+                "持仓状态": holding_status,
 
                 # 收益分析
                 "持仓收益": profit_loss,
@@ -158,6 +170,8 @@ class HoldStockAnalyzer:
                 "建议理由": action_advice['reasons'],
                 "风险提示": action_advice['risk_warning'],
                 "下一步行动": action_advice['next_action'],
+                "观察状态": action_advice.get('observation_status', '未观察'),
+                "状态更新": action_advice.get('state_update', {}),
 
                 # 价格信息
                 "当日最高": price_info.get('daily_high', 0),
@@ -357,7 +371,10 @@ class HoldStockAnalyzer:
             }
 
     def _generate_action_advice(self, profit_rate: float, stop_loss_info: Dict,
-                               system_analysis: Dict, holding_days: int) -> Dict:
+                               system_analysis: Dict, holding_days: int,
+                               holding_status: str = BUY_STATUS,
+                               current_price: float = 0.0,
+                               cost: float = 0.0) -> Dict:
         """
         生成综合操作建议（支持追踪止损）
 
@@ -384,6 +401,18 @@ class HoldStockAnalyzer:
         warning_level = stop_loss_info.get('warning_level', 0)
         highest_price = stop_loss_info.get('highest_price', 0)
         drawdown_from_peak = stop_loss_info.get('drawdown_from_peak', 'N/A')
+
+        observation_advice = self._generate_observation_advice(
+            holding_status=holding_status,
+            system_action=system_action,
+            system_confidence=system_analysis['confidence'],
+            holding_days=holding_days,
+            current_price=current_price,
+            cost=cost,
+            profit_rate=profit_rate
+        )
+        if observation_advice:
+            return observation_advice
 
         # 【最高优先级】触发追踪止损
         if warning_level == 3:
@@ -484,7 +513,122 @@ class HoldStockAnalyzer:
             'action': action,
             'reasons': reasons,
             'risk_warning': risk_warning,
-            'next_action': next_action
+            'next_action': next_action,
+            'observation_status': '未观察',
+            'state_update': {}
+        }
+
+    def _generate_observation_advice(self, holding_status: str, system_action: str,
+                                     system_confidence: str, holding_days: int,
+                                     current_price: float, cost: float,
+                                     profit_rate: float) -> Optional[Dict]:
+        """为 sell/watch 状态生成观察买入建议和状态更新。"""
+        today_str = self.today.strftime('%Y-%m-%d')
+        rounded_price = round(float(current_price), 2)
+
+        if holding_status == SELL_STATUS:
+            if system_action == '买入':
+                return {
+                    'action': '进入观察-等待确认买入',
+                    'reasons': [
+                        f"AI输出买入信号，信心度{system_confidence}",
+                        f"以当前价{rounded_price:.2f}元设为观察点",
+                        "等待3天后确认收盘价是否高于观察点"
+                    ],
+                    'risk_warning': '未实际持仓，仅进入买入观察',
+                    'next_action': '观察3天，若价格高于观察点且AI仍建议买入，再确认买入',
+                    'observation_status': '进入观察',
+                    'state_update': {
+                        'buy_flag': WATCH_STATUS,
+                        'purchase_date': today_str,
+                        'cost': rounded_price
+                    }
+                }
+
+            return {
+                'action': '继续观察-等待买入信号',
+                'reasons': [
+                    f"当前为sell状态，AI建议{system_action}",
+                    f"按记录成本测算收益率{profit_rate:+.2f}%"
+                ],
+                'risk_warning': '未实际持仓，等待新的买入信号',
+                'next_action': '继续跟踪，AI输出买入时再进入3天观察',
+                'observation_status': '等待买入信号',
+                'state_update': {}
+            }
+
+        if holding_status != WATCH_STATUS:
+            return None
+
+        if system_action.startswith('卖出'):
+            return {
+                'action': '观察取消-出现卖出信号',
+                'reasons': [
+                    f"观察期间AI输出{system_action}",
+                    "买入观察循环结束"
+                ],
+                'risk_warning': '未确认买入，不执行买入',
+                'next_action': '状态回到sell，等待下一次买入信号',
+                'observation_status': '观察取消',
+                'state_update': {
+                    'buy_flag': SELL_STATUS
+                }
+            }
+
+        if holding_days < 3:
+            return {
+                'action': '继续观察-未满确认期',
+                'reasons': [
+                    f"观察{holding_days}天，未满3天",
+                    f"观察点价格{cost:.2f}元，当前价格{current_price:.2f}元",
+                    f"AI建议{system_action}，信心度{system_confidence}"
+                ],
+                'risk_warning': '未实际持仓，暂不确认买入',
+                'next_action': '继续等待至第3天确认收盘价',
+                'observation_status': '观察中',
+                'state_update': {}
+            }
+
+        if current_price > cost and system_action == '买入':
+            return {
+                'action': '确认可以买入-观察达标',
+                'reasons': [
+                    f"观察{holding_days}天后当前价{current_price:.2f}元高于观察点{cost:.2f}元",
+                    f"AI仍输出买入，信心度{system_confidence}"
+                ],
+                'risk_warning': '满足观察买入条件，仍需按实际交易纪律控制仓位',
+                'next_action': '确认可以买入，买入后在持仓配置中标记为buy并更新成本',
+                'observation_status': '确认可以买入',
+                'state_update': {}
+            }
+
+        if current_price <= cost:
+            return {
+                'action': '观察重置-价格未突破',
+                'reasons': [
+                    f"观察{holding_days}天后当前价{current_price:.2f}元未高于观察点{cost:.2f}元",
+                    "按当天价格重置观察点，继续等待3天"
+                ],
+                'risk_warning': '买入条件未满足，继续观察',
+                'next_action': '已重置观察点，继续等待下一次3天确认',
+                'observation_status': '观察重置',
+                'state_update': {
+                    'buy_flag': WATCH_STATUS,
+                    'purchase_date': today_str,
+                    'cost': rounded_price
+                }
+            }
+
+        return {
+            'action': '继续观察-AI未确认买入',
+            'reasons': [
+                f"当前价{current_price:.2f}元高于观察点{cost:.2f}元",
+                f"但AI建议{system_action}，未确认买入"
+            ],
+            'risk_warning': '价格条件满足但AI未确认买入',
+            'next_action': '继续观察，等待AI重新输出买入',
+            'observation_status': '观察中',
+            'state_update': {}
         }
 
     def _create_error_analysis(self, stock: Dict, error_msg: str) -> Dict:
@@ -496,6 +640,7 @@ class HoldStockAnalyzer:
             "当前价格": 0,
             "持仓天数": 0,
             "购买日期": stock.get('purchase_date', 'N/A'),
+            "持仓状态": normalize_buy_flag(stock.get('buy_flag', BUY_STATUS)),
             "持仓收益": 0,
             "持仓收益率": 0,
             "收益状态": "错误",
@@ -510,6 +655,8 @@ class HoldStockAnalyzer:
             "建议理由": [error_msg],
             "风险提示": "数据获取失败",
             "下一步行动": "检查股票代码或网络连接",
+            "观察状态": "错误",
+            "状态更新": {},
             "当日最高": 0,
             "当日最低": 0,
             "当日涨跌": 0

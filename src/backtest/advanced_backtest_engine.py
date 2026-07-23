@@ -67,6 +67,7 @@ class AdvancedBacktestEngine:
         self.stop_loss_rate = analysis_risk.get('stop_loss_rate', -0.08)
         self.take_profit_rate = analysis_risk.get('take_profit_rate', 0.15)
         self.max_holding_days = analysis_risk.get('max_holding_days', 45)
+        self.buy_observation_days = self._get_buy_observation_days(backtest_config)
 
         # 追踪止损配置
         self.trailing_stop_drawdown = self._get_trailing_stop_drawdown(analysis_risk)
@@ -76,16 +77,38 @@ class AdvancedBacktestEngine:
 
         # 回测状态
         self.positions = {}  # 当前持仓 {symbol: position_info}
+        self.pending_buy_observations = {}  # 待确认买点 {symbol: observation_info}
         self.trade_history = []  # 交易历史
         self.daily_returns = []  # 每日收益率
         self.portfolio_values = []  # 每日组合价值
 
         logger.info(f"回测引擎初始化完成 - 初始资金: {self.initial_capital:.0f}元, 最大仓位: {self.max_position_size:.1%}")
+        logger.info(f"买入确认 - 买点观察{self.buy_observation_days}个交易日，确认价高于观察价后买入")
         if self.enable_forced_exit:
             logger.info(f"风险管理 - 止损: {self.stop_loss_rate:.1%}, 止盈: {self.take_profit_rate:.1%}, "
                        f"追踪止损: 回撤{self.trailing_stop_drawdown:.1%}, 最大持有: {self.max_holding_days}天")
         else:
             logger.info(f"风险管理 - 完全按策略信号执行，不启用强制止损止盈")
+
+    def _get_buy_observation_days(self, backtest_config: Dict) -> int:
+        """
+        获取买点观察确认天数。
+
+        默认等待3个交易日，配置项放在 backtest_settings.buy_observation_days。
+        """
+        observation_days = backtest_config.get('buy_observation_days', 3)
+
+        try:
+            observation_days = int(observation_days)
+        except (TypeError, ValueError):
+            logger.warning(f"买点观察天数配置无效: {observation_days}，使用默认值3")
+            return 3
+
+        if observation_days < 1:
+            logger.warning(f"买点观察天数 {observation_days} 小于1，使用默认值3")
+            return 3
+
+        return observation_days
 
     def _get_trailing_stop_drawdown(self, risk_config: Dict) -> float:
         """
@@ -178,6 +201,7 @@ class AdvancedBacktestEngine:
         """重置回测状态"""
         self.current_capital = self.initial_capital
         self.positions = {}
+        self.pending_buy_observations = {}
         self.trade_history = []
         self.daily_returns = []
         self.portfolio_values = []
@@ -196,6 +220,9 @@ class AdvancedBacktestEngine:
         
         for rec in today_recommendations:
             self._process_recommendation(rec, current_date, market_data)
+
+        # 买点观察确认在当日信号之后执行，确保等待期间出现卖出时优先取消观察
+        self._update_buy_observations(current_date, market_data)
         
         # 2. 更新现有持仓
         self._update_positions(current_date, market_data)
@@ -237,28 +264,106 @@ class AdvancedBacktestEngine:
             logger.warning(f"缺少{symbol}的市场数据")
             return
         
-        stock_data = market_data[symbol]
         date_str = current_date.strftime('%Y-%m-%d')
-        
-        # 获取当日价格数据
-        if date_str not in stock_data.index.strftime('%Y-%m-%d'):
+
+        current_price = self._get_close_price(symbol, current_date, market_data)
+        if current_price is None:
             return
-        
-        daily_data = stock_data.loc[stock_data.index.strftime('%Y-%m-%d') == date_str]
-        if daily_data.empty:
-            return
-            
-        current_price = daily_data.iloc[0]['Close']
         
         # 根据推荐类型执行操作
         if rec_type == "买入":
-            self._execute_buy_signal(
-                symbol, current_price, current_date, confidence, recommendation
-            )
-        elif rec_type.startswith("卖出") and symbol in self.positions:
-            self._execute_sell_signal(
-                symbol, current_price, current_date, "主动卖出"
-            )
+            if symbol in self.positions:
+                self._execute_buy_signal(
+                    symbol, current_price, current_date, confidence, recommendation
+                )
+            else:
+                self._start_buy_observation(
+                    symbol, current_price, current_date, confidence, recommendation
+                )
+        elif rec_type.startswith("卖出"):
+            if symbol in self.pending_buy_observations:
+                del self.pending_buy_observations[symbol]
+                logger.info(f"{date_str} 取消观察买点 {symbol}: 等待期间出现卖出信号")
+
+            if symbol in self.positions:
+                self._execute_sell_signal(
+                    symbol, current_price, current_date, "主动卖出"
+                )
+
+    def _get_close_price(self, symbol: str, date: pd.Timestamp,
+                         market_data: Dict[str, pd.DataFrame]) -> Optional[float]:
+        """获取指定股票在指定日期的收盘价。"""
+        if symbol not in market_data:
+            return None
+
+        stock_data = market_data[symbol]
+        date_str = date.strftime('%Y-%m-%d')
+        date_index = stock_data.index.strftime('%Y-%m-%d')
+        if date_str not in date_index:
+            return None
+
+        daily_data = stock_data.loc[date_index == date_str]
+        if daily_data.empty:
+            return None
+
+        return float(daily_data.iloc[0]['Close'])
+
+    def _start_buy_observation(self, symbol: str, price: float, date: pd.Timestamp,
+                               confidence: float, recommendation: Dict):
+        """记录买入信号为观察点，等待后续确认。"""
+        if symbol in self.pending_buy_observations:
+            logger.debug(f"{symbol} 已有观察买点，忽略新的买入信号")
+            return
+
+        self.pending_buy_observations[symbol] = {
+            'symbol': symbol,
+            'observation_date': date,
+            'observation_price': price,
+            'trading_days_elapsed': 0,
+            'confidence': confidence,
+            'recommendation': recommendation
+        }
+
+        logger.info(f"{date.strftime('%Y-%m-%d')} 设置观察买点 {symbol} @{price:.2f}元")
+
+    def _update_buy_observations(self, date: pd.Timestamp,
+                                 market_data: Dict[str, pd.DataFrame]):
+        """更新买点观察状态，满观察周期后决定买入或重置观察点。"""
+        for symbol, observation in list(self.pending_buy_observations.items()):
+            if symbol in self.positions:
+                del self.pending_buy_observations[symbol]
+                continue
+
+            if date == observation['observation_date']:
+                continue
+
+            current_price = self._get_close_price(symbol, date, market_data)
+            if current_price is None:
+                continue
+
+            observation['trading_days_elapsed'] += 1
+            if observation['trading_days_elapsed'] < self.buy_observation_days:
+                continue
+
+            observation_price = observation['observation_price']
+            if current_price > observation_price:
+                self._execute_buy_signal(
+                    symbol,
+                    current_price,
+                    date,
+                    observation['confidence'],
+                    observation['recommendation']
+                )
+                del self.pending_buy_observations[symbol]
+                logger.info(f"{date.strftime('%Y-%m-%d')} 观察买点确认 {symbol}: "
+                           f"{current_price:.2f} > {observation_price:.2f}")
+                continue
+
+            observation['observation_date'] = date
+            observation['observation_price'] = current_price
+            observation['trading_days_elapsed'] = 0
+            logger.info(f"{date.strftime('%Y-%m-%d')} 重置观察买点 {symbol}: "
+                       f"{current_price:.2f} <= {observation_price:.2f}")
     
     def _execute_buy_signal(self, symbol: str, price: float, date: pd.Timestamp,
                           confidence: float, recommendation: Dict):

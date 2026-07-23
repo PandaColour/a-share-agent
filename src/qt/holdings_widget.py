@@ -11,7 +11,13 @@ from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QFont, QColor
 import akshare as ak
 from src.utils.trading_calendar import trading_calendar, calculate_position_metrics
-from src.utils.hold_stock_io import load_hold_stocks, update_stock_in_hold_config
+from src.utils.hold_stock_io import (
+    BUY_STATUS,
+    SELL_STATUS,
+    load_hold_stocks,
+    normalize_buy_flag,
+    update_stock_in_hold_config,
+)
 
 def get_stock_current_price(symbol: str):
     """获取股票当前价格"""
@@ -125,10 +131,10 @@ class HoldingsWidget(QWidget):
         holdings_layout = QVBoxLayout()
 
         self.holdings_table = QTableWidget()
-        self.holdings_table.setColumnCount(10)
+        self.holdings_table.setColumnCount(11)
         self.holdings_table.setHorizontalHeaderLabels([
             "股票代码", "股票名称", "买入日期", "持股天数", "成本价", "当前价",
-            "盈亏", "日均盈利", "风险提示", "操作"
+            "盈亏", "日均盈利", "风险提示", "状态", "操作"
         ])
 
         # 设置表格样式
@@ -163,7 +169,8 @@ class HoldingsWidget(QWidget):
         self.holdings_table.setColumnWidth(6, 120)  # 盈亏
         self.holdings_table.setColumnWidth(7, 90)   # 日均盈利
         self.holdings_table.setColumnWidth(8, 200)  # 风险提示
-        self.holdings_table.setColumnWidth(9, 80)   # 操作
+        self.holdings_table.setColumnWidth(9, 80)   # 状态
+        self.holdings_table.setColumnWidth(10, 80)  # 操作
 
         # 禁止编辑
         self.holdings_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
@@ -337,8 +344,13 @@ class HoldingsWidget(QWidget):
             self.holdings_table.setItem(row, 8, risk_item)
 
             # 操作按钮
-            buy_flag = stock.get('buy_flag', True)
-            operation_btn = QPushButton("卖出" if buy_flag else "买入")
+            status = normalize_buy_flag(stock.get('buy_flag', BUY_STATUS))
+            status_item = QTableWidgetItem(self._status_label(status))
+            status_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.holdings_table.setItem(row, 9, status_item)
+
+            is_holding = status == BUY_STATUS
+            operation_btn = QPushButton("卖出" if is_holding else "买入")
             operation_btn.setStyleSheet("""
                 QPushButton {
                     background-color: %s;
@@ -350,9 +362,9 @@ class HoldingsWidget(QWidget):
                 QPushButton:hover {
                     background-color: %s;
                 }
-            """ % (("#f44336", "#d32f2f") if buy_flag else ("#4caf50", "#388e3c")))
+            """ % (("#f44336", "#d32f2f") if is_holding else ("#4caf50", "#388e3c")))
             operation_btn.clicked.connect(lambda checked, s=stock: self.handle_trade_action(s))
-            self.holdings_table.setCellWidget(row, 9, operation_btn)
+            self.holdings_table.setCellWidget(row, 10, operation_btn)
 
             # 累计总盈亏
             total_profit += profit
@@ -384,10 +396,11 @@ class HoldingsWidget(QWidget):
         """处理买入/卖出操作"""
         symbol = stock.get('symbol', '')
         name = stock.get('name', '')
-        buy_flag = stock.get('buy_flag', True)
+        status = normalize_buy_flag(stock.get('buy_flag', BUY_STATUS))
+        is_holding = status == BUY_STATUS
 
         # 确认对话框
-        action_text = "卖出" if buy_flag else "买入"
+        action_text = "卖出" if is_holding else "买入"
         confirm = QMessageBox.question(
             self,
             f"{action_text}确认",
@@ -410,18 +423,18 @@ class HoldingsWidget(QWidget):
                 raise ValueError(f"未找到股票 {symbol} 在表格中的位置")
 
             # 更新 hold_stock.json
-            if buy_flag:
-                # 卖出：设置 buy_flag = false
-                update_stock_in_hold_config(symbol, {'buy_flag': False})
+            if is_holding:
+                # 卖出：设置 buy_flag = sell
+                update_stock_in_hold_config(symbol, {'buy_flag': SELL_STATUS})
                 # 更新stock对象
-                stock['buy_flag'] = False
+                stock['buy_flag'] = SELL_STATUS
                 success_msg = f"已标记 {name} 为卖出状态"
             else:
-                # 买入：设置 buy_flag = true，更新日期和成本
+                # 买入：设置 buy_flag = buy，更新日期和成本
                 current_price = stock.get('current_price', 0.0)
                 today = datetime.now().strftime('%Y-%m-%d')
                 updates = {
-                    'buy_flag': True,
+                    'buy_flag': BUY_STATUS,
                     'purchase_date': today,
                     'cost': current_price
                 }
@@ -434,7 +447,7 @@ class HoldingsWidget(QWidget):
             self.update_row_button(row, stock)
 
             # 如果是买入操作，需要重新计算持仓指标并更新显示
-            if not buy_flag:  # 刚买入（原来是false，现在是true）
+            if not is_holding:  # 刚买入（原来是sell/watch，现在是buy）
                 # 重新计算指标
                 cost = stock.get('cost', 0.0)
                 current_price = stock.get('current_price', cost)
@@ -469,8 +482,9 @@ class HoldingsWidget(QWidget):
 
     def update_row_button(self, row, stock):
         """更新指定行的操作按钮"""
-        buy_flag = stock.get('buy_flag', True)
-        operation_btn = QPushButton("卖出" if buy_flag else "买入")
+        status = normalize_buy_flag(stock.get('buy_flag', BUY_STATUS))
+        is_holding = status == BUY_STATUS
+        operation_btn = QPushButton("卖出" if is_holding else "买入")
         operation_btn.setStyleSheet("""
             QPushButton {
                 background-color: %s;
@@ -482,9 +496,17 @@ class HoldingsWidget(QWidget):
             QPushButton:hover {
                 background-color: %s;
             }
-        """ % (("#f44336", "#d32f2f") if buy_flag else ("#4caf50", "#388e3c")))
+        """ % (("#f44336", "#d32f2f") if is_holding else ("#4caf50", "#388e3c")))
         operation_btn.clicked.connect(lambda checked, s=stock: self.handle_trade_action(s))
-        self.holdings_table.setCellWidget(row, 9, operation_btn)
+        self.holdings_table.setCellWidget(row, 10, operation_btn)
+
+    def _status_label(self, status):
+        labels = {
+            BUY_STATUS: "持仓",
+            SELL_STATUS: "卖出",
+            "watch": "观察",
+        }
+        return labels.get(status, status)
 
     def update_row_data(self, row, stock):
         """更新指定行的数据显示"""
@@ -549,3 +571,9 @@ class HoldingsWidget(QWidget):
         elif '[错误]' in risk_warning:
             risk_item.setForeground(QColor(244, 67, 54))  # 红色错误
         self.holdings_table.setItem(row, 8, risk_item)
+
+        # 状态
+        status = normalize_buy_flag(stock.get('buy_flag', BUY_STATUS))
+        status_item = QTableWidgetItem(self._status_label(status))
+        status_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.holdings_table.setItem(row, 9, status_item)

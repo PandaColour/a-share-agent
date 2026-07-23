@@ -12,6 +12,7 @@ from typing import List, Dict, Optional, Tuple
 from pathlib import Path
 
 from .dynamic_stock_selector import DynamicStockSelector, get_dynamic_stock_list, get_dynamic_stock_list_with_stats
+from src.utils.hold_stock_io import BUY_STATUS, normalize_hold_stocks
 
 logger = logging.getLogger(__name__)
 
@@ -374,6 +375,7 @@ class StockSelectionManager:
 
             with open(hold_stock_file, 'r', encoding='utf-8') as f:
                 config = json.load(f)
+            config['hold_stocks'] = normalize_hold_stocks(config.get('hold_stocks', []))
 
             logger.info(f"成功加载持仓股票配置: {len(config.get('hold_stocks', []))} 只持仓股票")
             return config
@@ -703,7 +705,8 @@ class StockSelectionManager:
                         "sector": stock_info['sector'],
                         "reason": f"从动态选股迁移 - {stock_info['reason']}",
                         "purchase_date": date.today().strftime("%Y-%m-%d"),
-                        "cost": 0.0
+                        "cost": 0.0,
+                        "buy_flag": BUY_STATUS
                     }
                     hold_config['hold_stocks'].append(hold_stock)
                     migrated_stocks.append(symbol)

@@ -1,105 +1,119 @@
 {
   "description": "持仓股票配置文件",
   "version": "1.1",
-  "last_updated": "2026-05-21",
+  "last_updated": "2026-07-23",
   "hold_stocks": [
     {
       "symbol": "600396.SH",
       "name": "华电辽能",
       "purchase_date": "2026-05-11",
       "cost": 13.015,
-      "buy_flag": false
+      "buy_flag": "sell"
     },
     {
       "symbol": "002580.SZ",
       "name": "圣阳股份",
       "purchase_date": "2026-05-12",
       "cost": 35.265,
-      "buy_flag": false
+      "buy_flag": "sell"
     },
     {
       "symbol": "000533.SZ",
       "name": "顺钠股份",
       "purchase_date": "2026-03-17",
       "cost": 18.398,
-      "buy_flag": false
+      "buy_flag": "sell"
     },
     {
       "symbol": "002471.SZ",
       "name": "中超控股",
       "purchase_date": "2025-12-31",
       "cost": 7.016,
-      "buy_flag": false
+      "buy_flag": "sell"
     },
     {
       "symbol": "002156.SZ",
       "name": "通富微电",
       "purchase_date": "2026-01-19",
       "cost": 47.69,
-      "buy_flag": false
+      "buy_flag": "sell"
     },
     {
       "symbol": "600726.SH",
       "name": "华电能源",
       "purchase_date": "2026-03-20",
       "cost": 5.054,
-      "buy_flag": false
+      "buy_flag": "sell"
     },
     {
       "symbol": "000603.SZ",
       "name": "盛达资源",
       "purchase_date": "2026-01-29",
       "cost": 69.875,
-      "buy_flag": false
+      "buy_flag": "sell"
     },
     {
       "symbol": "603986.SH",
       "name": "兆易创新",
       "purchase_date": "2026-01-19",
       "cost": 283.45,
-      "buy_flag": false
+      "buy_flag": "sell"
     },
     {
       "symbol": "603629.SH",
       "name": "利通电子",
       "purchase_date": "2026-05-06",
       "cost": 158.912,
-      "buy_flag": false
+      "buy_flag": "sell"
     },
     {
       "symbol": "601061.SH",
       "name": "中信金属",
       "purchase_date": "2026-05-29",
-      "cost": 13.480,
-      "buy_flag": false
+      "cost": 13.48,
+      "buy_flag": "sell"
     },
     {
       "symbol": "000811.SZ",
       "name": "冰轮环境",
       "purchase_date": "2026-05-21",
       "cost": 37.55,
-      "buy_flag": false
+      "buy_flag": "sell"
     },
     {
       "symbol": "000021.SZ",
       "name": "深科技",
       "purchase_date": "2026-07-01",
       "cost": 65.5,
-      "buy_flag": true
+      "buy_flag": "sell"
     },
     {
       "symbol": "000977.SZ",
       "name": "浪潮信息",
       "purchase_date": "2026-07-10",
       "cost": 91.348,
-      "buy_flag": true
+      "buy_flag": "buy"
     },
     {
       "symbol": "000938.SZ",
       "name": "紫光股份",
       "purchase_date": "2026-07-13",
-      "cost": 39.40,
-      "buy_flag": true
+      "cost": 39.4,
+      "buy_flag": "buy"
+    },
+    {
+      "symbol": "002396.SZ",
+      "name": "星网锐捷",
+      "purchase_date": "2026-07-23",
+      "cost": 34.59,
+      "buy_flag": "watch"
+    },
+    {
+      "symbol": "001258.SZ",
+      "name": "立新能源",
+      "purchase_date": "2026-07-23",
+      "cost": 11.01,
+      "buy_flag": "watch"
     }
   ],
   "config": {

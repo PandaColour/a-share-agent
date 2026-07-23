@@ -13,6 +13,14 @@ from pathlib import Path
 import pandas as pd
 
 from .hold_stock_analyzer import HoldStockAnalyzer
+from src.utils.hold_stock_io import (
+    BUY_STATUS,
+    SELL_STATUS,
+    WATCH_STATUS,
+    load_hold_stocks,
+    normalize_buy_flag,
+    update_stock_in_hold_config,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +28,7 @@ logger = logging.getLogger(__name__)
 class HoldStockProcess:
     """持股流程管理类 - 负责持仓股票的监控和分析"""
 
-    def __init__(self, system=None, config=None, output_dir=None):
+    def __init__(self, system=None, config=None, output_dir=None, hold_stock_path=None):
         """
         初始化持股流程
 
@@ -32,6 +40,7 @@ class HoldStockProcess:
         self.system = system
         self.config = config
         self.output_dir = output_dir  # 保存输出目录
+        self.hold_stock_path = hold_stock_path
         self.process_start_time = time.time()
         self.logger = logging.getLogger("HoldStockProcess")
         self.logger.info("🚀 持股流程开始初始化...")
@@ -44,29 +53,49 @@ class HoldStockProcess:
         加载持仓股票数据
 
         Returns:
-            持仓股票列表（仅包含 buy_flag 为 true 的股票）
+            持仓股票列表（包含 buy/sell/watch 三种状态）
         """
         try:
-            from src.stock.stock_selection_manager import StockSelectionManager
-            stock_manager = StockSelectionManager(self.config)
-            hold_config = stock_manager._load_hold_stock_config()
+            hold_stocks = load_hold_stocks(self.hold_stock_path)
+            status_counts = {BUY_STATUS: 0, SELL_STATUS: 0, WATCH_STATUS: 0}
+            for stock in hold_stocks:
+                status_counts[normalize_buy_flag(stock.get('buy_flag'))] += 1
 
-            all_hold_stocks = hold_config.get('hold_stocks', [])
-
-            # 过滤掉 buy_flag 为 false 的股票
-            hold_stocks = [stock for stock in all_hold_stocks if stock.get('buy_flag', True)]
-
-            filtered_count = len(all_hold_stocks) - len(hold_stocks)
-            if filtered_count > 0:
-                self.logger.info(f"过滤掉 buy_flag=false 的股票: {filtered_count} 只")
-
-            self.logger.info(f"加载持仓股票: {len(hold_stocks)} 只 (总共 {len(all_hold_stocks)} 只)")
+            self.logger.info(
+                "加载持仓股票: %s 只 (buy=%s, sell=%s, watch=%s)",
+                len(hold_stocks),
+                status_counts[BUY_STATUS],
+                status_counts[SELL_STATUS],
+                status_counts[WATCH_STATUS]
+            )
 
             return hold_stocks
 
         except Exception as e:
             self.logger.error(f"加载持仓股票失败: {e}")
             return []
+
+    def apply_state_updates(self, position_analyses: List[Dict]) -> Dict:
+        """把持仓分析产生的观察状态更新写回 hold_stock.json。"""
+        updated_symbols = []
+
+        for analysis in position_analyses:
+            symbol = analysis.get('股票代码')
+            updates = analysis.get('状态更新') or {}
+            if not symbol or not updates:
+                continue
+
+            try:
+                update_stock_in_hold_config(symbol, updates, self.hold_stock_path)
+                updated_symbols.append(symbol)
+                self.logger.info(f"更新持仓状态 {symbol}: {updates}")
+            except Exception as e:
+                self.logger.warning(f"更新持仓状态失败 {symbol}: {e}")
+
+        return {
+            'updated_count': len(updated_symbols),
+            'updated_symbols': updated_symbols
+        }
 
     def analyze_all_positions(self, hold_stocks: List[Dict], analysis_results=None) -> List[Dict]:
         """
@@ -381,6 +410,8 @@ class HoldStockProcess:
                 csv_row = {
                     '股票代码': analysis['股票代码'],
                     '股票名称': analysis['股票名称'],
+                    '持仓状态': analysis.get('持仓状态', BUY_STATUS),
+                    '观察状态': analysis.get('观察状态', '未观察'),
                     '成本价': f"{analysis['成本价']:.2f}",
                     '当前价格': f"{analysis['当前价格']:.2f}",
                     '持仓天数': analysis['持仓天数'],
@@ -443,6 +474,9 @@ class HoldStockProcess:
             # 第二阶段：分析所有持仓（如果提供了analysis_results，则使用数据复用）
             position_analyses = self.analyze_all_positions(hold_stocks, analysis_results=analysis_results)
 
+            # 写回 sell/watch 观察逻辑产生的状态变化
+            state_update_summary = self.apply_state_updates(position_analyses)
+
             # 第三阶段：生成概览和建议
             summary = self.generate_position_summary(position_analyses)
             warnings = self.generate_risk_warnings(position_analyses)
@@ -465,6 +499,7 @@ class HoldStockProcess:
                 'summary': summary,
                 'warnings': warnings,
                 'actions': actions,
+                'state_update_summary': state_update_summary,
                 'csv_file': csv_file,  # 添加CSV文件路径
                 'total_time': total_time
             }

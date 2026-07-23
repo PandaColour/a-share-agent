@@ -1723,20 +1723,24 @@ def main():
         print("="*60)
 
         try:
-            import json
             hold_config_path = os.path.join("config", "hold_stock.json")
             if os.path.exists(hold_config_path):
-                with open(hold_config_path, 'r', encoding='utf-8') as f:
-                    hold_config = json.load(f)
-                    hold_stocks = hold_config.get('hold_stocks', [])
+                from src.utils.hold_stock_io import BUY_STATUS, SELL_STATUS, WATCH_STATUS, load_hold_stocks
+                hold_stocks = load_hold_stocks(hold_config_path)
 
-                # 转换为 (symbol, name) 元组列表，只包含 buy_flag=True 的股票
-                stock_list = [(stock['symbol'], stock['name']) for stock in hold_stocks if stock.get('buy_flag', True)]
+                # 转换为 (symbol, name) 元组列表，包含 buy/sell/watch 三种状态
+                stock_list = [(stock['symbol'], stock['name']) for stock in hold_stocks]
                 total_hold = len(hold_stocks)
-                actual_bought = len(stock_list)
-                watch_only = total_hold - actual_bought
-                print(f"✅ 加载 {actual_bought} 只实际持仓股票 (观察中: {watch_only}只)")
-                main_logger.info(f"📊 持仓模式加载{actual_bought}只实际持仓股票, {watch_only}只观察股票被过滤")
+                status_counts = {
+                    BUY_STATUS: sum(1 for stock in hold_stocks if stock.get('buy_flag') == BUY_STATUS),
+                    SELL_STATUS: sum(1 for stock in hold_stocks if stock.get('buy_flag') == SELL_STATUS),
+                    WATCH_STATUS: sum(1 for stock in hold_stocks if stock.get('buy_flag') == WATCH_STATUS),
+                }
+                print(f"✅ 加载 {total_hold} 只跟踪股票 "
+                      f"(持仓: {status_counts[BUY_STATUS]}只, "
+                      f"卖出跟踪: {status_counts[SELL_STATUS]}只, "
+                      f"观察中: {status_counts[WATCH_STATUS]}只)")
+                main_logger.info(f"📊 持仓模式加载{total_hold}只跟踪股票: {status_counts}")
             else:
                 print(f"❌ 未找到持仓配置文件: {hold_config_path}")
                 main_logger.error(f"未找到持仓配置文件: {hold_config_path}")
@@ -1850,6 +1854,16 @@ def main():
         phase2_analysis_time = time.time() - phase2_start_time
         main_logger.info(f"✅ 股票分析完成，耗时: {phase2_analysis_time:.2f}秒")
         main_logger.info(f"📊 分析结果: 成功分析{len(results)}只股票")
+
+        try:
+            from src.utils.hold_stock_io import add_buy_recommendations_to_watch
+            watch_summary = add_buy_recommendations_to_watch(results)
+            if watch_summary.get('added_count', 0) > 0:
+                added_symbols = ', '.join(watch_summary.get('added_symbols', []))
+                print(f"📌 新增买入推荐已加入观察列表: {added_symbols}")
+                main_logger.info(f"新增买入推荐加入watch: {added_symbols}")
+        except Exception as e:
+            main_logger.warning(f"同步买入推荐到观察列表失败: {e}")
 
         # 打印分析结果
         system.print_analysis_results(results)

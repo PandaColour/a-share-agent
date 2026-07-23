@@ -13,7 +13,7 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont, QColor
 
-from src.utils.hold_stock_io import load_hold_stocks, add_stock_to_hold_config
+from src.utils.hold_stock_io import BUY_STATUS, load_hold_stocks, add_stock_to_hold_config
 
 
 def load_dynamic_stocks():
@@ -236,7 +236,7 @@ class StockComparisonWidget(QWidget):
             self,
             "保存确认",
             f"确定要将 {name}({symbol}) 加入持仓吗？\n\n"
-            f"加入后该股票的 buy_flag 将设为 True。",
+            f"加入后该股票的 buy_flag 将设为 buy。",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
         )
 
@@ -260,6 +260,6 @@ class StockComparisonWidget(QWidget):
             "name": stock.get('name', ''),
             "purchase_date": datetime.now().strftime('%Y-%m-%d'),
             "cost": round(stock.get('price', 0.0), 3),
-            "buy_flag": True
+            "buy_flag": BUY_STATUS
         }
         add_stock_to_hold_config(new_stock)
