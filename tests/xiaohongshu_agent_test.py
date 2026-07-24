@@ -8,7 +8,12 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-if "pandas" not in sys.modules:
+try:
+    import pandas as pd
+except ImportError:
+    pd = None
+
+if pd is None and "pandas" not in sys.modules:
     pandas_stub = types.ModuleType("pandas")
     sys.modules["pandas"] = pandas_stub
 
@@ -83,6 +88,87 @@ class XiaohongshuAgentTest(unittest.TestCase):
             self.assertNotRegex(plain_text, r"(?m)^- ")
             self.assertNotIn("**", plain_text)
             self.assertNotIn("https://", plain_text)
+
+    def test_plain_text_copy_removes_inline_markdown_bullets_and_bold(self):
+        generator = XiaohongshuContentGenerator()
+        markdown_content = (
+            "- 当前收益率：**-3.71%**  - 模型策略：AI建议 **持有(冷)**，"
+            "信心度 **31.64%**，主要问题是高波动率达到52.4%。"
+        )
+
+        plain_text = generator._convert_markdown_to_plain_text(markdown_content)
+
+        self.assertIn("当前收益率：-3.71%", plain_text)
+        self.assertIn("模型策略：AI建议 持有(冷)，信心度 31.64%", plain_text)
+        self.assertNotIn("**", plain_text)
+        self.assertNotIn("  - 模型策略", plain_text)
+        self.assertNotRegex(plain_text, r"(?m)^- ")
+
+    def test_prompt_disallows_markdown_bold_and_dash_bullets_for_wechat(self):
+        prompt = (PROJECT_ROOT / "config" / "xiaohongshu_prompt.md").read_text(encoding="utf-8")
+
+        self.assertIn("不要使用 Markdown 加粗语法", prompt)
+        self.assertIn("不要使用以 `-`、`*`、`+` 开头的项目符号", prompt)
+        self.assertNotIn("可以使用 `**加粗**`", prompt)
+
+    @unittest.skipIf(pd is None, "pandas is required for holdings data preparation")
+    def test_prepare_holdings_data_keeps_watch_status_and_observation_action(self):
+        generator = XiaohongshuContentGenerator()
+        holdings_df = pd.DataFrame([
+            {
+                "股票代码": "000002.SZ",
+                "股票名称": "万科A",
+                "持仓天数": 3,
+                "持仓收益率": "+2.10%",
+                "操作建议": "确认可以买入-观察达标",
+                "系统建议": "确认可以买入(85%)",
+                "建议理由": "观察期收盘价高于观察点",
+                "持仓状态": "watch",
+                "观察状态": "确认可以买入",
+            }
+        ])
+        analysis_df = pd.DataFrame([
+            {
+                "股票代码": "000002.SZ",
+                "操作建议": "买入",
+                "信心度": "90%",
+                "决策理由": "普通策略输出买入信号",
+            }
+        ])
+
+        holdings = generator._prepare_holdings_data(holdings_df, analysis_df)
+
+        self.assertEqual(holdings[0]["position_status"], "watch")
+        self.assertEqual(holdings[0]["holding_status"], "watch")
+        self.assertEqual(holdings[0]["observation_status"], "确认可以买入")
+        self.assertEqual(holdings[0]["analysis_action"], "确认可以买入-观察达标")
+        self.assertEqual(holdings[0]["reason"], "观察期收盘价高于观察点")
+
+    def test_template_describes_watch_stock_as_observation_instead_of_holding(self):
+        generator = XiaohongshuContentGenerator()
+        content = generator._generate_with_template(
+            [
+                {
+                    "symbol": "000002.SZ",
+                    "name": "万科A",
+                    "holding_days": 3,
+                    "profit_rate": "+2.10%",
+                    "position_status": "watch",
+                    "observation_status": "确认可以买入",
+                    "analysis_action": "确认可以买入-观察达标",
+                    "confidence": "85%",
+                    "reason": "观察期收盘价高于观察点",
+                }
+            ],
+            [],
+            [],
+        )
+
+        self.assertIn("我的持仓与观察清单", content)
+        self.assertIn("观察股", content)
+        self.assertIn("观察3天", content)
+        self.assertIn("观察状态：确认可以买入", content)
+        self.assertNotIn("持有3天", content)
 
 
 if __name__ == "__main__":

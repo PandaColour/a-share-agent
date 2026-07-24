@@ -159,6 +159,30 @@ class XiaohongshuContentGenerator:
             logger.error(f"加载分析数据失败: {e}")
             return None
 
+    def _clean_text_value(self, value, default: str = "") -> str:
+        """把 CSV 中的空值统一清洗成字符串。"""
+        if value is None:
+            return default
+        try:
+            if pd.isna(value):
+                return default
+        except Exception:
+            pass
+
+        text = str(value).strip()
+        if not text or text.lower() == "nan":
+            return default
+        return text
+
+    def _normalize_position_status(self, value) -> str:
+        """把持仓 CSV 状态统一为 buy/sell/watch。"""
+        status = self._clean_text_value(value, "buy").lower()
+        if status in {"watch", "观察"}:
+            return "watch"
+        if status in {"sell", "卖出"}:
+            return "sell"
+        return "buy"
+
     def _prepare_holdings_data(
         self,
         holdings_df: Optional[pd.DataFrame],
@@ -177,13 +201,17 @@ class XiaohongshuContentGenerator:
             system_action = row.get('操作建议', '持有')
             confidence = row.get('系统建议', '').split('(')[-1].replace(')', '') if '(' in str(row.get('系统建议', '')) else '50%'
             reason = row.get('建议理由', '')
+            position_status = self._normalize_position_status(
+                row.get('持仓状态', row.get('buy_flag', 'buy'))
+            )
+            observation_status = self._clean_text_value(row.get('观察状态', ''), '')
 
             # 从分析数据中获取对应股票的分析结果（如果有）
             analysis_action = system_action
             analysis_confidence = confidence
             analysis_reason = reason
 
-            if analysis_df is not None and not analysis_df.empty:
+            if position_status != 'watch' and analysis_df is not None and not analysis_df.empty:
                 matching = analysis_df[analysis_df['股票代码'] == symbol]
                 if not matching.empty:
                     analysis_action = matching.iloc[0].get('操作建议', system_action)
@@ -195,6 +223,11 @@ class XiaohongshuContentGenerator:
                 'name': name,
                 'holding_days': holding_days,
                 'profit_rate': profit_rate,
+                'position_status': position_status,
+                'holding_status': position_status,
+                '持仓状态': position_status,
+                'observation_status': observation_status,
+                '观察状态': observation_status,
                 'analysis_action': analysis_action,
                 'confidence': analysis_confidence,
                 'reason': analysis_reason or reason
@@ -446,29 +479,44 @@ class XiaohongshuContentGenerator:
 
         # 持仓部分
         if holdings_list:
-            lines.append("## 💼 我的持仓实况\n")
+            lines.append("我的持仓与观察清单 💼\n")
             for i, stock in enumerate(holdings_list, 1):
-                profit_emoji = "📈" if "+" in stock['profit_rate'] else "📉"
-                lines.append(f"{i}. **{stock['name']} ({stock['symbol']})** {profit_emoji}")
-                lines.append(f"   - 持有{stock['holding_days']}天，收益率 {stock['profit_rate']}")
-                lines.append(f"   - AI建议：{stock['analysis_action']}（信心度{stock['confidence']}）")
-                lines.append(f"   - 理由：{stock['reason'][:100]}...\n")
+                profit_rate = self._clean_text_value(stock.get('profit_rate'), '0%')
+                profit_emoji = "📈" if "+" in profit_rate else "📉"
+                status = self._normalize_position_status(
+                    stock.get('position_status', stock.get('holding_status', stock.get('持仓状态', 'buy')))
+                )
+                reason = self._clean_text_value(stock.get('reason'), '')
+
+                if status == 'watch':
+                    observation_status = self._clean_text_value(
+                        stock.get('observation_status', stock.get('观察状态', '观察中')),
+                        '观察中'
+                    )
+                    lines.append(f"{i}. {stock['name']} ({stock['symbol']}) 👀 观察股")
+                    lines.append(f"观察{stock['holding_days']}天，观察点以来变化 {profit_rate}")
+                    lines.append(f"观察状态：{observation_status}")
+                else:
+                    lines.append(f"{i}. {stock['name']} ({stock['symbol']}) {profit_emoji} 持仓")
+                    lines.append(f"持有{stock['holding_days']}天，收益率 {profit_rate}")
+
+                lines.append(f"AI建议：{stock['analysis_action']}（信心度{stock['confidence']}）")
+                lines.append(f"理由：{reason[:100]}...\n")
 
         # 买入推荐部分
         if buy_recommendations:
-            lines.append("## ⭐ 本周值得关注的机会\n")
+            lines.append("本周值得关注的机会 ⭐\n")
             for i, stock in enumerate(buy_recommendations[:5], 1):  # 最多5只
-                lines.append(f"{i}. **{stock['name']} ({stock['symbol']})** - 信心度{stock['confidence']}")
-                lines.append(f"   - {stock['reason'][:100]}...\n")
+                lines.append(f"{i}. {stock['name']} ({stock['symbol']})，信心度{stock['confidence']}")
+                lines.append(f"{stock['reason'][:100]}...\n")
 
         # 卖出预警部分
         if sell_warnings:
-            lines.append("## ⚠️ 风险提示\n")
+            lines.append("风险提示 ⚠️\n")
             for i, stock in enumerate(sell_warnings[:5], 1):  # 最多5只
-                lines.append(f"{i}. **{stock['name']} ({stock['symbol']})** - {stock['reason'][:80]}...\n")
+                lines.append(f"{i}. {stock['name']} ({stock['symbol']})：{stock['reason'][:80]}...\n")
 
         # 免责声明
-        lines.append("\n---\n")
         lines.append("⚠️ 免责声明：以上内容为AI量化模型分析结果，仅供学习参考，不构成投资建议。投资有风险，入市需谨慎！\n")
 
         return '\n'.join(lines)
@@ -477,12 +525,15 @@ class XiaohongshuContentGenerator:
         """生成适合直接粘贴到微信原生编辑器的纯文本副本"""
         text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", content)
         text = text.replace("**", "").replace("__", "").replace("`", "")
+        text = re.sub(r"\s{2,}[-*+]\s+", "\n", text)
 
         plain_lines = []
         for line in text.splitlines():
             stripped = line.strip()
             if not stripped:
                 plain_lines.append("")
+                continue
+            if stripped in {"---", "***", "___"}:
                 continue
             stripped = re.sub(r"^#{1,6}\s*", "", stripped)
             stripped = re.sub(r"^[-*+]\s+", "", stripped)
