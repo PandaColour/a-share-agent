@@ -278,7 +278,7 @@ class AnalysisWidget(QWidget):
             QTextEdit {
                 background-color: #1e1e1e;
                 color: #d4d4d4;
-                font-family: Consolas, Monaco, monospace;
+                font-family: monospace;
                 font-size: 10pt;
                 border: 1px solid #3c3c3c;
             }

@@ -129,7 +129,7 @@ class ResearchModeWidget(QWidget):
                 color: #e5e7eb;
                 border: 1px solid #34495e;
                 border-radius: 4px;
-                font-family: Menlo, Consolas, monospace;
+                font-family: monospace;
                 font-size: 12px;
                 padding: 8px;
             }

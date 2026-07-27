@@ -272,7 +272,7 @@ class BacktestWidget(QWidget):
             QTextEdit {
                 background-color: #1e1e1e;
                 color: #d4d4d4;
-                font-family: 'Consolas', 'Courier New', monospace;
+                font-family: monospace;
                 font-size: 12px;
                 border: 1px solid #3e3e3e;
                 border-radius: 3px;
