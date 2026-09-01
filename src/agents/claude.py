@@ -62,6 +62,8 @@ def parse_stream(json_line, stream_state):
     if event_type == "content_block_delta":
         delta = data.get("delta", {})
         text = delta.get("text") or delta.get("partial_json") or _extract_text(delta)
+        if text:
+            stream_state.setdefault("delta_parts", []).append(text)
     elif event_type == "content_block_start":
         block = data.get("content_block", {})
         if block.get("type") == "tool_use":
@@ -70,8 +72,12 @@ def parse_stream(json_line, stream_state):
         text = _extract_text(block)
     elif event_type == "assistant":
         text = _extract_text(data)
+        if text:
+            stream_state["assistant_text"] = text
     elif event_type == "result":
         text = _extract_text(data)
+        if text:
+            stream_state["result_text"] = text
     elif event_type == "system":
         text = ""
     elif event_type in {"content_block_stop", "message_start", "message_delta", "message_stop", "user", "ping"}:
@@ -79,10 +85,15 @@ def parse_stream(json_line, stream_state):
     else:
         text = _extract_text(data)
 
-    if text:
+    # assistant 是完整的中间消息，result 是同一轮的最终汇总；两者不能
+    # 都加入返回值，否则生成的文案会被拼接两遍。
+    should_display = event_type not in {"assistant", "result"}
+    if event_type == "result":
+        should_display = not stream_state.get("delta_parts")
+    if text and should_display:
         sys.stdout.write(text)
         sys.stdout.flush()
-    return text
+    return text if should_display else ""
 
 
 class ClaudeAgent:
@@ -103,18 +114,20 @@ class ClaudeAgent:
             )
             process.stdin.write(message)
             process.stdin.close()
-            text_parts = []
             stream_state = {"session_id": session_id}
             while True:
                 line = process.stdout.readline()
                 if not line and process.poll() is not None:
                     break
                 if line:
-                    text = parse_stream(line, stream_state)
-                    if text:
-                        text_parts.append(text)
+                    parse_stream(line, stream_state)
             process.wait()
             error = None if process.returncode == 0 else f"Claude exited with code {process.returncode}"
-            return AgentRunResult("".join(text_parts), stream_state["session_id"], process.returncode, error)
+            text = (
+                stream_state.get("result_text")
+                or "".join(stream_state.get("delta_parts", []))
+                or stream_state.get("assistant_text", "")
+            )
+            return AgentRunResult(text, stream_state["session_id"], process.returncode, error)
         except Exception as error:
             return AgentRunResult("", session_id, -1, str(error))
