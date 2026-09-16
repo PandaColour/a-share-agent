@@ -20,7 +20,7 @@ class ContentGenerationThread(QThread):
     output_signal = pyqtSignal(str)
     finished_signal = pyqtSignal(bool, str)
 
-    def __init__(self, output_dir, agent_type="codex"):
+    def __init__(self, output_dir, agent_type="claude"):
         super().__init__()
         self.output_dir = output_dir
         self.agent_type = agent_type
@@ -63,7 +63,7 @@ class MediaWidget(QWidget):
     def __init__(self):
         super().__init__()
         self.generation_thread = None
-        self.agent_type = "codex"
+        self.agent_type = "claude"
         self.init_ui()
         self.init_agent_config()
 

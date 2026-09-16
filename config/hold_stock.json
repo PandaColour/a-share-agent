@@ -106,14 +106,14 @@
       "name": "星网锐捷",
       "purchase_date": "2026-07-27",
       "cost": 32.92,
-      "buy_flag": "watch"
+      "buy_flag": "sell"
     },
     {
       "symbol": "001258.SZ",
       "name": "立新能源",
       "purchase_date": "2026-07-23",
       "cost": 11.01,
-      "buy_flag": "watch"
+      "buy_flag": "sell"
     }
   ],
   "config": {

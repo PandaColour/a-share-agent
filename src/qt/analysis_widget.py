@@ -642,8 +642,8 @@ class AnalysisWidget(QWidget):
         """生成小红书文案"""
         try:
             # 初始化小红书文案生成器
-            self.append_output(f"[小红书文案] 使用 codex CLI Agent 生成文案")
-            generator = XiaohongshuContentGenerator(agent_type="codex")
+            self.append_output(f"[小红书文案] 使用 claude CLI Agent 生成文案")
+            generator = XiaohongshuContentGenerator(agent_type="claude")
 
             # 生成文案
             content = generator.generate_content(
