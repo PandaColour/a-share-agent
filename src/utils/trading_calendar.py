@@ -10,6 +10,18 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# 上交所 2026 年休市安排；交易日判断和节后文案共用同一份日期。
+# https://www.sse.com.cn/disclosure/announcement/general/c/c_20251222_10802507.shtml
+HOLIDAY_RANGES_2026 = {
+    '元旦': (datetime(2026, 1, 1), datetime(2026, 1, 3)),
+    '春节': (datetime(2026, 2, 15), datetime(2026, 2, 23)),
+    '清明': (datetime(2026, 4, 4), datetime(2026, 4, 6)),
+    '劳动': (datetime(2026, 5, 1), datetime(2026, 5, 5)),
+    '端午': (datetime(2026, 6, 19), datetime(2026, 6, 21)),
+    '中秋': (datetime(2026, 9, 25), datetime(2026, 9, 27)),
+    '国庆': (datetime(2026, 10, 1), datetime(2026, 10, 7)),
+}
+
 
 class TradingCalendar:
     """中国A股交易日历"""
@@ -74,28 +86,9 @@ class TradingCalendar:
 
             # 2026年节假日
             2026: {
-                # 元旦: 2026年1月1日
-                datetime(2026, 1, 1),
-
-                # 春节: 2026年2月11日-2月17日
-                datetime(2026, 2, 11), datetime(2026, 2, 12), datetime(2026, 2, 13), datetime(2026, 2, 14),
-                datetime(2026, 2, 15), datetime(2026, 2, 16), datetime(2026, 2, 17),
-
-                # 清明节: 2026年4月4日-4月6日
-                datetime(2026, 4, 4), datetime(2026, 4, 5), datetime(2026, 4, 6),
-
-                # 劳动节: 2026年5月1日-5月5日
-                datetime(2026, 5, 1), datetime(2026, 5, 2), datetime(2026, 5, 3), datetime(2026, 5, 4), datetime(2026, 5, 5),
-
-                # 端午节: 2026年6月9日-6月11日
-                datetime(2026, 6, 9), datetime(2026, 6, 10), datetime(2026, 6, 11),
-
-                # 中秋节: 2026年9月15日-9月17日
-                datetime(2026, 9, 15), datetime(2026, 9, 16), datetime(2026, 9, 17),
-
-                # 国庆节: 2026年10月1日-10月8日
-                datetime(2026, 10, 1), datetime(2026, 10, 2), datetime(2026, 10, 3), datetime(2026, 10, 4),
-                datetime(2026, 10, 5), datetime(2026, 10, 6), datetime(2026, 10, 7), datetime(2026, 10, 8),
+                start + timedelta(days=offset)
+                for start, end in HOLIDAY_RANGES_2026.values()
+                for offset in range((end - start).days + 1)
             }
         }
 
@@ -143,15 +136,10 @@ class TradingCalendar:
         """
         current_date = date - timedelta(days=1)
 
-        # 最多向前查找7天（足够跨过周末和短假期）
-        for _ in range(7):
-            if self.is_trading_day(current_date):
-                return current_date
+        # 春节等连续休市可能超过7天，必须找到真实的交易日。
+        while not self.is_trading_day(current_date):
             current_date -= timedelta(days=1)
-
-        # 如果找不到，返回7天前的日期（保守策略）
-        self.logger.warning(f"无法找到前一个交易日，使用7天前日期")
-        return date - timedelta(days=7)
+        return current_date
 
     def get_days_since_last_trading_day(self, date: datetime) -> int:
         """
@@ -546,43 +534,40 @@ class TradingCalendar:
         holiday_ranges = {
             '元旦': [
                 (datetime(2025, 1, 1), datetime(2025, 1, 1)),
-                (datetime(2026, 1, 1), datetime(2026, 1, 1)),
             ],
             '春节': [
                 (datetime(2025, 1, 28), datetime(2025, 2, 3)),
-                (datetime(2026, 2, 11), datetime(2026, 2, 17)),
             ],
             '清明': [
                 (datetime(2025, 4, 5), datetime(2025, 4, 7)),
-                (datetime(2026, 4, 4), datetime(2026, 4, 6)),
             ],
             '劳动': [
                 (datetime(2025, 5, 1), datetime(2025, 5, 5)),
-                (datetime(2026, 5, 1), datetime(2026, 5, 5)),
             ],
             '端午': [
                 (datetime(2025, 5, 31), datetime(2025, 6, 2)),
-                (datetime(2026, 6, 9), datetime(2026, 6, 11)),
             ],
             '中秋': [
                 (datetime(2025, 10, 6), datetime(2025, 10, 8)),
-                (datetime(2026, 9, 15), datetime(2026, 9, 17)),
             ],
             '国庆': [
                 (datetime(2025, 10, 1), datetime(2025, 10, 8)),
-                (datetime(2026, 10, 1), datetime(2026, 10, 8)),
             ],
         }
+        for holiday_name, date_range in HOLIDAY_RANGES_2026.items():
+            holiday_ranges[holiday_name].append(date_range)
 
         # 检查本周一是否在任何假期后的一周内
         for holiday_name, ranges in holiday_ranges.items():
             for start_date, end_date in ranges:
                 # 计算假期结束后的下一个交易日
                 next_trading_day = end_date + timedelta(days=1)
-                for _ in range(7):
-                    if self.is_trading_day(next_trading_day):
-                        break
+                while not self.is_trading_day(next_trading_day):
                     next_trading_day += timedelta(days=1)
+
+                # 同一周可能仍处于节前或假期中，复市前不能算作节后。
+                if date < next_trading_day:
+                    continue
 
                 # 获取该交易日所在周的周一
                 holiday_week_monday = next_trading_day - timedelta(days=next_trading_day.weekday())

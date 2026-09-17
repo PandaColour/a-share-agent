@@ -93,6 +93,7 @@ tmp/
 # 测试文件（保留重要测试）
 test_*.py
 !test_backtest_multisource.py
+!/test/test_trading_calendar.py
 
 # 配置文件中的敏感信息
 config/*token*
